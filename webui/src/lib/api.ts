@@ -1,0 +1,173 @@
+import axios from 'axios'
+
+const api = axios.create({
+  baseURL: '/api',
+  timeout: 30000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
+
+// Types
+export interface CrawlerConfig {
+  platform: string
+  login_type: string
+  crawler_type: string
+  keywords: string
+  specified_ids: string
+  creator_ids: string
+  start_page: number
+  start_time: string
+  end_time: string
+  enable_comments: boolean
+  enable_sub_comments: boolean
+  save_option: string
+  cookies: string
+  headless: boolean
+  max_notes_count?: number | null
+  max_comments_count?: number | null
+}
+
+export interface CrawlerStatus {
+  status: 'idle' | 'running' | 'stopping' | 'error'
+  platform: string | null
+  crawler_type: string | null
+  started_at: string | null
+  error_message: string | null
+}
+
+export interface LogEntry {
+  id: number
+  timestamp: string
+  level: 'info' | 'warning' | 'error' | 'success' | 'debug'
+  message: string
+}
+
+export interface DataFile {
+  name: string
+  path: string
+  size: number
+  modified_at: number
+  record_count: number | null
+  type: string
+}
+
+export interface FilePreviewResponse {
+  data: Record<string, unknown>[]
+  total: number
+  columns?: string[]
+}
+
+export interface Platform {
+  value: string
+  label: string
+  icon: string
+}
+
+export interface ConfigOption {
+  value: string
+  label: string
+}
+
+export interface SchedulerConfigPayload {
+  enabled: boolean
+  times: string[]
+  crawler: CrawlerConfig
+}
+
+export interface SchedulerStatus {
+  enabled: boolean
+  times: string[]
+  next_run_at: string | null
+  last_run_at: string | null
+  last_result: string | null
+  running: boolean
+}
+
+export interface MonitorAccount {
+  id: number
+  platform: string
+  sec_user_id: string
+  profile_url: string | null
+  discover_interval_minutes: number
+  last_discovered_at: number | null
+}
+
+export interface MonitorStatus {
+  enabled: boolean
+  account: MonitorAccount | null
+  jobs: Record<string, number>
+  loop_running: boolean
+}
+
+export interface MonitorConfigPayload {
+  sec_user_id: string
+  profile_url: string
+  enabled: boolean
+  discover_interval_minutes: number
+}
+
+export interface MonitorRunResult {
+  status: string
+  reason?: string
+  created_posts?: number
+  created_jobs?: number
+  completed?: number
+  retried?: number
+  failed?: number
+}
+
+// API functions
+export const crawlerApi = {
+  start: (config: CrawlerConfig) => api.post('/crawler/start', config),
+  stop: () => api.post('/crawler/stop'),
+  getStatus: () => api.get<CrawlerStatus>('/crawler/status'),
+  getLogs: (limit = 100) => api.get<{ logs: LogEntry[] }>('/crawler/logs', { params: { limit } }),
+}
+
+export const dataApi = {
+  getFiles: (platform?: string, fileType?: string) =>
+    api.get<{ files: DataFile[] }>('/data/files', { params: { platform, file_type: fileType } }),
+  getFileContent: (path: string, limit = 100) =>
+    api.get<FilePreviewResponse>('/data/files/' + path, { params: { preview: true, limit } }),
+  getStats: () => api.get('/data/stats'),
+  getDownloadUrl: (path: string) => `/api/data/download/${path}`,
+}
+
+export const configApi = {
+  getPlatforms: () => api.get<{ platforms: Platform[] }>('/config/platforms'),
+  getOptions: () =>
+    api.get<{
+      login_types: ConfigOption[]
+      crawler_types: ConfigOption[]
+      save_options: ConfigOption[]
+    }>('/config/options'),
+}
+
+export interface EnvCheckResult {
+  success: boolean
+  message: string
+  output?: string
+  error?: string
+}
+
+export const envApi = {
+  check: () => api.get<EnvCheckResult>('/env/check'),
+}
+
+export const schedulerApi = {
+  getStatus: () => api.get<SchedulerStatus>('/scheduler/status'),
+  update: (payload: SchedulerConfigPayload) => api.post<SchedulerStatus>('/scheduler/config', payload),
+  disable: () => api.post<SchedulerStatus>('/scheduler/disable'),
+}
+
+export const monitorApi = {
+  getStatus: () => api.get<MonitorStatus>('/monitor/status'),
+  updateConfig: (payload: MonitorConfigPayload) => api.post('/monitor/config', payload),
+  discover: (secUserId?: string) =>
+    api.post<MonitorRunResult>('/monitor/discover', null, { params: { sec_user_id: secUserId } }),
+  runDueSnapshots: (limit = 50) =>
+    api.post<MonitorRunResult>('/monitor/snapshots/run-due', null, { params: { limit } }),
+}
+
+export default api

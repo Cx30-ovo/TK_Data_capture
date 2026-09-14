@@ -1,0 +1,60 @@
+# -*- coding: utf-8 -*-
+"""API routes for the single-account monitor module."""
+
+from typing import Optional
+
+from fastapi import APIRouter
+
+from database.monitor_repository import monitor_repository
+
+from ..schemas import MonitorAccountConfigRequest
+from ..services.monitor_service import monitor_service
+
+router = APIRouter(prefix="/monitor", tags=["monitor"])
+
+
+@router.get("/status")
+async def get_monitor_status():
+    account = await monitor_repository.get_enabled_monitored_account()
+    jobs = await monitor_repository.get_job_counts()
+    return {
+        "enabled": account is not None,
+        "account": {
+            "id": account.id,
+            "platform": account.platform,
+            "sec_user_id": account.sec_user_id,
+            "profile_url": account.profile_url,
+            "discover_interval_minutes": account.discover_interval_minutes,
+            "last_discovered_at": account.last_discovered_at,
+        } if account else None,
+        "jobs": jobs,
+        "loop_running": monitor_service.is_running,
+    }
+
+
+@router.post("/config")
+async def save_monitor_config(request: MonitorAccountConfigRequest):
+    account = await monitor_repository.upsert_monitored_account(
+        sec_user_id=request.sec_user_id,
+        profile_url=request.profile_url,
+        enabled=request.enabled,
+        discover_interval_minutes=request.discover_interval_minutes,
+    )
+    return {
+        "id": account.id,
+        "platform": account.platform,
+        "sec_user_id": account.sec_user_id,
+        "profile_url": account.profile_url,
+        "enabled": account.enabled,
+        "discover_interval_minutes": account.discover_interval_minutes,
+    }
+
+
+@router.post("/discover")
+async def run_monitor_discovery(sec_user_id: Optional[str] = None):
+    return await monitor_service.discover_account(sec_user_id=sec_user_id)
+
+
+@router.post("/snapshots/run-due")
+async def run_due_snapshots(limit: int = 50):
+    return await monitor_service.run_due_snapshots(limit=limit)

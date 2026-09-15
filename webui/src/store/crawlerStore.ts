@@ -47,7 +47,7 @@ function saveClearedLogIdToStorage(id: number | null): void {
 }
 
 const defaultConfig: CrawlerConfig = {
-  platform: 'bili',
+  platform: 'dy',
   login_type: 'qrcode',
   crawler_type: 'search',
   keywords: '',

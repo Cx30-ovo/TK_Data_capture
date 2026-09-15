@@ -190,6 +190,14 @@ export function CrawlerConfigPanel() {
     stopCrawler()
   }
 
+  useEffect(() => {
+    if (config.platform !== 'dy') {
+      updateConfig({ platform: 'dy' })
+    }
+  }, [config.platform, updateConfig])
+
+  const platformOptions = (platforms || []).filter((platform) => platform.value === 'dy')
+
   return (
     <div className="space-y-4 animate-slide-up">
       {/* Row 1: Three Config Columns */}
@@ -210,7 +218,7 @@ export function CrawlerConfigPanel() {
                 <SelectValue placeholder={t('field.platformPlaceholder')} />
               </SelectTrigger>
               <SelectContent>
-                {platforms?.map((platform) => (
+                {platformOptions.map((platform) => (
                   <SelectItem key={platform.value} value={platform.value}>
                     {platform.label}
                   </SelectItem>

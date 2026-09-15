@@ -122,6 +122,8 @@
     "done": "已完成",
     "missed": "已错过",
     "selectPost": "选择作品",
+    "publishTime": "发布时间",
+    "firstSeen": "首次发现",
     "searchPlaceholder": "搜索作品标题或作品 ID",
     "searchResult": "找到 {{count}} 篇作品",
     "snapshotCount": "{{count}} 条快照",

@@ -24,6 +24,11 @@ function formatAge(seconds: number): string {
 }
 
 
+function formatDateTime(timestamp: number): string {
+  return new Date(timestamp * 1000).toLocaleString()
+}
+
+
 function MetricTrend({ snapshots, metric }: { snapshots: MonitorSnapshot[]; metric: MetricKey }) {
   const points = useMemo(
     () => snapshots
@@ -172,6 +177,9 @@ export function MonitorDashboard() {
                   >
                     <div className="text-xs font-mono line-clamp-2">{post.title || post.aweme_id}</div>
                     <div className="mt-1 text-[10px] text-cyber-text-muted font-mono">
+                      {t('monitorDashboard.publishTime')}: {formatDateTime(post.create_time)}
+                    </div>
+                    <div className="mt-0.5 text-[10px] text-cyber-text-muted font-mono">
                       {post.aweme_id} · {t('monitorDashboard.snapshotCount', { count: post.snapshots.length })}
                     </div>
                   </button>
@@ -209,7 +217,21 @@ export function MonitorDashboard() {
           </div>
 
           <div className="min-w-0">
-            {selectedPost ? <MetricTrend snapshots={selectedPost.snapshots} metric={metric} /> : (
+            {selectedPost ? (
+              <div className="space-y-2">
+                <div className="min-w-0">
+                  <div className="text-xs font-mono text-cyber-text-primary line-clamp-2">{selectedPost.title || selectedPost.aweme_id}</div>
+                  <div className="mt-1 text-[10px] font-mono text-cyber-text-muted">
+                    {t('monitorDashboard.publishTime')}: {formatDateTime(selectedPost.create_time)}
+                    <span className="mx-2 text-cyber-border-default">|</span>
+                    {t('monitorDashboard.firstSeen')}: {formatDateTime(selectedPost.first_seen_at)}
+                    <span className="mx-2 text-cyber-border-default">|</span>
+                    ID: {selectedPost.aweme_id}
+                  </div>
+                </div>
+                <MetricTrend snapshots={selectedPost.snapshots} metric={metric} />
+              </div>
+            ) : (
               <div className="h-64 rounded-md border border-cyber-border-subtle bg-cyber-bg-tertiary/20 flex flex-col items-center justify-center gap-3">
                 <div className="text-3xl font-mono text-cyber-neon-cyan">{counts?.posts ?? 0}</div>
                 <div className="text-xs font-mono text-cyber-text-primary">{t('monitorDashboard.totalPosts')}</div>
@@ -239,7 +261,7 @@ export function MonitorDashboard() {
                 {[...selectedPost.snapshots].sort((a, b) => a.actual_age_seconds - b.actual_age_seconds).map((snapshot) => (
                   <tr key={`${snapshot.stage}-${snapshot.captured_at}`} className="border-b border-cyber-border-subtle/40 text-cyber-text-secondary">
                     <td className="py-2 pr-4 text-cyber-neon-cyan">{snapshot.stage}</td>
-                    <td className="py-2 pr-4">{new Date(snapshot.captured_at * 1000).toLocaleString()}</td>
+                    <td className="py-2 pr-4">{formatDateTime(snapshot.captured_at)}</td>
                     <td className="py-2 pr-4">{formatAge(snapshot.actual_age_seconds)}</td>
                     <td className="py-2 pr-4">{snapshot.liked_count}</td>
                     <td className="py-2 pr-4">{snapshot.collected_count}</td>

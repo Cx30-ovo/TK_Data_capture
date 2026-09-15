@@ -122,6 +122,8 @@
     "done": "Done",
     "missed": "Missed",
     "selectPost": "Select post",
+    "publishTime": "Published",
+    "firstSeen": "First seen",
     "searchPlaceholder": "Search title or post ID",
     "searchResult": "{{count}} posts",
     "snapshotCount": "{{count}} snapshots",

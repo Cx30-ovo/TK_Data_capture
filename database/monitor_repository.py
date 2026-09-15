@@ -128,6 +128,20 @@ class MonitorRepository:
             )
             return set((await session.execute(stmt)).scalars().all())
 
+    async def list_posts(
+        self,
+        platform: str = "dy",
+        limit: int = 100,
+    ) -> list[DouyinPost]:
+        async with get_monitor_session() as session:
+            stmt = (
+                select(DouyinPost)
+                .where(DouyinPost.platform == platform)
+                .order_by(DouyinPost.create_time.desc())
+                .limit(limit)
+            )
+            return list((await session.execute(stmt)).scalars().all())
+
     async def get_job_counts(self, platform: str = "dy") -> dict[str, int]:
         async with get_monitor_session() as session:
             stmt = (

@@ -117,6 +117,39 @@ export interface MonitorRunResult {
   failed?: number
 }
 
+export interface MonitorSnapshot {
+  stage: string
+  due_at: number
+  captured_at: number
+  actual_age_seconds: number
+  liked_count: number
+  collected_count: number
+  comment_count: number
+  share_count: number
+}
+
+export interface MonitorDashboardPost {
+  aweme_id: string
+  title: string
+  desc: string
+  create_time: number
+  first_seen_at: number
+  canonical_url: string
+  status: string
+  snapshots: MonitorSnapshot[]
+}
+
+export interface MonitorDashboard {
+  generated_at: string
+  account: MonitorAccount | null
+  counts: {
+    posts: number
+    snapshots: number
+    jobs: Record<string, number>
+  }
+  posts: MonitorDashboardPost[]
+}
+
 // API functions
 export const crawlerApi = {
   start: (config: CrawlerConfig) => api.post('/crawler/start', config),
@@ -168,6 +201,8 @@ export const monitorApi = {
     api.post<MonitorRunResult>('/monitor/discover', null, { params: { sec_user_id: secUserId } }),
   runDueSnapshots: (limit = 50) =>
     api.post<MonitorRunResult>('/monitor/snapshots/run-due', null, { params: { limit } }),
+  getDashboard: (limit = 100) =>
+    api.get<MonitorDashboard>('/monitor/dashboard', { params: { limit } }),
 }
 
 export default api

@@ -28,7 +28,7 @@ function App() {
   }
 
   return (
-    <div className="flex flex-col h-screen cyber-grid overflow-hidden relative">
+    <div className="flex flex-col min-h-screen cyber-grid relative">
       {/* License Disclaimer Modal - Shows first or when triggered */}
       {(!licenseAccepted || showDisclaimer) && (
         <LicenseDisclaimer onAccept={handleLicenseAccept} />
@@ -43,9 +43,9 @@ function App() {
       <Sidebar onShowDisclaimer={handleShowDisclaimer} />
 
       {/* Main Area */}
-      <div className="flex-1 flex flex-col gap-3 p-3 overflow-hidden min-h-0">
+      <div className="flex flex-col gap-3 p-3 min-h-0">
         {/* Config Panel - Primary Action Area (Always Expanded) */}
-        <div className="flex-shrink-0 max-h-[46vh] overflow-y-auto min-h-0">
+        <div className="flex-shrink-0">
           <CrawlerConfigPanel />
         </div>
 

@@ -58,3 +58,8 @@ async def run_monitor_discovery(sec_user_id: Optional[str] = None):
 @router.post("/snapshots/run-due")
 async def run_due_snapshots(limit: int = 50):
     return await monitor_service.run_due_snapshots(limit=limit)
+
+
+@router.get("/dashboard")
+async def get_monitor_dashboard(limit: int = 100):
+    return await monitor_service.get_dashboard_data(limit=limit)

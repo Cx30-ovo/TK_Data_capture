@@ -3,6 +3,7 @@
 
 import asyncio
 import time
+from datetime import datetime
 from typing import Any, Optional
 
 from playwright.async_api import async_playwright
@@ -309,6 +310,56 @@ class MonitorService:
                 "success" if completed and not retried and not failed else "info",
             )
             return {"status": "ok", "completed": completed, "retried": retried, "failed": failed}
+
+    async def get_dashboard_data(self, limit: int = 100) -> dict:
+        """Return the data needed by the WebUI monitoring dashboard."""
+        account = await monitor_repository.get_enabled_monitored_account()
+        posts = await monitor_repository.list_posts(limit=limit)
+        snapshots = await monitor_repository.list_snapshots(limit=1000)
+        job_counts = await monitor_repository.get_job_counts()
+
+        snapshots_by_post: dict[str, list[dict]] = {}
+        for snapshot in sorted(snapshots, key=lambda item: item.captured_at):
+            snapshots_by_post.setdefault(snapshot.aweme_id, []).append({
+                "stage": snapshot.stage,
+                "due_at": snapshot.due_at,
+                "captured_at": snapshot.captured_at,
+                "actual_age_seconds": snapshot.actual_age_seconds,
+                "liked_count": snapshot.liked_count,
+                "collected_count": snapshot.collected_count,
+                "comment_count": snapshot.comment_count,
+                "share_count": snapshot.share_count,
+            })
+
+        return {
+            "generated_at": datetime.now().isoformat(timespec="seconds"),
+            "account": {
+                "id": account.id,
+                "sec_user_id": account.sec_user_id,
+                "profile_url": account.profile_url,
+                "enabled": account.enabled,
+                "discover_interval_minutes": account.discover_interval_minutes,
+                "last_discovered_at": account.last_discovered_at,
+            } if account else None,
+            "counts": {
+                "posts": len(posts),
+                "snapshots": len(snapshots),
+                "jobs": job_counts,
+            },
+            "posts": [
+                {
+                    "aweme_id": post.aweme_id,
+                    "title": post.title,
+                    "desc": post.desc,
+                    "create_time": post.create_time,
+                    "first_seen_at": post.first_seen_at,
+                    "canonical_url": post.canonical_url,
+                    "status": post.status,
+                    "snapshots": snapshots_by_post.get(post.aweme_id, []),
+                }
+                for post in posts
+            ],
+        }
 
 
 monitor_service = MonitorService()

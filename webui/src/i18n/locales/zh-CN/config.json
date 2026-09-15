@@ -112,5 +112,27 @@
     "loopRunning": "监控循环运行中",
     "loopStopped": "监控循环未运行",
     "noJobs": "暂无快照任务"
+  },
+  "monitorDashboard": {
+    "title": "监控数据可视化",
+    "description": "互动增长趋势、任务状态与快照明细",
+    "totalPosts": "作品总数",
+    "snapshots": "实际快照",
+    "pending": "待执行",
+    "done": "已完成",
+    "missed": "已错过",
+    "selectPost": "选择作品",
+    "noSnapshots": "暂无可视化快照",
+    "metricLikes": "点赞",
+    "metricCollections": "收藏",
+    "metricComments": "评论",
+    "metricShares": "分享",
+    "stage": "阶段",
+    "actualTime": "实际观测时间",
+    "actualAge": "实际年龄",
+    "likes": "点赞",
+    "collections": "收藏",
+    "comments": "评论",
+    "shares": "分享"
   }
 }

@@ -24,7 +24,7 @@ export function Terminal() {
   }, [logs, isCollapsed])
 
   return (
-    <div className={`flex flex-col rounded-lg overflow-hidden transition-all duration-300 border border-cyber-border-subtle bg-[#0d1117] ${isCollapsed ? 'h-12 flex-none' : 'flex-1 min-h-0'}`}>
+    <div className={`flex flex-col rounded-lg overflow-hidden transition-all duration-300 border border-cyber-border-subtle bg-[#0d1117] ${isCollapsed ? 'h-12 flex-none' : 'h-[70vh] min-h-[420px] max-h-[720px]'}`}>
       {/* Terminal Header */}
       <div className="flex items-center justify-between px-4 py-2.5 bg-[#161b22] border-b border-[#30363d] flex-shrink-0">
         <div className="flex items-center gap-3">

@@ -112,5 +112,27 @@
     "loopRunning": "Monitor loop running",
     "loopStopped": "Monitor loop stopped",
     "noJobs": "No snapshot jobs"
+  },
+  "monitorDashboard": {
+    "title": "MONITOR DATA",
+    "description": "Engagement trends, job status and snapshot details",
+    "totalPosts": "Posts",
+    "snapshots": "Snapshots",
+    "pending": "Pending",
+    "done": "Done",
+    "missed": "Missed",
+    "selectPost": "Select post",
+    "noSnapshots": "No snapshot data",
+    "metricLikes": "Likes",
+    "metricCollections": "Collections",
+    "metricComments": "Comments",
+    "metricShares": "Shares",
+    "stage": "Stage",
+    "actualTime": "Observed at",
+    "actualAge": "Actual age",
+    "likes": "Likes",
+    "collections": "Collections",
+    "comments": "Comments",
+    "shares": "Shares"
   }
 }

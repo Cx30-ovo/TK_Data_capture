@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, BarChart3, Clock3, Database, Eye, Heart, MessageSquare, Share2 } from 'lucide-react'
+import { Activity, BarChart3, Clock3, Database, Eye, Heart, MessageSquare, Search, Share2, X } from 'lucide-react'
 import { monitorApi, type MonitorSnapshot } from '@/lib/api'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 
 type MetricKey = 'liked_count' | 'collected_count' | 'comment_count' | 'share_count'
@@ -100,15 +100,14 @@ export function MonitorDashboard() {
   })
   const [selectedAwemeId, setSelectedAwemeId] = useState('')
   const [metric, setMetric] = useState<MetricKey>('liked_count')
+  const [searchText, setSearchText] = useState('')
 
-  const postsWithSnapshots = (data?.posts || []).filter((post) => post.snapshots.length > 0)
-  const selectedPost = postsWithSnapshots.find((post) => post.aweme_id === selectedAwemeId) || postsWithSnapshots[0]
-
-  useEffect(() => {
-    if (!selectedAwemeId && postsWithSnapshots[0]) {
-      setSelectedAwemeId(postsWithSnapshots[0].aweme_id)
-    }
-  }, [selectedAwemeId, postsWithSnapshots])
+  const normalizedSearch = searchText.trim().toLowerCase()
+  const filteredPosts = (data?.posts || []).filter((post) => {
+    if (!normalizedSearch) return true
+    return post.title.toLowerCase().includes(normalizedSearch) || post.aweme_id.includes(normalizedSearch)
+  })
+  const selectedPost = (data?.posts || []).find((post) => post.aweme_id === selectedAwemeId)
 
   const counts = data?.counts
   const jobCounts = counts?.jobs || {}
@@ -152,18 +151,44 @@ export function MonitorDashboard() {
         <div className="grid grid-cols-1 xl:grid-cols-[minmax(240px,340px)_1fr] gap-4">
           <div className="space-y-3">
             <div className="text-[10px] font-mono text-cyber-text-muted">{t('monitorDashboard.selectPost')}</div>
-            <Select value={selectedPost?.aweme_id || ''} onValueChange={setSelectedAwemeId}>
-              <SelectTrigger className="h-9 text-xs">
-                <SelectValue placeholder={t('monitorDashboard.noSnapshots')} />
-              </SelectTrigger>
-              <SelectContent>
-                {postsWithSnapshots.map((post) => (
-                  <SelectItem key={post.aweme_id} value={post.aweme_id}>
-                    {post.title || post.aweme_id}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-cyber-text-muted" />
+              <Input
+                value={searchText}
+                onChange={(event) => setSearchText(event.target.value)}
+                placeholder={t('monitorDashboard.searchPlaceholder')}
+                className="h-9 pl-9 pr-3 text-xs"
+              />
+            </div>
+            <div className="rounded-md border border-cyber-border-subtle bg-cyber-bg-tertiary/20 max-h-64 overflow-y-auto">
+              {filteredPosts.length > 0 ? filteredPosts.map((post) => {
+                const active = post.aweme_id === selectedAwemeId
+                return (
+                  <button
+                    key={post.aweme_id}
+                    type="button"
+                    onClick={() => setSelectedAwemeId(post.aweme_id)}
+                    className={`w-full text-left px-3 py-2 border-b border-cyber-border-subtle/40 last:border-b-0 transition-colors ${active ? 'bg-cyber-neon-cyan/10 text-cyber-neon-cyan' : 'text-cyber-text-secondary hover:bg-cyber-bg-tertiary/50'}`}
+                  >
+                    <div className="text-xs font-mono line-clamp-2">{post.title || post.aweme_id}</div>
+                    <div className="mt-1 text-[10px] text-cyber-text-muted font-mono">
+                      {post.aweme_id} · {t('monitorDashboard.snapshotCount', { count: post.snapshots.length })}
+                    </div>
+                  </button>
+                )
+              }) : (
+                <div className="px-3 py-4 text-xs text-cyber-text-muted">{t('monitorDashboard.noMatch')}</div>
+              )}
+            </div>
+            <div className="flex items-center justify-between gap-2 text-[10px] font-mono text-cyber-text-muted">
+              <span>{t('monitorDashboard.searchResult', { count: filteredPosts.length })}</span>
+              {selectedPost ? (
+                <button type="button" onClick={() => setSelectedAwemeId('')} className="inline-flex items-center gap-1 hover:text-cyber-neon-pink">
+                  <X className="w-3 h-3" />
+                  {t('monitorDashboard.clearSelection')}
+                </button>
+              ) : null}
+            </div>
 
             <div className="flex flex-wrap gap-1">
               {METRICS.map(({ key, label, icon: Icon }) => (
@@ -185,8 +210,12 @@ export function MonitorDashboard() {
 
           <div className="min-w-0">
             {selectedPost ? <MetricTrend snapshots={selectedPost.snapshots} metric={metric} /> : (
-              <div className="h-64 flex items-center justify-center text-xs text-cyber-text-muted">
-                {t('monitorDashboard.noSnapshots')}
+              <div className="h-64 rounded-md border border-cyber-border-subtle bg-cyber-bg-tertiary/20 flex flex-col items-center justify-center gap-3">
+                <div className="text-3xl font-mono text-cyber-neon-cyan">{counts?.posts ?? 0}</div>
+                <div className="text-xs font-mono text-cyber-text-primary">{t('monitorDashboard.totalPosts')}</div>
+                <div className="text-[10px] font-mono text-cyber-text-muted">
+                  {t('monitorDashboard.totalSnapshots', { count: counts?.snapshots ?? 0 })}
+                </div>
               </div>
             )}
           </div>

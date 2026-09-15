@@ -361,5 +361,49 @@ class MonitorService:
             ],
         }
 
+    async def get_overview_data(self) -> dict:
+        """Return the operational overview shown on the first WebUI tab."""
+        now = int(time.time())
+        account = await monitor_repository.get_enabled_monitored_account()
+        job_counts = await monitor_repository.get_job_counts()
+        next_job = await monitor_repository.get_next_pending_job()
+        next_job_post = (
+            await monitor_repository.get_post(next_job.aweme_id)
+            if next_job else None
+        )
+        start_of_day = int(datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+        today_new_posts = await monitor_repository.count_posts_since(start_of_day)
+        abnormal_jobs = await monitor_repository.list_recent_abnormal_jobs(limit=10)
+
+        next_discovery_at = None
+        if account and account.last_discovered_at:
+            next_discovery_at = account.last_discovered_at + max(1, account.discover_interval_minutes) * 60
+
+        return {
+            "generated_at": datetime.now().isoformat(timespec="seconds"),
+            "now": now,
+            "loop_running": self.is_running,
+            "account": {
+                "id": account.id,
+                "sec_user_id": account.sec_user_id,
+                "profile_url": account.profile_url,
+                "enabled": account.enabled,
+                "discover_interval_minutes": account.discover_interval_minutes,
+                "last_discovered_at": account.last_discovered_at,
+            } if account else None,
+            "next_discovery_at": next_discovery_at,
+            "next_snapshot": {
+                "id": next_job.id,
+                "aweme_id": next_job.aweme_id,
+                "title": next_job_post.title if next_job_post else next_job.aweme_id,
+                "stage": next_job.stage,
+                "due_at": next_job.due_at,
+            } if next_job else None,
+            "today_new_posts": today_new_posts,
+            "jobs": job_counts,
+            "abnormal_total": int(job_counts.get("failed", 0)) + int(job_counts.get("missed", 0)),
+            "recent_abnormal_jobs": abnormal_jobs,
+        }
+
 
 monitor_service = MonitorService()

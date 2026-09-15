@@ -142,6 +142,70 @@ class MonitorRepository:
             )
             return list((await session.execute(stmt)).scalars().all())
 
+    async def get_post(self, aweme_id: str, platform: str = "dy") -> Optional[DouyinPost]:
+        async with get_monitor_session() as session:
+            stmt = select(DouyinPost).where(
+                DouyinPost.platform == platform,
+                DouyinPost.aweme_id == aweme_id,
+            )
+            return (await session.execute(stmt)).scalar_one_or_none()
+
+    async def count_posts_since(self, since: int, platform: str = "dy") -> int:
+        async with get_monitor_session() as session:
+            stmt = select(func.count(DouyinPost.id)).where(
+                DouyinPost.platform == platform,
+                DouyinPost.first_seen_at >= since,
+            )
+            return int((await session.execute(stmt)).scalar() or 0)
+
+    async def get_next_pending_job(self, platform: str = "dy") -> Optional[DouyinMonitorJob]:
+        async with get_monitor_session() as session:
+            stmt = (
+                select(DouyinMonitorJob)
+                .where(
+                    DouyinMonitorJob.platform == platform,
+                    DouyinMonitorJob.status == "pending",
+                )
+                .order_by(DouyinMonitorJob.due_at.asc())
+                .limit(1)
+            )
+            return (await session.execute(stmt)).scalar_one_or_none()
+
+    async def list_recent_abnormal_jobs(
+        self,
+        statuses: tuple[str, ...] = ("failed", "missed"),
+        limit: int = 10,
+        platform: str = "dy",
+    ) -> list[dict]:
+        async with get_monitor_session() as session:
+            stmt = (
+                select(DouyinMonitorJob, DouyinPost.title)
+                .outerjoin(
+                    DouyinPost,
+                    (DouyinPost.platform == DouyinMonitorJob.platform)
+                    & (DouyinPost.aweme_id == DouyinMonitorJob.aweme_id),
+                )
+                .where(
+                    DouyinMonitorJob.platform == platform,
+                    DouyinMonitorJob.status.in_(statuses),
+                )
+                .order_by(DouyinMonitorJob.due_at.desc())
+                .limit(limit)
+            )
+            return [
+                {
+                    "id": job.id,
+                    "aweme_id": job.aweme_id,
+                    "title": title or job.aweme_id,
+                    "stage": job.stage,
+                    "due_at": job.due_at,
+                    "status": job.status,
+                    "miss_reason": job.miss_reason,
+                    "last_error": job.last_error,
+                }
+                for job, title in (await session.execute(stmt)).all()
+            ]
+
     async def get_job_counts(self, platform: str = "dy") -> dict[str, int]:
         async with get_monitor_session() as session:
             stmt = (

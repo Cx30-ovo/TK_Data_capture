@@ -13,7 +13,6 @@ import { useCrawlerStore } from '@/store/crawlerStore'
 import { usePlatforms, useConfigOptions, useStartCrawler, useStopCrawler } from '@/hooks/useCrawler'
 import { schedulerApi } from '@/lib/api'
 import { MonitorPanel } from '@/components/monitor/MonitorPanel'
-import { MonitorDashboard } from '@/components/monitor/MonitorDashboard'
 import { ParsedIdList } from './ParsedIdList'
 
 type SectionProps = {
@@ -522,7 +521,6 @@ export function CrawlerConfigPanel() {
       )}
 
       {config.platform === 'dy' && <MonitorPanel />}
-      {config.platform === 'dy' && <MonitorDashboard />}
 
       {/* Row 2: Start/Stop Button - Full Width */}
       <div className="w-full">

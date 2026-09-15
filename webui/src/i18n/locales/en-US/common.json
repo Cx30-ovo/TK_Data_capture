@@ -7,6 +7,12 @@
     "stopping": "STOPPING",
     "error": "ERROR"
   },
+  "tabs": {
+    "overview": "Overview",
+    "config": "Configuration",
+    "analytics": "Analytics",
+    "console": "Console"
+  },
   "sidebar": {
     "title": "MediaCrawler",
     "api": "API",

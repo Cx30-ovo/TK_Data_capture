@@ -142,5 +142,23 @@
     "collections": "收藏",
     "comments": "评论",
     "shares": "分享"
+  },
+  "overview": {
+    "title": "运行概览",
+    "description": "下次执行、今日新增和异常任务",
+    "updatedAt": "更新时间",
+    "nextDiscovery": "下次发现",
+    "nextSnapshot": "下次快照",
+    "noPendingSnapshot": "暂无待执行快照",
+    "todayNewPosts": "今日新增作品",
+    "todayUnit": "篇作品",
+    "abnormalJobs": "异常任务",
+    "recentAbnormal": "最近异常任务",
+    "status": "状态",
+    "stage": "阶段",
+    "post": "作品",
+    "time": "计划时间",
+    "reason": "原因",
+    "noAbnormal": "暂无异常任务"
   }
 }

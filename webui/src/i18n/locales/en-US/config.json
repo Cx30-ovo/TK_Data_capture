@@ -142,5 +142,23 @@
     "collections": "Collections",
     "comments": "Comments",
     "shares": "Shares"
+  },
+  "overview": {
+    "title": "OPERATIONS OVERVIEW",
+    "description": "Next runs, new posts today and abnormal jobs",
+    "updatedAt": "Updated",
+    "nextDiscovery": "Next discovery",
+    "nextSnapshot": "Next snapshot",
+    "noPendingSnapshot": "No pending snapshot",
+    "todayNewPosts": "New posts today",
+    "todayUnit": "posts",
+    "abnormalJobs": "Abnormal jobs",
+    "recentAbnormal": "Recent abnormal jobs",
+    "status": "Status",
+    "stage": "Stage",
+    "post": "Post",
+    "time": "Scheduled time",
+    "reason": "Reason",
+    "noAbnormal": "No abnormal jobs"
   }
 }

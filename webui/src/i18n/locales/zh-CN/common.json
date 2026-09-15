@@ -7,6 +7,12 @@
     "stopping": "停止中",
     "error": "错误"
   },
+  "tabs": {
+    "overview": "概览",
+    "config": "采集配置",
+    "analytics": "数据可视化",
+    "console": "系统控制台"
+  },
   "sidebar": {
     "title": "MediaCrawler",
     "api": "API",

@@ -1,12 +1,19 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Toaster } from 'sonner'
+import { BarChart3, LayoutDashboard, Settings2, TerminalSquare } from 'lucide-react'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { MainContent } from '@/components/layout/MainContent'
 import { CrawlerConfigPanel } from '@/components/config/CrawlerConfigPanel'
+import { MonitorOverview } from '@/components/monitor/MonitorOverview'
+import { MonitorDashboard } from '@/components/monitor/MonitorDashboard'
 import { EnvironmentCheck, isEnvChecked } from '@/components/env/EnvironmentCheck'
 import { LicenseDisclaimer, isLicenseAccepted } from '@/components/license/LicenseDisclaimer'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 function App() {
+  const { t } = useTranslation('common')
+  const [activeTab, setActiveTab] = useState('overview')
   // Initialize by checking localStorage if license has been accepted
   const [licenseAccepted, setLicenseAccepted] = useState(() => isLicenseAccepted())
   // Initialize by checking localStorage if env check has passed
@@ -42,16 +49,33 @@ function App() {
       {/* Header Bar */}
       <Sidebar onShowDisclaimer={handleShowDisclaimer} />
 
-      {/* Main Area */}
-      <div className="flex flex-col gap-3 p-3 min-h-0">
-        {/* Config Panel - Primary Action Area (Always Expanded) */}
-        <div className="flex-shrink-0">
-          <CrawlerConfigPanel />
-        </div>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col gap-3 p-3 min-h-0">
+        <TabsList className="w-fit max-w-full flex-wrap h-auto">
+          <TabsTrigger value="overview" className="gap-2">
+            <LayoutDashboard className="w-4 h-4" />
+            {t('tabs.overview')}
+          </TabsTrigger>
+          <TabsTrigger value="config" className="gap-2">
+            <Settings2 className="w-4 h-4" />
+            {t('tabs.config')}
+          </TabsTrigger>
+          <TabsTrigger value="analytics" className="gap-2">
+            <BarChart3 className="w-4 h-4" />
+            {t('tabs.analytics')}
+          </TabsTrigger>
+          <TabsTrigger value="console" className="gap-2">
+            <TerminalSquare className="w-4 h-4" />
+            {t('tabs.console')}
+          </TabsTrigger>
+        </TabsList>
 
-        {/* Console - Collapsible Terminal */}
-        <MainContent />
-      </div>
+        {activeTab === 'overview' && <MonitorOverview />}
+        {activeTab === 'config' && <CrawlerConfigPanel />}
+        {activeTab === 'analytics' && <MonitorDashboard />}
+        <div className={activeTab === 'console' ? 'flex flex-col min-h-0' : 'hidden'}>
+          <MainContent />
+        </div>
+      </Tabs>
 
       {/* Toast notifications - Theme-aware style */}
       <Toaster

@@ -150,6 +150,36 @@ export interface MonitorDashboard {
   posts: MonitorDashboardPost[]
 }
 
+export interface MonitorAbnormalJob {
+  id: number
+  aweme_id: string
+  title: string
+  stage: string
+  due_at: number
+  status: string
+  miss_reason: string | null
+  last_error: string | null
+}
+
+export interface MonitorOverview {
+  generated_at: string
+  now: number
+  loop_running: boolean
+  account: MonitorAccount | null
+  next_discovery_at: number | null
+  next_snapshot: {
+    id: number
+    aweme_id: string
+    title: string
+    stage: string
+    due_at: number
+  } | null
+  today_new_posts: number
+  jobs: Record<string, number>
+  abnormal_total: number
+  recent_abnormal_jobs: MonitorAbnormalJob[]
+}
+
 // API functions
 export const crawlerApi = {
   start: (config: CrawlerConfig) => api.post('/crawler/start', config),
@@ -203,6 +233,7 @@ export const monitorApi = {
     api.post<MonitorRunResult>('/monitor/snapshots/run-due', null, { params: { limit } }),
   getDashboard: (limit = 100) =>
     api.get<MonitorDashboard>('/monitor/dashboard', { params: { limit } }),
+  getOverview: () => api.get<MonitorOverview>('/monitor/overview'),
 }
 
 export default api

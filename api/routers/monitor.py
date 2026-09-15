@@ -63,3 +63,8 @@ async def run_due_snapshots(limit: int = 50):
 @router.get("/dashboard")
 async def get_monitor_dashboard(limit: int = 100):
     return await monitor_service.get_dashboard_data(limit=limit)
+
+
+@router.get("/overview")
+async def get_monitor_overview():
+    return await monitor_service.get_overview_data()

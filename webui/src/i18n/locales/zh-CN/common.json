@@ -10,11 +10,13 @@
   "tabs": {
     "overview": "概览",
     "config": "采集配置",
-    "analytics": "数据可视化",
-    "tasks": "任务中心",
-    "alertsHealth": "告警与健康",
-    "export": "导出报告",
-    "console": "系统控制台"
+    "monitorData": "监控数据",
+    "ops": "任务与告警",
+    "export": "导出报告"
+  },
+  "consoleDrawer": {
+    "title": "系统控制台",
+    "entries": "{{count}} 条日志"
   },
   "sidebar": {
     "title": "MediaCrawler",

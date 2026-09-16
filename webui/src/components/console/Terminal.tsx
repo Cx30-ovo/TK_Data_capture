@@ -6,7 +6,7 @@ import { useCrawlerStore } from '@/store/crawlerStore'
 import { Button } from '@/components/ui/button'
 import { DataExplorerDialog } from '@/components/data/DataExplorerDialog'
 
-export function Terminal() {
+export function Terminal({ embedded = false }: { embedded?: boolean }) {
   const { t } = useTranslation('terminal')
   const [isCollapsed, setIsCollapsed] = useState(false)
   const logs = useCrawlerStore((state) => state.logs)
@@ -24,7 +24,7 @@ export function Terminal() {
   }, [logs, isCollapsed])
 
   return (
-    <div className={`flex flex-col rounded-lg overflow-hidden transition-all duration-300 border border-cyber-border-subtle bg-[#0d1117] ${isCollapsed ? 'h-12 flex-none' : 'h-[70vh] min-h-[420px] max-h-[720px]'}`}>
+    <div className={`flex flex-col overflow-hidden bg-[#0d1117] ${embedded ? 'h-full min-h-0 flex-1 border-t border-[#30363d]' : `rounded-lg transition-all duration-300 border border-cyber-border-subtle ${isCollapsed ? 'h-12 flex-none' : 'h-[70vh] min-h-[420px] max-h-[720px]'}`}`}>
       {/* Terminal Header */}
       <div className="flex items-center justify-between px-4 py-2.5 bg-[#161b22] border-b border-[#30363d] flex-shrink-0">
         <div className="flex items-center gap-3">
@@ -79,19 +79,20 @@ export function Terminal() {
             <Trash2 className="w-4 h-4" />
           </Button>
 
-          {/* Collapse toggle */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setIsCollapsed(!isCollapsed)}
-            className="h-7 px-2 text-[#8b949e] hover:text-[#00ffff] hover:bg-[#00ffff]/10"
-          >
-            {isCollapsed ? (
-              <ChevronDown className="w-4 h-4" />
-            ) : (
-              <ChevronUp className="w-4 h-4" />
-            )}
-          </Button>
+          {!embedded ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsCollapsed(!isCollapsed)}
+              className="h-7 px-2 text-[#8b949e] hover:text-[#00ffff] hover:bg-[#00ffff]/10"
+            >
+              {isCollapsed ? (
+                <ChevronDown className="w-4 h-4" />
+              ) : (
+                <ChevronUp className="w-4 h-4" />
+              )}
+            </Button>
+          ) : null}
         </div>
       </div>
 

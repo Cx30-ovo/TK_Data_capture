@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Toaster } from 'sonner'
-import { Activity, BarChart3, Download, LayoutDashboard, ListChecks, Settings2, TerminalSquare } from 'lucide-react'
+import { Activity, BarChart3, Download, LayoutDashboard, Settings2 } from 'lucide-react'
 import { Sidebar } from '@/components/layout/Sidebar'
-import { MainContent } from '@/components/layout/MainContent'
+import { ConsoleDrawer } from '@/components/layout/ConsoleDrawer'
 import { CrawlerConfigPanel } from '@/components/config/CrawlerConfigPanel'
 import { MonitorOverview } from '@/components/monitor/MonitorOverview'
 import { MonitorDashboard } from '@/components/monitor/MonitorDashboard'
@@ -54,58 +54,49 @@ function App() {
       {/* Header Bar */}
       <Sidebar onShowDisclaimer={handleShowDisclaimer} />
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col gap-3 p-3 min-h-0">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col gap-3 p-3 pb-14 min-h-0">
         <TabsList className="w-fit max-w-full flex-wrap h-auto">
           <TabsTrigger value="overview" className="gap-2">
             <LayoutDashboard className="w-4 h-4" />
             {t('tabs.overview')}
           </TabsTrigger>
-          <TabsTrigger value="config" className="gap-2">
-            <Settings2 className="w-4 h-4" />
-            {t('tabs.config')}
-          </TabsTrigger>
-          <TabsTrigger value="analytics" className="gap-2">
+          <TabsTrigger value="data" className="gap-2">
             <BarChart3 className="w-4 h-4" />
-            {t('tabs.analytics')}
-          </TabsTrigger>
-          <TabsTrigger value="tasks" className="gap-2">
-            <ListChecks className="w-4 h-4" />
-            {t('tabs.tasks')}
+            {t('tabs.monitorData')}
           </TabsTrigger>
           <TabsTrigger value="ops" className="gap-2">
             <Activity className="w-4 h-4" />
-            {t('tabs.alertsHealth')}
+            {t('tabs.ops')}
           </TabsTrigger>
           <TabsTrigger value="export" className="gap-2">
             <Download className="w-4 h-4" />
             {t('tabs.export')}
           </TabsTrigger>
-          <TabsTrigger value="console" className="gap-2">
-            <TerminalSquare className="w-4 h-4" />
-            {t('tabs.console')}
+          <TabsTrigger value="config" className="gap-2">
+            <Settings2 className="w-4 h-4" />
+            {t('tabs.config')}
           </TabsTrigger>
         </TabsList>
 
         {activeTab === 'overview' && <MonitorOverview />}
         {activeTab === 'config' && <CrawlerConfigPanel />}
-        {activeTab === 'analytics' && (
+        {activeTab === 'data' && (
           <div className="space-y-4">
             <MonitorDashboard />
             <MonitorAnalytics />
           </div>
         )}
-        {activeTab === 'tasks' && <MonitorTasks />}
         {activeTab === 'ops' && (
           <div className="space-y-4">
+            <MonitorTasks />
             <MonitorHealth />
             <MonitorAlerts />
           </div>
         )}
         {activeTab === 'export' && <MonitorExport />}
-        <div className={activeTab === 'console' ? 'flex flex-col min-h-0' : 'hidden'}>
-          <MainContent />
-        </div>
       </Tabs>
+
+      <ConsoleDrawer />
 
       {/* Toast notifications - Theme-aware style */}
       <Toaster

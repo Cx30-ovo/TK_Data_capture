@@ -10,11 +10,13 @@
   "tabs": {
     "overview": "Overview",
     "config": "Configuration",
-    "analytics": "Analytics",
-    "tasks": "Tasks",
-    "alertsHealth": "Alerts & Health",
-    "export": "Export & Reports",
-    "console": "Console"
+    "monitorData": "Monitor Data",
+    "ops": "Tasks & Alerts",
+    "export": "Export & Reports"
+  },
+  "consoleDrawer": {
+    "title": "System Console",
+    "entries": "{{count}} logs"
   },
   "sidebar": {
     "title": "MediaCrawler",

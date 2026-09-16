@@ -357,6 +357,8 @@ async def test_monitor_exports_and_daily_report(isolated_monitor_db, tmp_path):
     assert csv_path.exists()
     assert xlsx_path.exists()
     assert snapshot_path.exists()
+    multi_path = await service.export_snapshots([post.aweme_id], file_format="xlsx")
+    assert multi_path.exists()
     assert "抖音监控日报" in report["content"]
     assert len(service.list_reports()) == 1
     assert service.delete_report(report["filename"]) is True

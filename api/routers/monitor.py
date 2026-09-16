@@ -132,6 +132,19 @@ async def export_monitor_post_snapshots(aweme_id: str, file_format: str = Query(
     return FileResponse(path, filename=path.name)
 
 
+@router.get("/export/snapshots")
+async def export_monitor_selected_snapshots(
+    aweme_ids: str,
+    file_format: str = Query("csv", alias="format"),
+):
+    try:
+        ids = [item.strip() for item in aweme_ids.split(",") if item.strip()]
+        path = await report_service.export_snapshots(ids, file_format=file_format)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return FileResponse(path, filename=path.name)
+
+
 @router.post("/reports/generate")
 async def generate_monitor_report(period: str = "daily"):
     try:

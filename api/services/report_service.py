@@ -80,32 +80,44 @@ class ReportService:
         return path
 
     async def export_post_snapshots(self, aweme_id: str, file_format: str = "csv") -> Path:
+        return await self.export_snapshots([aweme_id], file_format=file_format)
+
+    async def export_snapshots(self, aweme_ids: list[str], file_format: str = "csv") -> Path:
         self._ensure_dirs()
-        post = await monitor_repository.get_post(aweme_id)
-        if post is None:
-            raise ValueError(f"Post not found: {aweme_id}")
-        snapshots = await monitor_repository.list_snapshots(aweme_id=aweme_id, limit=10000)
+        unique_ids = list(dict.fromkeys(item.strip() for item in aweme_ids if item.strip()))
+        if not unique_ids:
+            raise ValueError("At least one post must be selected.")
+
         headers = [
             "作品ID", "标题", "阶段", "计划时间", "实际观测时间",
             "实际发布后年龄(秒)", "点赞", "收藏", "评论", "分享",
         ]
         rows = []
-        for snapshot in sorted(snapshots, key=lambda item: item.captured_at):
-            rows.append([
-                post.aweme_id,
-                post.title or "",
-                snapshot.stage,
-                datetime.fromtimestamp(snapshot.due_at).strftime("%Y-%m-%d %H:%M:%S"),
-                datetime.fromtimestamp(snapshot.captured_at).strftime("%Y-%m-%d %H:%M:%S"),
-                snapshot.actual_age_seconds,
-                snapshot.liked_count,
-                snapshot.collected_count,
-                snapshot.comment_count,
-                snapshot.share_count,
-            ])
+        for aweme_id in unique_ids:
+            post = await monitor_repository.get_post(aweme_id)
+            if post is None:
+                continue
+            snapshots = await monitor_repository.list_snapshots(aweme_id=aweme_id, limit=10000)
+            for snapshot in sorted(snapshots, key=lambda item: item.captured_at):
+                rows.append([
+                    post.aweme_id,
+                    post.title or "",
+                    snapshot.stage,
+                    datetime.fromtimestamp(snapshot.due_at).strftime("%Y-%m-%d %H:%M:%S"),
+                    datetime.fromtimestamp(snapshot.captured_at).strftime("%Y-%m-%d %H:%M:%S"),
+                    snapshot.actual_age_seconds,
+                    snapshot.liked_count,
+                    snapshot.collected_count,
+                    snapshot.comment_count,
+                    snapshot.share_count,
+                ])
+
+        if not rows:
+            raise ValueError("No snapshots found for the selected posts.")
 
         suffix = "xlsx" if file_format == "xlsx" else "csv"
-        path = self.export_dir / f"douyin_snapshots_{aweme_id}_{datetime.now().strftime('%Y-%m-%d')}.{suffix}"
+        suffix_name = unique_ids[0] if len(unique_ids) == 1 else f"selected_{len(unique_ids)}"
+        path = self.export_dir / f"douyin_snapshots_{suffix_name}_{datetime.now().strftime('%Y-%m-%d')}.{suffix}"
         if suffix == "xlsx":
             self._write_xlsx(path, headers, rows, "快照历史")
         else:

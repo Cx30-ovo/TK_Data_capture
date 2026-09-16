@@ -2,9 +2,10 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { CalendarDays, Download, FileSpreadsheet, FileText, History, Trash2 } from 'lucide-react'
+import { CalendarDays, Download, FileSpreadsheet, FileText, History, Search, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
 import { monitorApi } from '@/lib/api'
 
 
@@ -23,7 +24,8 @@ function formatSize(bytes: number): string {
 export function MonitorExport() {
   const { t } = useTranslation('config')
   const queryClient = useQueryClient()
-  const [selectedAwemeId, setSelectedAwemeId] = useState('')
+  const [selectedAwemeIds, setSelectedAwemeIds] = useState<string[]>([])
+  const [searchText, setSearchText] = useState('')
   const { data: dashboard } = useQuery({
     queryKey: ['monitorDashboard'],
     queryFn: async () => (await monitorApi.getDashboard()).data,
@@ -66,7 +68,18 @@ export function MonitorExport() {
   })
 
   const posts = dashboard?.posts || []
-  const selectedPost = posts.find((post) => post.aweme_id === selectedAwemeId)
+  const normalizedSearch = searchText.trim().toLowerCase()
+  const filteredPosts = posts.filter((post) => {
+    if (!normalizedSearch) return true
+    return post.title.toLowerCase().includes(normalizedSearch) || post.aweme_id.includes(normalizedSearch)
+  })
+  const selectedPosts = posts.filter((post) => selectedAwemeIds.includes(post.aweme_id))
+
+  const togglePost = (awemeId: string) => {
+    setSelectedAwemeIds((current) => current.includes(awemeId)
+      ? current.filter((item) => item !== awemeId)
+      : [...current, awemeId])
+  }
 
   return (
     <div className="space-y-4 animate-slide-up">
@@ -102,27 +115,51 @@ export function MonitorExport() {
 
           <div className="space-y-3">
             <div className="text-xs font-mono text-cyber-text-primary">{t('export.postHistory')}</div>
-            <Select value={selectedAwemeId} onValueChange={setSelectedAwemeId}>
-              <SelectTrigger className="h-9 text-xs">
-                <SelectValue placeholder={t('export.selectPost')} />
-              </SelectTrigger>
-              <SelectContent>
-                {posts.map((post) => (
-                  <SelectItem key={post.aweme_id} value={post.aweme_id}>
-                    {post.title || post.aweme_id}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-cyber-text-muted" />
+              <Input
+                value={searchText}
+                onChange={(event) => setSearchText(event.target.value)}
+                placeholder={t('export.searchPlaceholder')}
+                className="h-9 pl-9 text-xs"
+              />
+            </div>
+            <div className="rounded-md border border-cyber-border-subtle bg-cyber-bg-tertiary/20 max-h-56 overflow-y-auto">
+              {filteredPosts.map((post) => {
+                const checked = selectedAwemeIds.includes(post.aweme_id)
+                return (
+                  <label key={post.aweme_id} className="flex items-start gap-3 px-3 py-2 border-b border-cyber-border-subtle/40 last:border-b-0 hover:bg-cyber-bg-tertiary/40 cursor-pointer">
+                    <Checkbox checked={checked} onCheckedChange={() => togglePost(post.aweme_id)} className="mt-0.5" />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-mono text-cyber-text-primary line-clamp-2">{post.title || post.aweme_id}</div>
+                      <div className="mt-0.5 text-[10px] font-mono text-cyber-text-muted">{post.aweme_id} · {formatDateTime(post.create_time)}</div>
+                    </div>
+                  </label>
+                )
+              })}
+              {filteredPosts.length === 0 ? <div className="px-3 py-4 text-xs text-cyber-text-muted">{t('export.noMatch')}</div> : null}
+            </div>
+            <div className="flex flex-wrap items-center gap-3 text-[10px] font-mono text-cyber-text-muted">
+              <span>{t('export.selectedCount', { count: selectedAwemeIds.length })}</span>
+              <button type="button" className="hover:text-cyber-neon-cyan" onClick={() => setSelectedAwemeIds(Array.from(new Set([...selectedAwemeIds, ...filteredPosts.map((post) => post.aweme_id)])))}>
+                {t('export.selectAll')}
+              </button>
+              {selectedAwemeIds.length > 0 ? (
+                <button type="button" className="inline-flex items-center gap-1 hover:text-cyber-neon-pink" onClick={() => setSelectedAwemeIds([])}>
+                  <X className="w-3 h-3" />
+                  {t('export.clearSelection')}
+                </button>
+              ) : null}
+            </div>
             <div className="flex flex-wrap gap-2">
-              <a href={selectedPost ? monitorApi.exportPostSnapshotsUrl(selectedPost.aweme_id, 'csv') : undefined} download>
-                <Button type="button" variant="outline" size="sm" disabled={!selectedPost} className="h-8 font-mono text-[10px]">
+              <a href={selectedPosts.length > 0 ? monitorApi.exportSnapshotsUrl(selectedAwemeIds, 'csv') : undefined} download>
+                <Button type="button" variant="outline" size="sm" disabled={selectedPosts.length === 0} className="h-8 font-mono text-[10px]">
                   <History className="w-3.5 h-3.5" />
                   CSV
                 </Button>
               </a>
-              <a href={selectedPost ? monitorApi.exportPostSnapshotsUrl(selectedPost.aweme_id, 'xlsx') : undefined} download>
-                <Button type="button" variant="outline" size="sm" disabled={!selectedPost} className="h-8 font-mono text-[10px]">
+              <a href={selectedPosts.length > 0 ? monitorApi.exportSnapshotsUrl(selectedAwemeIds, 'xlsx') : undefined} download>
+                <Button type="button" variant="outline" size="sm" disabled={selectedPosts.length === 0} className="h-8 font-mono text-[10px]">
                   <FileSpreadsheet className="w-3.5 h-3.5" />
                   Excel
                 </Button>

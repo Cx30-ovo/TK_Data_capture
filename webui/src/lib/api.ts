@@ -371,6 +371,8 @@ export const monitorApi = {
   exportPostsUrl: (format: 'csv' | 'xlsx') => `/api/monitor/export/posts?format=${format}`,
   exportPostSnapshotsUrl: (awemeId: string, format: 'csv' | 'xlsx') =>
     `/api/monitor/export/post/${encodeURIComponent(awemeId)}?format=${format}`,
+  exportSnapshotsUrl: (awemeIds: string[], format: 'csv' | 'xlsx') =>
+    `/api/monitor/export/snapshots?aweme_ids=${encodeURIComponent(awemeIds.join(','))}&format=${format}`,
   reportDownloadUrl: (name: string) => `/api/monitor/reports/download?name=${encodeURIComponent(name)}`,
   deleteReport: (name: string) => api.delete('/monitor/reports', { params: { name } }),
   getAnalytics: (limit = 100) => api.get<MonitorAnalytics>('/monitor/analytics', { params: { limit } }),

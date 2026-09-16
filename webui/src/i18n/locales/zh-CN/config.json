@@ -185,5 +185,42 @@
       "failed": "失败",
       "missed": "错过"
     }
+  },
+  "alerts": {
+    "title": "告警中心",
+    "description": "新作品、任务异常和运行告警",
+    "unread": "{{count}} 条未读",
+    "markAllRead": "全部已读",
+    "markedAll": "已将 {{count}} 条告警标记为已读",
+    "markRead": "标记已读",
+    "empty": "暂无告警",
+    "filter": {
+      "unread": "未读",
+      "read": "已读",
+      "all": "全部"
+    }
+  },
+  "health": {
+    "title": "系统健康",
+    "description": "服务、浏览器、数据库和采集循环状态",
+    "status": {
+      "ok": "正常",
+      "warning": "需关注",
+      "error": "异常"
+    },
+    "checks": {
+      "database": "数据库",
+      "browser": "浏览器连接",
+      "monitor_loop": "监控循环",
+      "account": "监控账号",
+      "discovery": "发现任务新鲜度",
+      "disk": "磁盘空间"
+    },
+    "metrics": {
+      "unreadAlerts": "未读告警",
+      "dbSize": "数据库大小",
+      "lastSnapshot": "最近快照",
+      "nextSnapshot": "下次快照"
+    }
   }
 }

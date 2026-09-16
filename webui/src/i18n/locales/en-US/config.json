@@ -185,5 +185,42 @@
       "failed": "Failed",
       "missed": "Missed"
     }
+  },
+  "alerts": {
+    "title": "ALERT CENTER",
+    "description": "New posts, job failures and runtime alerts",
+    "unread": "{{count}} unread",
+    "markAllRead": "Mark all read",
+    "markedAll": "Marked {{count}} alerts as read",
+    "markRead": "Mark read",
+    "empty": "No alerts",
+    "filter": {
+      "unread": "Unread",
+      "read": "Read",
+      "all": "All"
+    }
+  },
+  "health": {
+    "title": "SYSTEM HEALTH",
+    "description": "Service, browser, database and monitor loop status",
+    "status": {
+      "ok": "Healthy",
+      "warning": "Attention",
+      "error": "Error"
+    },
+    "checks": {
+      "database": "Database",
+      "browser": "Browser connection",
+      "monitor_loop": "Monitor loop",
+      "account": "Monitored account",
+      "discovery": "Discovery freshness",
+      "disk": "Disk space"
+    },
+    "metrics": {
+      "unreadAlerts": "Unread alerts",
+      "dbSize": "Database size",
+      "lastSnapshot": "Last snapshot",
+      "nextSnapshot": "Next snapshot"
+    }
   }
 }

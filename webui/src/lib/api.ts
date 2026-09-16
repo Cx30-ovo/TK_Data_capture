@@ -195,6 +195,38 @@ export interface MonitorJob {
   finished_at: number | null
 }
 
+export interface MonitorAlert {
+  id: number
+  alert_type: string
+  severity: 'info' | 'warning' | 'error'
+  title: string
+  message: string
+  status: 'unread' | 'read'
+  created_at: number
+  read_at: number | null
+}
+
+export interface MonitorHealthCheck {
+  key: string
+  status: 'ok' | 'warning' | 'error'
+  value: string
+  detail: string
+}
+
+export interface MonitorHealth {
+  generated_at: string
+  overall_status: 'ok' | 'warning' | 'error'
+  checks: MonitorHealthCheck[]
+  metrics: {
+    jobs?: Record<string, number>
+    unread_alerts?: number
+    db_size_bytes?: number
+    disk_free_bytes?: number
+    last_snapshot_at?: number | null
+    next_snapshot_at?: number | null
+  }
+}
+
 // API functions
 export const crawlerApi = {
   start: (config: CrawlerConfig) => api.post('/crawler/start', config),
@@ -252,6 +284,11 @@ export const monitorApi = {
   getJobs: (status?: string, limit = 300) =>
     api.get<{ jobs: MonitorJob[]; count: number }>('/monitor/jobs', { params: { status, limit } }),
   retryJob: (jobId: number) => api.post('/monitor/jobs/' + jobId + '/retry'),
+  getAlerts: (status?: string, limit = 200) =>
+    api.get<{ alerts: MonitorAlert[]; unread: number }>('/monitor/alerts', { params: { status, limit } }),
+  markAlertRead: (alertId: number) => api.post('/monitor/alerts/' + alertId + '/read'),
+  markAllAlertsRead: () => api.post('/monitor/alerts/read-all'),
+  getHealth: () => api.get<MonitorHealth>('/monitor/health'),
 }
 
 export default api

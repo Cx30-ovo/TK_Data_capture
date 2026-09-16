@@ -81,3 +81,26 @@ async def retry_monitor_job(job_id: int):
         return await monitor_service.retry_job(job_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/alerts")
+async def list_monitor_alerts(status: Optional[str] = None, limit: int = 200):
+    return await monitor_service.list_alerts(status=status, limit=limit)
+
+
+@router.post("/alerts/{alert_id}/read")
+async def mark_monitor_alert_read(alert_id: int):
+    try:
+        return await monitor_service.mark_alert_read(alert_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/alerts/read-all")
+async def mark_all_monitor_alerts_read():
+    return await monitor_service.mark_all_alerts_read()
+
+
+@router.get("/health")
+async def get_monitor_health():
+    return await monitor_service.get_health_data()

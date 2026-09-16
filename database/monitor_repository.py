@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 
 from .db_session import get_monitor_session
 from .models import (
+    MonitorAlert,
     DouyinMonitorJob,
     DouyinMonitoredAccount,
     DouyinPost,
@@ -259,6 +260,93 @@ class MonitorRepository:
             job.miss_reason = None
             await session.flush()
             return job
+
+    async def create_alert(
+        self,
+        alert_type: str,
+        severity: str,
+        title: str,
+        message: str,
+        dedupe_key: str,
+        platform: str = "dy",
+    ) -> Optional[MonitorAlert]:
+        now = _now_seconds()
+        async with get_monitor_session() as session:
+            existing = await session.execute(
+                select(MonitorAlert).where(MonitorAlert.dedupe_key == dedupe_key)
+            )
+            if existing.scalar_one_or_none() is not None:
+                return None
+            alert = MonitorAlert(
+                platform=platform,
+                alert_type=alert_type,
+                severity=severity,
+                title=title,
+                message=message,
+                status="unread",
+                dedupe_key=dedupe_key,
+                created_at=now,
+            )
+            session.add(alert)
+            await session.flush()
+            return alert
+
+    async def list_alerts(
+        self,
+        status: Optional[str] = None,
+        limit: int = 200,
+        platform: str = "dy",
+    ) -> list[MonitorAlert]:
+        async with get_monitor_session() as session:
+            stmt = select(MonitorAlert).where(MonitorAlert.platform == platform)
+            if status:
+                stmt = stmt.where(MonitorAlert.status == status)
+            stmt = stmt.order_by(MonitorAlert.created_at.desc()).limit(limit)
+            return list((await session.execute(stmt)).scalars().all())
+
+    async def count_unread_alerts(self, platform: str = "dy") -> int:
+        async with get_monitor_session() as session:
+            stmt = select(func.count(MonitorAlert.id)).where(
+                MonitorAlert.platform == platform,
+                MonitorAlert.status == "unread",
+            )
+            return int((await session.execute(stmt)).scalar() or 0)
+
+    async def mark_alert_read(self, alert_id: int) -> Optional[MonitorAlert]:
+        now = _now_seconds()
+        async with get_monitor_session() as session:
+            alert = await session.get(MonitorAlert, alert_id)
+            if alert is None:
+                return None
+            alert.status = "read"
+            alert.read_at = now
+            await session.flush()
+            return alert
+
+    async def mark_all_alerts_read(self, platform: str = "dy") -> int:
+        now = _now_seconds()
+        async with get_monitor_session() as session:
+            alerts = list((await session.execute(
+                select(MonitorAlert).where(
+                    MonitorAlert.platform == platform,
+                    MonitorAlert.status == "unread",
+                )
+            )).scalars().all())
+            for alert in alerts:
+                alert.status = "read"
+                alert.read_at = now
+            await session.flush()
+            return len(alerts)
+
+    async def get_last_snapshot(self, platform: str = "dy") -> Optional[DouyinPostSnapshot]:
+        async with get_monitor_session() as session:
+            stmt = (
+                select(DouyinPostSnapshot)
+                .where(DouyinPostSnapshot.platform == platform)
+                .order_by(DouyinPostSnapshot.captured_at.desc())
+                .limit(1)
+            )
+            return (await session.execute(stmt)).scalar_one_or_none()
 
     async def get_job_counts(self, platform: str = "dy") -> dict[str, int]:
         async with get_monitor_session() as session:

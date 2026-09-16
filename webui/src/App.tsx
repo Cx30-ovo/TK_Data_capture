@@ -1,13 +1,15 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Toaster } from 'sonner'
-import { BarChart3, LayoutDashboard, ListChecks, Settings2, TerminalSquare } from 'lucide-react'
+import { Activity, BarChart3, Bell, LayoutDashboard, ListChecks, Settings2, TerminalSquare } from 'lucide-react'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { MainContent } from '@/components/layout/MainContent'
 import { CrawlerConfigPanel } from '@/components/config/CrawlerConfigPanel'
 import { MonitorOverview } from '@/components/monitor/MonitorOverview'
 import { MonitorDashboard } from '@/components/monitor/MonitorDashboard'
 import { MonitorTasks } from '@/components/monitor/MonitorTasks'
+import { MonitorAlerts } from '@/components/monitor/MonitorAlerts'
+import { MonitorHealth } from '@/components/monitor/MonitorHealth'
 import { EnvironmentCheck, isEnvChecked } from '@/components/env/EnvironmentCheck'
 import { LicenseDisclaimer, isLicenseAccepted } from '@/components/license/LicenseDisclaimer'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -68,6 +70,14 @@ function App() {
             <ListChecks className="w-4 h-4" />
             {t('tabs.tasks')}
           </TabsTrigger>
+          <TabsTrigger value="alerts" className="gap-2">
+            <Bell className="w-4 h-4" />
+            {t('tabs.alerts')}
+          </TabsTrigger>
+          <TabsTrigger value="health" className="gap-2">
+            <Activity className="w-4 h-4" />
+            {t('tabs.health')}
+          </TabsTrigger>
           <TabsTrigger value="console" className="gap-2">
             <TerminalSquare className="w-4 h-4" />
             {t('tabs.console')}
@@ -78,6 +88,8 @@ function App() {
         {activeTab === 'config' && <CrawlerConfigPanel />}
         {activeTab === 'analytics' && <MonitorDashboard />}
         {activeTab === 'tasks' && <MonitorTasks />}
+        {activeTab === 'alerts' && <MonitorAlerts />}
+        {activeTab === 'health' && <MonitorHealth />}
         <div className={activeTab === 'console' ? 'flex flex-col min-h-0' : 'hidden'}>
           <MainContent />
         </div>

@@ -12,6 +12,8 @@
     "config": "Configuration",
     "analytics": "Analytics",
     "tasks": "Tasks",
+    "alerts": "Alerts",
+    "health": "Health",
     "console": "Console"
   },
   "sidebar": {

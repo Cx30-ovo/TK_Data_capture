@@ -286,3 +286,33 @@ async def test_failed_job_can_be_manually_retried(isolated_monitor_db):
 
     with pytest.raises(ValueError):
         await monitor_repository.retry_failed_job(jobs[1].id)
+
+
+@pytest.mark.asyncio
+async def test_alerts_are_deduplicated_and_can_be_marked_read(isolated_monitor_db):
+    await db_session.create_tables("sqlite")
+
+    created = await monitor_repository.create_alert(
+        alert_type="test",
+        severity="warning",
+        title="test alert",
+        message="test message",
+        dedupe_key="test-alert-key",
+    )
+    duplicate = await monitor_repository.create_alert(
+        alert_type="test",
+        severity="warning",
+        title="test alert",
+        message="test message",
+        dedupe_key="test-alert-key",
+    )
+
+    assert created is not None
+    assert duplicate is None
+    assert await monitor_repository.count_unread_alerts() == 1
+
+    alerts = await monitor_repository.list_alerts(status="unread")
+    assert len(alerts) == 1
+
+    await monitor_repository.mark_alert_read(created.id)
+    assert await monitor_repository.count_unread_alerts() == 0

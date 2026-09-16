@@ -323,6 +323,23 @@ class CDPBrowserManager:
         self._clear_recorded_port()
         return None
 
+    async def probe_existing_browser(self) -> tuple[bool, Optional[int]]:
+        """Probe the recorded or configured browser port without launching a new browser."""
+        candidates = [self._read_recorded_port(), config.CDP_DEBUG_PORT]
+        checked = set()
+        for port in candidates:
+            if not port or port in checked:
+                continue
+            checked.add(port)
+            if not await self._test_cdp_connection(port, log_warning=False, timeout=0.5):
+                continue
+            try:
+                await self._get_browser_websocket_url(port, log_error=False, timeout=0.75)
+                return True, port
+            except Exception:
+                continue
+        return False, None
+
     async def _launch_browser(self, browser_path: str, headless: bool):
         """
         Launch browser process

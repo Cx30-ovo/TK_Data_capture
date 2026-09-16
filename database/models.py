@@ -395,3 +395,19 @@ class DouyinTopicProfile(Base):
     top_keywords = Column(Text, comment='高频关键词JSON')
     best_posts = Column(Text, comment='高互动作品JSON')
     generated_at = Column(BigInteger, nullable=False, comment='生成时间戳')
+
+
+class MonitorAlert(Base):
+    __tablename__ = 'monitor_alerts'
+
+    id = Column(Integer, primary_key=True, comment='主键ID')
+    platform = Column(String(32), nullable=False, default='dy', index=True, comment='平台标识')
+    alert_type = Column(String(64), nullable=False, index=True, comment='告警类型')
+    severity = Column(String(16), nullable=False, default='warning', index=True, comment='严重级别: info/warning/error')
+    title = Column(Text, nullable=False, comment='告警标题')
+    message = Column(Text, nullable=False, comment='告警内容')
+    status = Column(String(16), nullable=False, default='unread', index=True, comment='状态: unread/read')
+    dedupe_key = Column(String(255), nullable=False, unique=True, comment='告警去重键')
+    created_at = Column(BigInteger, nullable=False, index=True, comment='创建时间戳')
+    read_at = Column(BigInteger, comment='读取时间戳')
+    resolved_at = Column(BigInteger, comment='解决时间戳')

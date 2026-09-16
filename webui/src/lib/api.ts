@@ -224,6 +224,8 @@ export interface MonitorHealth {
     disk_free_bytes?: number
     last_snapshot_at?: number | null
     next_snapshot_at?: number | null
+    last_backup_at?: number | null
+    backup_count?: number
   }
 }
 

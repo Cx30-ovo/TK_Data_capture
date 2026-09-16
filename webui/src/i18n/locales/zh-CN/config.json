@@ -215,12 +215,14 @@
       "account": "监控账号",
       "discovery": "发现任务新鲜度",
       "disk": "磁盘空间"
+      ,"backup": "自动备份"
     },
     "metrics": {
       "unreadAlerts": "未读告警",
       "dbSize": "数据库大小",
       "lastSnapshot": "最近快照",
       "nextSnapshot": "下次快照"
+      ,"lastBackup": "最近备份"
     }
   },
   "export": {

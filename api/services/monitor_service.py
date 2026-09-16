@@ -60,6 +60,26 @@ class DouyinMonitorFetcher:
         self._playwright = None
 
     @staticmethod
+    def _is_browser_disconnect_error(exc: Exception) -> bool:
+        message = str(exc).lower()
+        markers = (
+            "browser has been closed",
+            "target closed",
+            "connection closed",
+            "websocket",
+            "cdp",
+            "connection refused",
+            "econnrefused",
+            "disconnected",
+        )
+        return any(marker in message for marker in markers)
+
+    async def _reconnect(self, reason: Exception) -> None:
+        await crawler_manager.add_log(f"[Monitor] Browser disconnected, reconnecting: {reason}", "warning")
+        await self.__aexit__(type(reason), reason, reason.__traceback__)
+        await self.__aenter__()
+
+    @staticmethod
     def _normalize_post(item: dict, sec_user_id: str) -> dict:
         aweme_id = str(item.get("aweme_id") or "")
         desc = item.get("desc") or ""
@@ -81,6 +101,20 @@ class DouyinMonitorFetcher:
         }
 
     async def fetch_latest_posts(
+        self,
+        sec_user_id: str,
+        known_ids: set[str],
+        max_pages: int = 3,
+    ) -> list[dict]:
+        try:
+            return await self._fetch_latest_posts_once(sec_user_id, known_ids, max_pages)
+        except Exception as exc:
+            if not self._is_browser_disconnect_error(exc):
+                raise
+            await self._reconnect(exc)
+            return await self._fetch_latest_posts_once(sec_user_id, known_ids, max_pages)
+
+    async def _fetch_latest_posts_once(
         self,
         sec_user_id: str,
         known_ids: set[str],
@@ -116,6 +150,15 @@ class DouyinMonitorFetcher:
         return posts
 
     async def fetch_metrics(self, aweme_id: str) -> dict:
+        try:
+            return await self._fetch_metrics_once(aweme_id)
+        except Exception as exc:
+            if not self._is_browser_disconnect_error(exc):
+                raise
+            await self._reconnect(exc)
+            return await self._fetch_metrics_once(aweme_id)
+
+    async def _fetch_metrics_once(self, aweme_id: str) -> dict:
         detail = await self._client.get_video_by_id(aweme_id)
         if not detail:
             raise RuntimeError(f"Failed to get Douyin detail for aweme_id={aweme_id}")
@@ -457,6 +500,21 @@ class MonitorService:
             "detail": "" if disk_status == "ok" else "Low disk space.",
         })
 
+        backup_dir = Path(__file__).parent.parent.parent / "output" / "backups"
+        backups = sorted(backup_dir.glob("sqlite_tables_*.db"), key=lambda path: path.stat().st_mtime, reverse=True) if backup_dir.exists() else []
+        latest_backup_at = int(backups[0].stat().st_mtime) if backups else None
+        backup_status = "ok"
+        if not config.ENABLE_AUTO_BACKUP or not latest_backup_at:
+            backup_status = "warning"
+        elif now - latest_backup_at > max(1, int(config.BACKUP_INTERVAL_HOURS)) * 3600 * 2:
+            backup_status = "warning"
+        checks.append({
+            "key": "backup",
+            "status": backup_status,
+            "value": str(len(backups)),
+            "detail": "" if backup_status == "ok" else "No recent SQLite backup found.",
+        })
+
         status_rank = {"ok": 0, "warning": 1, "error": 2}
         overall_status = max((check["status"] for check in checks), key=lambda value: status_rank[value])
         return {
@@ -470,6 +528,8 @@ class MonitorService:
                 "disk_free_bytes": disk.free,
                 "last_snapshot_at": last_snapshot.captured_at if last_snapshot else None,
                 "next_snapshot_at": next_job.due_at if next_job else None,
+                "last_backup_at": latest_backup_at,
+                "backup_count": len(backups),
             },
         }
 

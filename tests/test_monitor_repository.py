@@ -1,10 +1,17 @@
+import os
+import sqlite3
+import time
+
 import pytest
+
+import config
 
 from database import db_session
 from database.monitor_repository import monitor_repository
 from api.services.monitor_service import DouyinMonitorFetcher, MonitorService
 from api.services.report_service import ReportService
 from api.services.analytics_service import AnalyticsService
+from api.services.maintenance_service import MaintenanceService
 from media_platform.douyin.core import DouYinCrawler
 
 
@@ -395,3 +402,36 @@ async def test_analytics_stage_delta_rates_and_leaderboard(isolated_monitor_db):
     assert data["leaderboard"]["likes"][0]["aweme_id"] == post.aweme_id
     assert data["heatmap"]
     assert any(item["aweme_id"] == post.aweme_id for item in data["engagement_rates"])
+
+
+@pytest.mark.asyncio
+async def test_maintenance_backup_and_log_cleanup(tmp_path, monkeypatch):
+    db_path = tmp_path / "source.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute("create table sample (id integer primary key, value text)")
+        connection.execute("insert into sample (value) values ('ok')")
+        connection.commit()
+
+    monkeypatch.setattr(config, "ENABLE_AUTO_BACKUP", True)
+    monkeypatch.setattr(config, "BACKUP_INTERVAL_HOURS", 1)
+    monkeypatch.setattr(config, "BACKUP_RETENTION_DAYS", 14)
+    monkeypatch.setattr(config, "LOG_RETENTION_DAYS", 1)
+
+    service = MaintenanceService()
+    service.output_root = tmp_path / "output"
+    service.backup_dir = service.output_root / "backups"
+    service.db_path = db_path
+
+    first = await service.run_once()
+    assert first["backup"]
+    backup_path = service.backup_dir / f"sqlite_tables_{__import__('datetime').datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+    assert list(service.backup_dir.glob("sqlite_tables_*.db"))
+
+    old_log = service.output_root / "crawler.log.1"
+    old_log.write_text("old", encoding="utf-8")
+    old_time = time.time() - 3 * 24 * 3600
+    os.utime(old_log, (old_time, old_time))
+
+    second = await service.run_once()
+    assert second["removed_logs"] == 1
+    assert not old_log.exists()

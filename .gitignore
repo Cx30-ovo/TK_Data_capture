@@ -188,3 +188,4 @@ database/*.db
 # runtime output
 output/*.log
 output/*.log.*
+output/backups/*

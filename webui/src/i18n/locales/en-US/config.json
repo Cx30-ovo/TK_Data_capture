@@ -215,12 +215,14 @@
       "account": "Monitored account",
       "discovery": "Discovery freshness",
       "disk": "Disk space"
+      ,"backup": "Automatic backup"
     },
     "metrics": {
       "unreadAlerts": "Unread alerts",
       "dbSize": "Database size",
       "lastSnapshot": "Last snapshot",
       "nextSnapshot": "Next snapshot"
+      ,"lastBackup": "Last backup"
     }
   },
   "export": {

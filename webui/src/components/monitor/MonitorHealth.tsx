@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
-import { Activity, AlertTriangle, CheckCircle2, Database, HardDrive, Radar, Server, Wifi } from 'lucide-react'
+import { Activity, AlertTriangle, Archive, CheckCircle2, Database, HardDrive, Radar, Server, Wifi } from 'lucide-react'
 import { monitorApi } from '@/lib/api'
 
 
@@ -25,6 +25,7 @@ const CHECK_ICONS: Record<string, typeof Activity> = {
   account: Server,
   discovery: Activity,
   disk: HardDrive,
+  backup: Archive,
 }
 
 
@@ -91,6 +92,10 @@ export function MonitorHealth() {
             <div className="rounded-md border border-cyber-border-subtle bg-cyber-bg-tertiary/20 p-3">
               <div className="text-[10px] font-mono text-cyber-text-muted">{t('health.metrics.nextSnapshot')}</div>
               <div className="mt-1 text-xs font-mono text-cyber-text-primary">{formatDateTime(data?.metrics.next_snapshot_at)}</div>
+            </div>
+            <div className="rounded-md border border-cyber-border-subtle bg-cyber-bg-tertiary/20 p-3">
+              <div className="text-[10px] font-mono text-cyber-text-muted">{t('health.metrics.lastBackup')}</div>
+              <div className="mt-1 text-xs font-mono text-cyber-text-primary">{formatDateTime(data?.metrics.last_backup_at)}</div>
             </div>
           </div>
         </div>

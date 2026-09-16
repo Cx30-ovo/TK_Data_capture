@@ -36,6 +36,7 @@ from fastapi.responses import FileResponse
 from .routers import crawler_router, data_router, monitor_router, scheduler_router, websocket_router
 from .services.monitor_service import monitor_service
 from .services import scheduler_service
+from .services.maintenance_service import maintenance_service
 from database import db
 
 # Project root directory (used for running subprocesses like uv run main.py)
@@ -47,9 +48,11 @@ async def lifespan(_: FastAPI):
     await db.init_db("sqlite")
     await scheduler_service.start()
     await monitor_service.start()
+    await maintenance_service.start()
     try:
         yield
     finally:
+        await maintenance_service.stop()
         await monitor_service.stop()
         await scheduler_service.stop()
 

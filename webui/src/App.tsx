@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Toaster } from 'sonner'
-import { Activity, BarChart3, Bell, Download, LayoutDashboard, ListChecks, Settings2, TerminalSquare } from 'lucide-react'
+import { Activity, BarChart3, Download, LayoutDashboard, ListChecks, Settings2, TerminalSquare } from 'lucide-react'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { MainContent } from '@/components/layout/MainContent'
 import { CrawlerConfigPanel } from '@/components/config/CrawlerConfigPanel'
@@ -72,13 +72,9 @@ function App() {
             <ListChecks className="w-4 h-4" />
             {t('tabs.tasks')}
           </TabsTrigger>
-          <TabsTrigger value="alerts" className="gap-2">
-            <Bell className="w-4 h-4" />
-            {t('tabs.alerts')}
-          </TabsTrigger>
-          <TabsTrigger value="health" className="gap-2">
+          <TabsTrigger value="ops" className="gap-2">
             <Activity className="w-4 h-4" />
-            {t('tabs.health')}
+            {t('tabs.alertsHealth')}
           </TabsTrigger>
           <TabsTrigger value="export" className="gap-2">
             <Download className="w-4 h-4" />
@@ -99,8 +95,12 @@ function App() {
           </div>
         )}
         {activeTab === 'tasks' && <MonitorTasks />}
-        {activeTab === 'alerts' && <MonitorAlerts />}
-        {activeTab === 'health' && <MonitorHealth />}
+        {activeTab === 'ops' && (
+          <div className="space-y-4">
+            <MonitorHealth />
+            <MonitorAlerts />
+          </div>
+        )}
         {activeTab === 'export' && <MonitorExport />}
         <div className={activeTab === 'console' ? 'flex flex-col min-h-0' : 'hidden'}>
           <MainContent />

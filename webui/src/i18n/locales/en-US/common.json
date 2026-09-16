@@ -12,8 +12,7 @@
     "config": "Configuration",
     "analytics": "Analytics",
     "tasks": "Tasks",
-    "alerts": "Alerts",
-    "health": "Health",
+    "alertsHealth": "Alerts & Health",
     "export": "Export & Reports",
     "console": "Console"
   },

@@ -244,5 +244,34 @@
       "weekly": "生成周报",
       "monthly": "生成月报"
     }
+  },
+  "analytics": {
+    "stageDelta": "阶段增量",
+    "stageDeltaHint": "相对首次发现快照的平均增量",
+    "stage": "阶段",
+    "samples": "样本数",
+    "avgLikes": "平均点赞",
+    "avgCollections": "平均收藏",
+    "avgComments": "平均评论",
+    "avgShares": "平均分享",
+    "growthSpeed": "每小时互动增长速度",
+    "engagementRates": "点赞率 / 收藏率 / 评论率",
+    "post": "作品",
+    "likeRate": "点赞率",
+    "collectRate": "收藏率",
+    "commentRate": "评论率",
+    "shareRate": "分享率",
+    "leaderboard": "作品排行榜",
+    "rank": {
+      "likes": "点赞榜",
+      "collections": "收藏榜",
+      "comments": "评论榜",
+      "shares": "分享榜",
+      "overall": "综合榜"
+    },
+    "publishHeatmap": "发布时段热力图",
+    "anomalies": "异常爆发增长",
+    "noData": "暂无分析数据",
+    "noAnomalies": "暂无异常增长"
   }
 }

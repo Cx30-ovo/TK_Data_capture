@@ -7,6 +7,7 @@ import { MainContent } from '@/components/layout/MainContent'
 import { CrawlerConfigPanel } from '@/components/config/CrawlerConfigPanel'
 import { MonitorOverview } from '@/components/monitor/MonitorOverview'
 import { MonitorDashboard } from '@/components/monitor/MonitorDashboard'
+import { MonitorAnalytics } from '@/components/monitor/MonitorAnalytics'
 import { MonitorTasks } from '@/components/monitor/MonitorTasks'
 import { MonitorAlerts } from '@/components/monitor/MonitorAlerts'
 import { MonitorHealth } from '@/components/monitor/MonitorHealth'
@@ -91,7 +92,12 @@ function App() {
 
         {activeTab === 'overview' && <MonitorOverview />}
         {activeTab === 'config' && <CrawlerConfigPanel />}
-        {activeTab === 'analytics' && <MonitorDashboard />}
+        {activeTab === 'analytics' && (
+          <div className="space-y-4">
+            <MonitorDashboard />
+            <MonitorAnalytics />
+          </div>
+        )}
         {activeTab === 'tasks' && <MonitorTasks />}
         {activeTab === 'alerts' && <MonitorAlerts />}
         {activeTab === 'health' && <MonitorHealth />}

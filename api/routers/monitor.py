@@ -11,6 +11,7 @@ from database.monitor_repository import monitor_repository
 from ..schemas import MonitorAccountConfigRequest
 from ..services.monitor_service import monitor_service
 from ..services.report_service import report_service
+from ..services.analytics_service import analytics_service
 
 router = APIRouter(prefix="/monitor", tags=["monitor"])
 
@@ -106,6 +107,11 @@ async def mark_all_monitor_alerts_read():
 @router.get("/health")
 async def get_monitor_health():
     return await monitor_service.get_health_data()
+
+
+@router.get("/analytics")
+async def get_monitor_analytics(limit: int = 100):
+    return await analytics_service.get_data(limit=limit)
 
 
 @router.get("/export/posts")

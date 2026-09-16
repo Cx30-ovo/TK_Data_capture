@@ -240,6 +240,67 @@ export interface GeneratedMonitorReport {
   download_url: string
 }
 
+export interface AnalyticsStageDelta {
+  stage: string
+  sample_count: number
+  liked_count: number
+  collected_count: number
+  comment_count: number
+  share_count: number
+}
+
+export interface AnalyticsGrowthRate {
+  aweme_id: string
+  title: string
+  metric: 'liked_count' | 'collected_count' | 'comment_count' | 'share_count'
+  from_stage: string
+  to_stage: string
+  delta: number
+  hours: number
+  per_hour: number
+  baseline_per_hour?: number
+  score?: number
+}
+
+export interface AnalyticsEngagementRate {
+  aweme_id: string
+  title: string
+  stage: string
+  interaction_total: number
+  like_rate: number
+  collect_rate: number
+  comment_rate: number
+  share_rate: number
+}
+
+export interface AnalyticsLeaderboardItem {
+  aweme_id: string
+  title: string
+  stage: string
+  liked_count: number
+  collected_count: number
+  comment_count: number
+  share_count: number
+  score: number
+}
+
+export interface AnalyticsHeatmapCell {
+  weekday: number
+  hour: number
+  post_count: number
+  avg_likes: number
+}
+
+export interface MonitorAnalytics {
+  generated_at: string
+  stage_deltas: AnalyticsStageDelta[]
+  growth_rates: AnalyticsGrowthRate[]
+  engagement_rates: AnalyticsEngagementRate[]
+  leaderboard: Record<string, AnalyticsLeaderboardItem[]>
+  heatmap: AnalyticsHeatmapCell[]
+  anomalies: AnalyticsGrowthRate[]
+}
+
 // API functions
 export const crawlerApi = {
   start: (config: CrawlerConfig) => api.post('/crawler/start', config),
@@ -310,6 +371,7 @@ export const monitorApi = {
     `/api/monitor/export/post/${encodeURIComponent(awemeId)}?format=${format}`,
   reportDownloadUrl: (name: string) => `/api/monitor/reports/download?name=${encodeURIComponent(name)}`,
   deleteReport: (name: string) => api.delete('/monitor/reports', { params: { name } }),
+  getAnalytics: (limit = 100) => api.get<MonitorAnalytics>('/monitor/analytics', { params: { limit } }),
 }
 
 export default api

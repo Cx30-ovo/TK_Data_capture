@@ -4,6 +4,7 @@ from database import db_session
 from database.monitor_repository import monitor_repository
 from api.services.monitor_service import DouyinMonitorFetcher, MonitorService
 from api.services.report_service import ReportService
+from api.services.analytics_service import AnalyticsService
 from media_platform.douyin.core import DouYinCrawler
 
 
@@ -354,3 +355,43 @@ async def test_monitor_exports_and_daily_report(isolated_monitor_db, tmp_path):
     assert service.delete_report(report["filename"]) is True
     assert service.delete_report(report["filename"]) is False
     assert service.list_reports() == []
+
+
+@pytest.mark.asyncio
+async def test_analytics_stage_delta_rates_and_leaderboard(isolated_monitor_db):
+    await db_session.create_tables("sqlite")
+    await monitor_repository.upsert_monitored_account(sec_user_id="analytics_user")
+    post, _ = await monitor_repository.upsert_post(
+        aweme_id="analytics_post",
+        sec_user_id="analytics_user",
+        title="analytics title",
+        desc="analytics body",
+        create_time=BASE_TIME,
+        canonical_url="https://www.douyin.com/video/analytics_post",
+    )
+    await monitor_repository.record_first_seen_snapshot(
+        aweme_id=post.aweme_id,
+        liked_count=10,
+        collected_count=1,
+        comment_count=2,
+        share_count=0,
+        captured_at=BASE_TIME + 60,
+    )
+    jobs = await monitor_repository.create_snapshot_jobs(post)
+    first_hour_job = next(job for job in jobs if job.stage == "1h")
+    await monitor_repository.record_snapshot(
+        job_id=first_hour_job.id,
+        liked_count=110,
+        collected_count=11,
+        comment_count=12,
+        share_count=8,
+        captured_at=BASE_TIME + 3660,
+    )
+
+    data = await AnalyticsService().get_data()
+    stage_delta = next(item for item in data["stage_deltas"] if item["stage"] == "1h")
+    assert stage_delta["liked_count"] == 100
+    assert stage_delta["collected_count"] == 10
+    assert data["leaderboard"]["likes"][0]["aweme_id"] == post.aweme_id
+    assert data["heatmap"]
+    assert any(item["aweme_id"] == post.aweme_id for item in data["engagement_rates"])

@@ -244,5 +244,34 @@
       "weekly": "Generate weekly report",
       "monthly": "Generate monthly report"
     }
+  },
+  "analytics": {
+    "stageDelta": "STAGE DELTAS",
+    "stageDeltaHint": "Average growth from first_seen",
+    "stage": "Stage",
+    "samples": "Samples",
+    "avgLikes": "Avg likes",
+    "avgCollections": "Avg collections",
+    "avgComments": "Avg comments",
+    "avgShares": "Avg shares",
+    "growthSpeed": "HOURLY GROWTH SPEED",
+    "engagementRates": "LIKE / COLLECT / COMMENT RATES",
+    "post": "Post",
+    "likeRate": "Like rate",
+    "collectRate": "Collect rate",
+    "commentRate": "Comment rate",
+    "shareRate": "Share rate",
+    "leaderboard": "POST LEADERBOARD",
+    "rank": {
+      "likes": "Likes",
+      "collections": "Collections",
+      "comments": "Comments",
+      "shares": "Shares",
+      "overall": "Overall"
+    },
+    "publishHeatmap": "PUBLISH TIME HEATMAP",
+    "anomalies": "ANOMALOUS GROWTH",
+    "noData": "No analytics data",
+    "noAnomalies": "No anomalous growth detected"
   }
 }

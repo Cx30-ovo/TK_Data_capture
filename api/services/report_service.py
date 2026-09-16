@@ -2,7 +2,9 @@
 """CSV, Excel and periodic report generation for the monitor module."""
 
 import csv
+import hashlib
 import json
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Iterable, Optional
@@ -23,6 +25,10 @@ class ReportService:
         self.report_dir.mkdir(parents=True, exist_ok=True)
 
     @staticmethod
+    def _account_suffix(sec_user_id: Optional[str]) -> str:
+        return hashlib.sha1(sec_user_id.encode("utf-8")).hexdigest()[:8] if sec_user_id else "all"
+
+    @staticmethod
     def _write_csv(path: Path, headers: list[str], rows: Iterable[list]) -> None:
         with path.open("w", newline="", encoding="utf-8-sig") as handle:
             writer = csv.writer(handle)
@@ -39,10 +45,15 @@ class ReportService:
             sheet.append(row)
         workbook.save(path)
 
-    async def export_posts(self, file_format: str = "csv", limit: int = 10000) -> Path:
+    async def export_posts(
+        self,
+        file_format: str = "csv",
+        limit: int = 10000,
+        sec_user_id: Optional[str] = None,
+    ) -> Path:
         self._ensure_dirs()
-        posts = await monitor_repository.list_posts(limit=limit)
-        snapshots = await monitor_repository.list_snapshots(limit=100000)
+        posts = await monitor_repository.list_posts(limit=limit, sec_user_id=sec_user_id)
+        snapshots = await monitor_repository.list_snapshots(limit=100000, sec_user_id=sec_user_id)
 
         latest_snapshots: dict[str, object] = {}
         snapshot_counts: dict[str, int] = {}
@@ -72,17 +83,27 @@ class ReportService:
             ])
 
         suffix = "xlsx" if file_format == "xlsx" else "csv"
-        path = self.export_dir / f"douyin_posts_{datetime.now().strftime('%Y-%m-%d')}.{suffix}"
+        path = self.export_dir / f"douyin_posts_{self._account_suffix(sec_user_id)}_{datetime.now().strftime('%Y-%m-%d')}.{suffix}"
         if suffix == "xlsx":
             self._write_xlsx(path, headers, rows, "作品列表")
         else:
             self._write_csv(path, headers, rows)
         return path
 
-    async def export_post_snapshots(self, aweme_id: str, file_format: str = "csv") -> Path:
-        return await self.export_snapshots([aweme_id], file_format=file_format)
+    async def export_post_snapshots(
+        self,
+        aweme_id: str,
+        file_format: str = "csv",
+        sec_user_id: Optional[str] = None,
+    ) -> Path:
+        return await self.export_snapshots([aweme_id], file_format=file_format, sec_user_id=sec_user_id)
 
-    async def export_snapshots(self, aweme_ids: list[str], file_format: str = "csv") -> Path:
+    async def export_snapshots(
+        self,
+        aweme_ids: list[str],
+        file_format: str = "csv",
+        sec_user_id: Optional[str] = None,
+    ) -> Path:
         self._ensure_dirs()
         unique_ids = list(dict.fromkeys(item.strip() for item in aweme_ids if item.strip()))
         if not unique_ids:
@@ -97,7 +118,9 @@ class ReportService:
             post = await monitor_repository.get_post(aweme_id)
             if post is None:
                 continue
-            snapshots = await monitor_repository.list_snapshots(aweme_id=aweme_id, limit=10000)
+            if sec_user_id and post.sec_user_id != sec_user_id:
+                continue
+            snapshots = await monitor_repository.list_snapshots(aweme_id=aweme_id, limit=10000, sec_user_id=sec_user_id)
             for snapshot in sorted(snapshots, key=lambda item: item.captured_at):
                 rows.append([
                     post.aweme_id,
@@ -117,7 +140,7 @@ class ReportService:
 
         suffix = "xlsx" if file_format == "xlsx" else "csv"
         suffix_name = unique_ids[0] if len(unique_ids) == 1 else f"selected_{len(unique_ids)}"
-        path = self.export_dir / f"douyin_snapshots_{suffix_name}_{datetime.now().strftime('%Y-%m-%d')}.{suffix}"
+        path = self.export_dir / f"douyin_snapshots_{self._account_suffix(sec_user_id)}_{suffix_name}_{datetime.now().strftime('%Y-%m-%d')}.{suffix}"
         if suffix == "xlsx":
             self._write_xlsx(path, headers, rows, "快照历史")
         else:
@@ -136,14 +159,14 @@ class ReportService:
             return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         raise ValueError("period must be daily, weekly or monthly")
 
-    async def generate_report(self, period: str = "daily") -> dict:
+    async def generate_report(self, period: str = "daily", sec_user_id: Optional[str] = None) -> dict:
         self._ensure_dirs()
         start = self._period_start(period)
         start_ts = int(start.timestamp())
         now = datetime.now()
-        posts = await monitor_repository.list_posts(limit=10000)
-        snapshots = await monitor_repository.list_snapshots(limit=100000)
-        jobs = await monitor_repository.list_jobs(limit=100000)
+        posts = await monitor_repository.list_posts(limit=10000, sec_user_id=sec_user_id)
+        snapshots = await monitor_repository.list_snapshots(limit=100000, sec_user_id=sec_user_id)
+        jobs = await monitor_repository.list_jobs(limit=100000, sec_user_id=sec_user_id)
 
         new_posts = [post for post in posts if post.first_seen_at >= start_ts]
         period_snapshots = [snapshot for snapshot in snapshots if snapshot.captured_at >= start_ts]
@@ -234,12 +257,13 @@ class ReportService:
         ] or ["| - | - | - | - | 无 |"])
 
         content = "\n".join(lines) + "\n"
-        filename = f"douyin_{period}_{now.strftime('%Y-%m-%d_%H%M%S')}.md"
+        filename = f"douyin_{period}_{self._account_suffix(sec_user_id)}_{now.strftime('%Y-%m-%d_%H%M%S')}.md"
         path = self.report_dir / filename
         path.write_text(content, encoding="utf-8")
         json_path = path.with_suffix(".json")
         json_path.write_text(json.dumps({
             "period": period,
+            "sec_user_id": sec_user_id,
             "generated_at": now.isoformat(timespec="seconds"),
             "new_posts": len(new_posts),
             "new_snapshots": len(period_snapshots),
@@ -247,10 +271,14 @@ class ReportService:
         }, ensure_ascii=False, indent=2), encoding="utf-8")
         return {"filename": filename, "content": content, "path": str(path)}
 
-    def list_reports(self) -> list[dict]:
+    def list_reports(self, sec_user_id: Optional[str] = None) -> list[dict]:
         self._ensure_dirs()
+        account_suffix = self._account_suffix(sec_user_id) if sec_user_id else None
         reports = []
         for path in self.report_dir.glob("*.md"):
+            is_legacy_report = bool(re.match(r"^douyin_(daily|weekly|monthly)_\d{4}-", path.name))
+            if account_suffix and f"_{account_suffix}_" not in path.name and not is_legacy_report:
+                continue
             stat = path.stat()
             reports.append({
                 "name": path.name,

@@ -25,6 +25,54 @@
       "description": "增量发现作品并采集 1h/6h/24h/72h/7d 快照"
     }
   },
+  "configCenter": {
+    "title": "采集配置",
+    "unsaved": "有未保存修改",
+    "saved": "配置已保存",
+    "saveAll": "保存全部配置",
+    "saveHint": "保存采集参数、监控账号和定时策略",
+    "configSaved": "采集参数已保存",
+    "scheduleDisabled": "定时采集已关闭",
+    "dangerFailed": "危险操作失败",
+    "parameter": "参数",
+    "current": "当前值",
+    "recommended": "推荐值",
+    "on": "开启",
+    "off": "关闭",
+    "maintenanceReadOnly": "系统维护参数来自后端基础配置，本页仅展示当前值和推荐值；修改需要编辑 config/base_config.py 并重启服务。",
+    "sections": {
+      "monitorAccount": "监控账号",
+      "monitorAccountHint": "设置持续监控的抖音账号和发现间隔",
+      "collectionRange": "采集范围",
+      "collectionRangeHint": "配置作品来源、时间范围和数量边界",
+      "runtimeStrategy": "运行策略",
+      "runtimeStrategyHint": "登录、保存格式、评论、浏览器和定时策略",
+      "systemMaintenance": "系统维护",
+      "systemMaintenanceHint": "自动备份、日志保留和浏览器启动参数",
+      "dangerZone": "危险操作",
+      "dangerZoneHint": "这些操作会立即影响正在运行的任务"
+    },
+    "values": {
+      "monitorCurrent": "当前监控配置",
+      "monitorRecommended": "每 30 分钟发现一次",
+      "unlimited": "留空，不限制"
+    },
+    "maintenance": {
+      "autoBackup": "自动备份",
+      "backupInterval": "备份间隔",
+      "backupRetention": "备份保留",
+      "logRetention": "日志保留",
+      "startBrowser": "服务启动时预热浏览器",
+      "cdpPort": "CDP 调试端口"
+    },
+    "danger": {
+      "stopCrawler": "停止当前采集任务",
+      "stopHint": "正在运行的爬虫会收到停止信号，未完成任务不会自动恢复。",
+      "disableSchedule": "关闭定时采集",
+      "disableScheduleHint": "关闭后不会按照设定时间自动启动任务。",
+      "confirmAgain": "再次点击确认"
+    }
+  },
   "field": {
     "platform": "平台",
     "platformPlaceholder": "选择平台",
@@ -94,6 +142,19 @@
     "lastResult": "上次结果"
   },
   "monitor": {
+    "accountList": "监控账号列表（{{count}}）",
+    "allAccounts": "全部账号",
+    "addAccount": "新增账号",
+    "editingAccount": "正在编辑：{{name}}",
+    "creatingAccount": "正在新增账号",
+    "selectAccount": "选择账号后可编辑",
+    "noAccounts": "还没有监控账号",
+    "displayName": "账号显示名称",
+    "displayNamePlaceholder": "例如：厦门日报抖音号",
+    "delete": "删除账号",
+    "confirmDelete": "确定删除账号 {{name}} 吗？已采集数据会保留。",
+    "deleted": "监控账号已删除",
+    "deleteFailed": "账号删除失败",
     "account": "监控账号 URL 或 sec_user_id",
     "interval": "发现间隔",
     "enable": "启用监控",
@@ -116,6 +177,21 @@
   "monitorDashboard": {
     "title": "监控数据可视化",
     "description": "互动增长趋势、任务状态与快照明细",
+    "summaryTitle": "指标摘要",
+    "summaryHint": "当前筛选范围和选中作品概览",
+    "dataScope": "数据范围",
+    "lastSnapshot": "最近快照",
+    "samplingQuality": "采样质量",
+    "currentKeyMetrics": "当前作品关键指标",
+    "stageCoverage": "阶段覆盖",
+    "problemJobs": "异常任务",
+    "selectedSummary": "当前作品摘要",
+    "currentStage": "最新阶段",
+    "latestAge": "最新年龄",
+    "accountAverage": "账号平均值",
+    "compareAverage": "对比账号平均",
+    "trendTitle": "作品互动增长趋势",
+    "trendHint": "真实增长线与错过、失败、数据不足标记分开显示",
     "totalPosts": "作品总数",
     "snapshots": "实际快照",
     "pending": "待执行",
@@ -131,6 +207,17 @@
     "clearSelection": "清除选择",
     "totalSnapshots": "共 {{count}} 条实际快照",
     "noSnapshots": "暂无可视化快照",
+    "selectPostHint": "请选择具体作品查看成长曲线",
+    "expandTable": "展开数据明细",
+    "markerState": "数据状态",
+    "marker": {
+      "actual": "真实快照",
+      "missed": "快照错过",
+      "failed": "任务失败",
+      "pending": "待执行",
+      "insufficient": "数据不足",
+      "future": "尚未到期"
+    },
     "metricLikes": "点赞",
     "metricCollections": "收藏",
     "metricComments": "评论",
@@ -143,9 +230,205 @@
     "comments": "评论",
     "shares": "分享"
   },
+  "dataCenter": {
+    "title": "抖音监控数据",
+    "description": "按作品、阶段和采样状态查看互动趋势与数据质量",
+    "redesignedDescription": "作品效果、主题标签与生命周期快照的综合分析",
+    "modules": {
+      "label": "监控数据模块",
+      "overview": "作品效果总览",
+      "topics": "主题 / 标签分析",
+      "lifecycle": "生命周期分析"
+    },
+    "lastUpdated": "最后更新",
+    "refresh": "刷新数据",
+    "filters": "监控数据筛选",
+    "loading": "正在加载监控数据",
+    "loadFailed": "监控数据加载失败",
+    "reset": "重置筛选",
+    "resultCount": "当前筛选结果：{{count}} 篇作品",
+    "allPosts": "全部作品",
+    "allStages": "全部阶段",
+    "allStatuses": "全部状态",
+    "timeRangeLabel": "时间范围",
+    "postList": "作品列表",
+    "leadKicker": "当日主推作品",
+    "manualSelection": "用户手动选择",
+    "recommendedByScore": "最近 7 天综合得分最高",
+    "fallbackLatest": "最近 7 天无作品，回退为最新作品",
+    "compositeScore": "综合得分",
+    "noExcerpt": "暂无正文摘要",
+    "noLead": "当前筛选范围没有作品",
+    "hotTitle": "互动热点",
+    "hotHint": "最近 7 天 · 按最新点赞数",
+    "noHotPosts": "暂无热点作品",
+    "categories": "数据分类",
+    "trendContext": "采样状态",
+    "currentSnapshot": "当前快照摘要",
+    "samplingStatus": "采样状态",
+    "postSearchPlaceholder": "搜索作品标题或作品 ID",
+    "noPosts": "没有匹配的作品",
+    "activeFilters": "已启用筛选",
+    "timeRange": {
+      "24h": "近 24 小时",
+      "7d": "近 7 天",
+      "30d": "近 30 天",
+      "all": "全部时间"
+    },
+    "status": {
+      "all": "全部状态",
+      "normal": "正常",
+      "insufficient": "数据不足",
+      "missed": "存在错过",
+      "abnormal": "存在异常"
+    }
+  },
+  "performance": {
+    "posts": "发布作品数",
+    "totalInteraction": "总互动量",
+    "averageInteraction": "平均互动",
+    "medianInteraction": "中位互动",
+    "burstRate": "爆款率",
+    "zeroRate": "零互动占比",
+    "firstSeenDelay": "首次发现延迟",
+    "structure": "点赞 / 收藏 / 评论 / 分享结构",
+    "ranking": "TOP10 作品榜",
+    "rankingHint": "按最新累计互动量排序",
+    "meanMedianAlert": "均值与中位数差异巨大，流量高度集中于极少数爆款",
+    "meanMedianRatio": "均值 / 中位数",
+    "topTenConcentration": "TOP10 互动集中度",
+    "concentrationHint": "当均值显著高于中位数时，说明少数高互动作品拉高了整体平均值。",
+    "rankingMetrics": {
+      "liked_count": "按点赞",
+      "share_count": "按分享",
+      "comment_count": "按评论"
+    },
+    "quadrantTitle": "作品四象限",
+    "quadrantHint": "按点赞和评论中位数划分",
+    "extremeBreakout": "极端爆款",
+    "topRightExtreme": "右上极端点：高赞高评",
+    "bottomRightExtreme": "右下极端点：高赞低评",
+    "medianLikesLine": "中位点赞 {{value}}",
+    "medianCommentsLine": "中位评论 {{value}}",
+    "themeLegend": "主题图例",
+    "likes": "点赞",
+    "comments": "评论",
+    "quadrants": {
+      "highHigh": "高赞高评",
+      "highLow": "高赞低评",
+      "lowHigh": "低赞高评",
+      "lowLow": "低赞低评"
+    }
+  },
+  "accountComparison": {
+    "title": "账号表现对比",
+    "hint": "按发布量、总互动、平均互动、中位互动和爆款率对比全部账号"
+  },
+  "topics": {
+    "comparison": "主题效果对比",
+    "comparisonHint": "按主题统计发布量与互动表现",
+    "theme": "主题",
+    "volume": "发布量",
+    "total": "总互动",
+    "average": "平均互动",
+    "median": "中位互动",
+    "burstRate": "爆款率",
+    "bubbleTitle": "主题-互动气泡图",
+    "bubbleScaleHint": "Y 轴为平均互动的对数刻度",
+    "tags": "标签 TOP 榜",
+    "tagContribution": "标签贡献关系",
+    "tagModes": {
+      "theme": "主题标签",
+      "generic": "通用标签"
+    },
+    "singleBurst": "单条爆款",
+    "noTags": "暂无标签",
+    "cooccurrence": "标签共现关系",
+    "networkTitle": "标签网络图",
+    "networkHint": "节点大小表示出现频次，连线粗细表示共现次数",
+    "noCooccurrence": "暂无共现标签",
+    "keywordCloud": "标题关键词",
+    "excludedEntities": "已排除编辑署名和人名",
+    "noKeywords": "暂无关键词",
+    "themes": {
+      "xiamenMetro": "厦门地铁",
+      "minchao": "闽超 / 福厦大战",
+      "investmentFair": "投洽会 / 九八",
+      "taiwan": "涉台议题",
+      "localLife": "厦门本地民生",
+      "culture": "文化演出 / 歌剧节",
+      "international": "国际时事",
+      "education": "教育 / 军训",
+      "health": "医疗健康",
+      "other": "其他"
+    }
+  },
+  "lifecycle": {
+    "multiCurve": "多作品生命周期曲线",
+    "topPosts": "互动量 TOP5",
+    "fixedSampleHint": "定基平均样本：{{count}} 篇四阶段齐全作品",
+    "fixedSample": "仅统计同时具有 1h、6h、24h、72h 快照的作品",
+    "noFixedSample": "目前没有同时具备四个阶段快照的作品，无法计算可靠的定基平均值。",
+    "noCurveData": "当前节奏类型没有可绘制的作品",
+    "fullAverage": "全盘平均生命周期",
+    "groups": {
+      "top": "互动量 TOP5",
+      "earlyBurst": "瞬时脉冲型 TOP5",
+      "quickDecline": "快速衰退型 TOP5",
+      "longTail": "长尾发酵型 TOP5",
+      "sustained": "持续型 TOP5"
+    },
+    "noData": "无数据",
+    "incrementContribution": "增量贡献",
+    "classificationHint": "分类以各阶段新增互动为依据：1h 增量最高为瞬时脉冲型，6h 增量最高为快速衰退型，24h 增量最高为长尾发酵型，72h 仍在显著增长为持续型。",
+    "detailTable": "生命周期明细",
+    "focusDetail": "重点生命周期明细",
+    "allPosts": "全部作品",
+    "completeness": "快照完整度",
+    "completenessValues": {
+      "complete": "四阶段完整",
+      "missing72": "缺少 72h",
+      "incomplete": "其他阶段缺失"
+    },
+    "filters": {
+      "type": {
+        "all": "全部节奏",
+        "earlyBurst": "瞬时脉冲型",
+        "quickDecline": "快速衰退型",
+        "longTail": "长尾发酵型",
+        "sustained": "持续型"
+      },
+      "allThemes": "全部主题",
+      "completeness": {
+        "all": "全部完整度",
+        "complete": "四阶段完整",
+        "missing72": "缺少 72h",
+        "incomplete": "存在缺失"
+      }
+    },
+    "noFilteredData": "没有符合筛选条件的作品",
+    "detailResult": "共 {{count}} 篇作品",
+    "closeDetail": "关闭快照详情",
+    "publishDate": "发布日期",
+    "theme": "主题",
+    "averageCurve": "平均互动曲线",
+    "increments": "阶段增量",
+    "rhythm": "爆款节奏分类",
+    "type": "类型",
+    "burst": "1h 爆发力",
+    "tail": "24h 长尾",
+    "persistence": "72h 持续",
+    "types": {
+      "earlyBurst": "早爆型",
+      "sustained": "持续型",
+      "longTail": "长尾型",
+      "quickDecline": "快速衰退型"
+    }
+  },
   "overview": {
     "title": "运行概览",
     "description": "下次执行、今日新增和异常任务",
+    "optimizedDescription": "今日动态、最近事件与待处理问题",
     "updatedAt": "更新时间",
     "nextDiscovery": "下次发现",
     "nextSnapshot": "下次快照",
@@ -153,6 +436,33 @@
     "todayNewPosts": "今日新增作品",
     "todayUnit": "篇作品",
     "abnormalJobs": "异常任务",
+    "failedMissed": "失败 {{failed}} · 错过 {{missed}}",
+    "timelineTitle": "最近事件",
+    "timelineDescription": "新作品、快照完成、任务异常和告警",
+    "issuesTitle": "需要处理",
+    "issuesDescription": "按严重程度和最近时间排序",
+    "noTimeline": "暂无最近事件",
+    "noIssues": "当前没有待处理问题",
+    "timeline": {
+      "newPost": "发现新作品",
+      "snapshotComplete": "完成 {{stage}} 快照",
+      "taskFailed": "任务执行失败",
+      "taskMissed": "任务错过执行窗口"
+    },
+    "relative": {
+      "justNow": "刚刚",
+      "minutesAgo": "{{count}} 分钟前",
+      "hoursAgo": "{{count}} 小时前",
+      "daysAgo": "{{count}} 天前"
+    },
+    "countdown": {
+      "none": "暂无计划",
+      "due": "即将执行",
+      "seconds": "{{count}} 秒后",
+      "minutes": "{{count}} 分钟后",
+      "hours": "{{count}} 小时后",
+      "days": "{{count}} 天后"
+    },
     "recentAbnormal": "最近异常任务",
     "status": "状态",
     "stage": "阶段",
@@ -161,11 +471,36 @@
     "reason": "原因",
     "noAbnormal": "暂无异常任务"
   },
+  "opsCenter": {
+    "tasks": "任务队列",
+    "alerts": "告警",
+    "health": "系统健康",
+    "pendingAria": "{{count}} 个待执行任务",
+    "unreadAria": "{{count}} 条未读告警",
+    "overall": "系统状态：{{status}}",
+    "metrics": {
+      "pending": "待执行",
+      "pendingDetail": "等待调度",
+      "abnormal": "异常任务",
+      "abnormalDetail": "失败 {{failed}} · 错过 {{missed}}",
+      "unread": "未读告警",
+      "unreadDetail": "需要处理的问题组",
+      "system": "系统状态",
+      "systemDetail": "浏览器、数据库与循环"
+    }
+  },
   "tasks": {
     "title": "任务中心",
     "description": "待执行、失败和错过任务",
     "total": "共 {{count}} 个任务",
     "searchPlaceholder": "搜索作品标题或作品 ID",
+    "sortBy": "排序方式",
+    "sort": {
+      "dueAsc": "计划时间：最早优先",
+      "dueDesc": "计划时间：最晚优先",
+      "attemptsDesc": "尝试次数：最多优先",
+      "failedDesc": "失败时间：最近优先"
+    },
     "statusColumn": "状态",
     "stage": "阶段",
     "post": "作品",
@@ -176,12 +511,46 @@
     "retry": "重试",
     "retrySuccess": "任务已重新加入待执行队列",
     "retryFailed": "重试失败",
+    "retrySelected": "重试选中（{{count}}）",
+    "retryAllFailed": "重试全部失败",
+    "batchRetrySuccess": "已将 {{count}} 个失败任务重新加入待执行队列",
+    "selectAllFailed": "全选失败任务",
+    "unselectAllFailed": "取消全选",
+    "selectJob": "选择任务",
+    "details": "查看详情",
+    "selectJobHint": "选择一条任务查看详情",
+    "selectJobHintDetail": "任务详情将在右侧固定显示，不会遮挡列表。",
+    "detailTitle": "任务详情",
+    "closeDetails": "关闭详情",
+    "openPost": "打开作品链接",
+    "publishTime": "发布时间",
+    "createdAt": "创建时间",
+    "startedAt": "开始时间",
+    "finishedAt": "完成时间",
+    "moreTimes": "更多时间信息",
+    "errorCategoryLabel": "错误分类",
+    "rawError": "原始错误",
+    "pageInfo": "显示 {{from}}-{{to}}，共 {{total}} 条",
+    "pageOf": "第 {{page}} / {{total}} 页",
+    "previousPage": "上一页",
+    "nextPage": "下一页",
     "noJobs": "没有符合条件的任务",
+    "errorCategory": {
+      "none": "无",
+      "risk_control": "风控触发",
+      "login_required": "登录失效",
+      "browser_disconnected": "浏览器断开",
+      "network_timeout": "网络超时",
+      "post_not_found": "作品不存在",
+      "parse_error": "数据解析失败",
+      "unknown": "未知错误"
+    },
     "status": {
       "all": "全部",
       "pending": "待执行",
       "running": "执行中",
       "done": "已完成",
+      "abnormal": "异常",
       "failed": "失败",
       "missed": "错过"
     }
@@ -189,11 +558,43 @@
   "alerts": {
     "title": "告警中心",
     "description": "新作品、任务异常和运行告警",
+    "groupedDescription": "相同问题自动合并，优先处理未解决告警",
     "unread": "{{count}} 条未读",
     "markAllRead": "全部已读",
     "markedAll": "已将 {{count}} 条告警标记为已读",
     "markRead": "标记已读",
-    "empty": "暂无告警",
+    "empty": "暂无符合条件的告警",
+    "view": {
+      "open": "只看未解决",
+      "unread": "未读",
+      "resolved": "已解决",
+      "ignored": "已忽略",
+      "all": "全部"
+    },
+    "severity": {
+      "all": "全部级别",
+      "error": "错误",
+      "warning": "警告",
+      "info": "提示"
+    },
+    "status": {
+      "unread": "未读",
+      "read": "已读",
+      "resolved": "已解决",
+      "ignored": "已忽略"
+    },
+    "occurrences": "发生 {{count}} 次",
+    "firstAt": "首次",
+    "lastAt": "最近",
+    "viewTask": "查看任务",
+    "retry": "重试失败任务",
+    "retrySuccess": "已将 {{count}} 个失败任务重新加入队列",
+    "retryEmpty": "当前没有可重试的失败任务",
+    "ignore": "忽略",
+    "ignored": "已忽略 {{count}} 条告警",
+    "resolve": "标记解决",
+    "resolved": "已解决 {{count}} 条告警",
+    "actionFailed": "告警操作失败",
     "filter": {
       "unread": "未读",
       "read": "已读",
@@ -203,10 +604,42 @@
   "health": {
     "title": "系统健康",
     "description": "服务、浏览器、数据库和采集循环状态",
+    "optimizedDescription": "运行环境、采集链路和维护状态总览",
+    "updatedAt": "最近检查",
+    "refresh": "立即刷新",
+    "loadFailed": "系统健康数据加载失败",
+    "loading": "正在检查系统健康状态",
+    "healthyPercent": "检查项正常率",
+    "groupOk": "全部正常",
+    "groupWarnings": "{{count}} 项需关注",
+    "groupErrors": "{{count}} 项异常",
     "status": {
       "ok": "正常",
       "warning": "需关注",
       "error": "异常"
+    },
+    "groups": {
+      "runtime": "运行环境",
+      "pipeline": "采集链路",
+      "maintenance": "数据维护"
+    },
+    "values": {
+      "connected": "连接正常",
+      "running": "运行中",
+      "stopped": "已停止",
+      "disconnected": "未连接",
+      "port": "CDP 端口 {{port}}",
+      "secondsAgo": "{{count}} 秒前",
+      "minutesAgo": "{{count}} 分钟前",
+      "hoursAgo": "{{count}} 小时前",
+      "backupCount": "{{count}} 份备份"
+    },
+    "details": {
+      "browser": "当前没有可复用的浏览器实例。",
+      "account": "当前没有启用中的监控账号。",
+      "discovery": "发现任务最近没有按时完成。",
+      "disk": "磁盘可用空间偏低。",
+      "backup": "最近没有找到自动备份。"
     },
     "checks": {
       "database": "数据库",
@@ -220,14 +653,58 @@
     "metrics": {
       "unreadAlerts": "未读告警",
       "dbSize": "数据库大小",
+      "diskFree": "可用磁盘",
       "lastSnapshot": "最近快照",
       "nextSnapshot": "下次快照"
-      ,"lastBackup": "最近备份"
+      ,"lastBackup": "最近备份",
+      "backupCount": "备份数量"
     }
   },
   "export": {
     "title": "导出与报告",
     "description": "导出作品、快照历史和生成周期报告",
+    "quickActions": "常用操作",
+    "postsCsv": "导出作品 CSV",
+    "postsExcel": "导出作品 Excel",
+    "snapshotsCsv": "快照 CSV",
+    "snapshotsExcel": "快照 Excel",
+    "generate": {
+      "daily": "生成日报",
+      "weekly": "生成周报",
+      "monthly": "生成月报"
+    },
+    "selectObject": "选择导出对象",
+    "selectObjectHint": "选择要导出的作品或快照历史",
+    "objectType": {
+      "posts": "作品列表",
+      "snapshots": "快照历史"
+    },
+    "postObjectHint": "导出全部监控作品的汇总数据",
+    "preview": "导出与报告预览",
+    "previewHint": "右侧查看当前导出内容和最近生成的报告",
+    "previewPosts": "作品列表导出字段预览",
+    "previewSnapshots": "已选择 {{count}} 篇作品，将导出全部快照历史",
+    "columns": {
+      "postId": "作品 ID",
+      "publishTime": "发布时间",
+      "title": "标题",
+      "snapshotCount": "快照数量"
+    },
+    "snapshotCount": "{{count}} 条快照",
+    "reportListHint": "按生成时间倒序，列表区域固定高度滚动",
+    "generatedAt": "生成时间",
+    "timeRange": "时间范围",
+    "reportType": {
+      "daily": "日报",
+      "weekly": "周报",
+      "monthly": "月报",
+      "unknown": "其他"
+    },
+    "status": {
+      "ready": "已生成",
+      "generating": "生成中",
+      "failed": "生成失败"
+    },
     "postsList": "导出作品列表",
     "postHistory": "导出作品快照（可多选）",
     "selectPost": "选择作品",
@@ -253,6 +730,19 @@
     }
   },
   "analytics": {
+    "tabs": {
+      "label": "分析视图",
+      "stage": "阶段",
+      "growth": "增长",
+      "ranking": "排行",
+      "distribution": "分布与异常"
+    },
+    "rankingScope": "排行范围",
+    "scope": {
+      "7d": "最近 7 天",
+      "filtered": "当前筛选",
+      "all": "全部作品"
+    },
     "stageDelta": "阶段增量",
     "stageDeltaHint": "相对首次发现快照的平均增量",
     "stage": "阶段",
@@ -279,6 +769,22 @@
     "publishHeatmap": "发布时段热力图",
     "anomalies": "异常爆发增长",
     "noData": "暂无分析数据",
-    "noAnomalies": "暂无异常增长"
+    "noAnomalies": "暂无异常增长",
+    "metric": {
+      "liked_count": "点赞",
+      "collected_count": "收藏",
+      "comment_count": "评论",
+      "share_count": "分享"
+    },
+    "samplesValue": "{{count}} 个样本",
+    "average": "均值",
+    "expandTable": "展开数据明细",
+    "growthHint": "按每小时互动增长速度排序",
+    "range": "增长区间",
+    "perHour": "每小时",
+    "value": "数值",
+    "abnormalGrowth": "异常爆发",
+    "baseline": "基线",
+    "multiple": "倍数"
   }
 }

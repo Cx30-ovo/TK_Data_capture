@@ -1,4 +1,19 @@
 import axios from 'axios'
+import { getActiveMonitorAccountId } from '@/store/monitorAccountStore'
+
+
+function accountParams() {
+  const accountId = getActiveMonitorAccountId()
+  if (accountId === 'all') return { all_accounts: true }
+  return accountId ? { account_id: accountId } : undefined
+}
+
+
+function accountQueryString(): string {
+  const accountId = getActiveMonitorAccountId()
+  if (accountId === 'all') return '&all_accounts=true'
+  return accountId ? `&account_id=${accountId}` : ''
+}
 
 const api = axios.create({
   baseURL: '/api',
@@ -88,9 +103,30 @@ export interface MonitorAccount {
   id: number
   platform: string
   sec_user_id: string
+  display_name: string
   profile_url: string | null
+  enabled: boolean
   discover_interval_minutes: number
   last_discovered_at: number | null
+  created_at: number
+  updated_at: number
+}
+
+export interface MonitorAccountComparison {
+  id: number
+  display_name: string
+  sec_user_id: string
+  enabled: boolean
+  profile_url: string | null
+  last_discovered_at: number | null
+  posts: number
+  snapshots: number
+  total_interaction: number
+  average_interaction: number
+  median_interaction: number
+  burst_rate: number
+  zero_rate: number
+  jobs: Record<string, number>
 }
 
 export interface MonitorStatus {
@@ -102,6 +138,7 @@ export interface MonitorStatus {
 
 export interface MonitorConfigPayload {
   sec_user_id: string
+  display_name?: string
   profile_url: string
   enabled: boolean
   discover_interval_minutes: number
@@ -184,6 +221,8 @@ export interface MonitorJob {
   id: number
   aweme_id: string
   title: string
+  canonical_url: string | null
+  create_time: number | null
   stage: string
   due_at: number
   status: string
@@ -193,6 +232,7 @@ export interface MonitorJob {
   created_at: number
   started_at: number | null
   finished_at: number | null
+  error_category: string
 }
 
 export interface MonitorAlert {
@@ -201,7 +241,7 @@ export interface MonitorAlert {
   severity: 'info' | 'warning' | 'error'
   title: string
   message: string
-  status: 'unread' | 'read'
+  status: 'unread' | 'read' | 'resolved' | 'ignored'
   created_at: number
   read_at: number | null
 }
@@ -226,6 +266,15 @@ export interface MonitorHealth {
     next_snapshot_at?: number | null
     last_backup_at?: number | null
     backup_count?: number
+  }
+  system_config?: {
+    auto_backup?: boolean
+    backup_interval_hours?: number
+    backup_retention_days?: number
+    log_retention_days?: number
+    start_browser_on_service_start?: boolean
+    cdp_debug_port?: number
+    maintenance_check_interval_seconds?: number
   }
 }
 
@@ -348,34 +397,52 @@ export const schedulerApi = {
 }
 
 export const monitorApi = {
-  getStatus: () => api.get<MonitorStatus>('/monitor/status'),
+  getAccounts: (includeDisabled = true) =>
+    api.get<{ accounts: MonitorAccount[] }>('/monitor/accounts', { params: { include_disabled: includeDisabled } }),
+  createAccount: (payload: MonitorConfigPayload) => api.post<MonitorAccount>('/monitor/accounts', payload),
+  updateAccount: (accountId: number, payload: Partial<MonitorConfigPayload>) =>
+    api.put<MonitorAccount>('/monitor/accounts/' + accountId, payload),
+  deleteAccount: (accountId: number) => api.delete('/monitor/accounts/' + accountId),
+  discoverAccount: (accountId: number) => api.post<MonitorRunResult>('/monitor/accounts/' + accountId + '/discover'),
+  getAccountComparison: (limit = 100) =>
+    api.get<{ generated_at: string; accounts: MonitorAccountComparison[] }>('/monitor/accounts/comparison', { params: { limit } }),
+  getStatus: (accountId?: number) => api.get<MonitorStatus>('/monitor/status', { params: accountId ? { account_id: accountId } : accountParams() }),
   updateConfig: (payload: MonitorConfigPayload) => api.post('/monitor/config', payload),
   discover: (secUserId?: string) =>
     api.post<MonitorRunResult>('/monitor/discover', null, { params: { sec_user_id: secUserId } }),
   runDueSnapshots: (limit = 50) =>
     api.post<MonitorRunResult>('/monitor/snapshots/run-due', null, { params: { limit } }),
   getDashboard: (limit = 100) =>
-    api.get<MonitorDashboard>('/monitor/dashboard', { params: { limit } }),
-  getOverview: () => api.get<MonitorOverview>('/monitor/overview'),
+    api.get<MonitorDashboard>('/monitor/dashboard', { params: { limit, ...accountParams() } }),
+  getOverview: () => api.get<MonitorOverview>('/monitor/overview', { params: accountParams() }),
   getJobs: (status?: string, limit = 300) =>
-    api.get<{ jobs: MonitorJob[]; count: number }>('/monitor/jobs', { params: { status, limit } }),
+    api.get<{ jobs: MonitorJob[]; count: number }>('/monitor/jobs', { params: { status, limit, ...accountParams() } }),
   retryJob: (jobId: number) => api.post('/monitor/jobs/' + jobId + '/retry'),
+  retryFailedJobs: (jobIds?: number[]) =>
+    api.post<{ updated: number }>('/monitor/jobs/retry-failed', null, {
+      params: jobIds && jobIds.length > 0 ? { job_ids: jobIds.join(',') } : undefined,
+    }),
   getAlerts: (status?: string, limit = 200) =>
-    api.get<{ alerts: MonitorAlert[]; unread: number }>('/monitor/alerts', { params: { status, limit } }),
+    api.get<{ alerts: MonitorAlert[]; unread: number }>('/monitor/alerts', { params: { status, limit, ...accountParams() } }),
   markAlertRead: (alertId: number) => api.post('/monitor/alerts/' + alertId + '/read'),
-  markAllAlertsRead: () => api.post('/monitor/alerts/read-all'),
-  getHealth: () => api.get<MonitorHealth>('/monitor/health'),
-  getReports: () => api.get<{ reports: MonitorReport[] }>('/monitor/reports'),
+  markAllAlertsRead: () => api.post('/monitor/alerts/read-all', null, { params: accountParams() }),
+  updateAlertsStatus: (alertIds: number[], status: MonitorAlert['status']) =>
+    api.post<{ updated: number; status: MonitorAlert['status'] }>('/monitor/alerts/status', {
+      alert_ids: alertIds,
+      status,
+    }),
+  getHealth: () => api.get<MonitorHealth>('/monitor/health', { params: accountParams() }),
+  getReports: () => api.get<{ reports: MonitorReport[] }>('/monitor/reports', { params: accountParams() }),
   generateReport: (period: 'daily' | 'weekly' | 'monthly') =>
-    api.post<GeneratedMonitorReport>('/monitor/reports/generate', null, { params: { period } }),
-  exportPostsUrl: (format: 'csv' | 'xlsx') => `/api/monitor/export/posts?format=${format}`,
+    api.post<GeneratedMonitorReport>('/monitor/reports/generate', null, { params: { period, ...accountParams() } }),
+  exportPostsUrl: (format: 'csv' | 'xlsx') => `/api/monitor/export/posts?format=${format}${accountQueryString()}`,
   exportPostSnapshotsUrl: (awemeId: string, format: 'csv' | 'xlsx') =>
-    `/api/monitor/export/post/${encodeURIComponent(awemeId)}?format=${format}`,
+    `/api/monitor/export/post/${encodeURIComponent(awemeId)}?format=${format}${accountQueryString()}`,
   exportSnapshotsUrl: (awemeIds: string[], format: 'csv' | 'xlsx') =>
-    `/api/monitor/export/snapshots?aweme_ids=${encodeURIComponent(awemeIds.join(','))}&format=${format}`,
+    `/api/monitor/export/snapshots?aweme_ids=${encodeURIComponent(awemeIds.join(','))}&format=${format}${accountQueryString()}`,
   reportDownloadUrl: (name: string) => `/api/monitor/reports/download?name=${encodeURIComponent(name)}`,
   deleteReport: (name: string) => api.delete('/monitor/reports', { params: { name } }),
-  getAnalytics: (limit = 100) => api.get<MonitorAnalytics>('/monitor/analytics', { params: { limit } }),
+  getAnalytics: (limit = 100) => api.get<MonitorAnalytics>('/monitor/analytics', { params: { limit, ...accountParams() } }),
 }
 
 export default api

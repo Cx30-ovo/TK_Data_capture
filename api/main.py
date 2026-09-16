@@ -113,6 +113,18 @@ async def serve_frontend():
     }
 
 
+@app.get("/daily.html")
+async def serve_daily_report():
+    """Return the standalone Douyin monitor daily report page."""
+    daily_path = os.path.join(WEBUI_DIR, "daily.html")
+    if os.path.exists(daily_path):
+        return FileResponse(daily_path)
+    return {
+        "message": "Daily report page not found. Please build the WebUI first.",
+        "command": "cd webui && npm run build",
+    }
+
+
 @app.get("/api/health")
 async def health_check():
     return {"status": "ok"}

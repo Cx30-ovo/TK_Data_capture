@@ -32,6 +32,8 @@ SNAPSHOT_ALLOWED_WINDOWS: dict[str, int] = {
     "7d": 24 * 60 * 60,
 }
 
+ALERT_STATUSES = {"unread", "read", "resolved", "ignored"}
+
 
 def _now_seconds() -> int:
     return int(time.time())
@@ -43,6 +45,7 @@ class MonitorRepository:
     async def upsert_monitored_account(
         self,
         sec_user_id: str,
+        display_name: str = "",
         profile_url: str = "",
         platform: str = "dy",
         enabled: bool = True,
@@ -59,6 +62,7 @@ class MonitorRepository:
                 account = DouyinMonitoredAccount(
                     platform=platform,
                     sec_user_id=sec_user_id,
+                    display_name=display_name,
                     profile_url=profile_url,
                     enabled=enabled,
                     discover_interval_minutes=discover_interval_minutes,
@@ -67,12 +71,69 @@ class MonitorRepository:
                 )
                 session.add(account)
             else:
+                account.display_name = display_name or account.display_name
                 account.profile_url = profile_url or account.profile_url
                 account.enabled = enabled
                 account.discover_interval_minutes = discover_interval_minutes
                 account.updated_at = now
             await session.flush()
             return account
+
+    async def list_monitored_accounts(
+        self,
+        platform: str = "dy",
+        include_disabled: bool = True,
+    ) -> list[DouyinMonitoredAccount]:
+        async with get_monitor_session() as session:
+            stmt = select(DouyinMonitoredAccount).where(DouyinMonitoredAccount.platform == platform)
+            if not include_disabled:
+                stmt = stmt.where(DouyinMonitoredAccount.enabled.is_(True))
+            stmt = stmt.order_by(DouyinMonitoredAccount.id.asc())
+            return list((await session.execute(stmt)).scalars().all())
+
+    async def get_monitored_account_by_id(
+        self,
+        account_id: int,
+    ) -> Optional[DouyinMonitoredAccount]:
+        async with get_monitor_session() as session:
+            return await session.get(DouyinMonitoredAccount, account_id)
+
+    async def update_monitored_account(
+        self,
+        account_id: int,
+        sec_user_id: Optional[str] = None,
+        display_name: Optional[str] = None,
+        profile_url: Optional[str] = None,
+        enabled: Optional[bool] = None,
+        discover_interval_minutes: Optional[int] = None,
+    ) -> Optional[DouyinMonitoredAccount]:
+        now = _now_seconds()
+        async with get_monitor_session() as session:
+            account = await session.get(DouyinMonitoredAccount, account_id)
+            if account is None:
+                return None
+            if sec_user_id is not None:
+                account.sec_user_id = sec_user_id
+            if display_name is not None:
+                account.display_name = display_name
+            if profile_url is not None:
+                account.profile_url = profile_url
+            if enabled is not None:
+                account.enabled = enabled
+            if discover_interval_minutes is not None:
+                account.discover_interval_minutes = discover_interval_minutes
+            account.updated_at = now
+            await session.flush()
+            return account
+
+    async def delete_monitored_account(self, account_id: int) -> bool:
+        async with get_monitor_session() as session:
+            account = await session.get(DouyinMonitoredAccount, account_id)
+            if account is None:
+                return False
+            await session.delete(account)
+            await session.flush()
+            return True
 
     async def get_monitored_account(
         self,
@@ -132,15 +193,14 @@ class MonitorRepository:
     async def list_posts(
         self,
         platform: str = "dy",
+        sec_user_id: Optional[str] = None,
         limit: int = 100,
     ) -> list[DouyinPost]:
         async with get_monitor_session() as session:
-            stmt = (
-                select(DouyinPost)
-                .where(DouyinPost.platform == platform)
-                .order_by(DouyinPost.create_time.desc())
-                .limit(limit)
-            )
+            stmt = select(DouyinPost).where(DouyinPost.platform == platform)
+            if sec_user_id:
+                stmt = stmt.where(DouyinPost.sec_user_id == sec_user_id)
+            stmt = stmt.order_by(DouyinPost.create_time.desc()).limit(limit)
             return list((await session.execute(stmt)).scalars().all())
 
     async def get_post(self, aweme_id: str, platform: str = "dy") -> Optional[DouyinPost]:
@@ -151,15 +211,26 @@ class MonitorRepository:
             )
             return (await session.execute(stmt)).scalar_one_or_none()
 
-    async def count_posts_since(self, since: int, platform: str = "dy") -> int:
+    async def count_posts_since(
+        self,
+        since: int,
+        platform: str = "dy",
+        sec_user_id: Optional[str] = None,
+    ) -> int:
         async with get_monitor_session() as session:
             stmt = select(func.count(DouyinPost.id)).where(
                 DouyinPost.platform == platform,
                 DouyinPost.first_seen_at >= since,
             )
+            if sec_user_id:
+                stmt = stmt.where(DouyinPost.sec_user_id == sec_user_id)
             return int((await session.execute(stmt)).scalar() or 0)
 
-    async def get_next_pending_job(self, platform: str = "dy") -> Optional[DouyinMonitorJob]:
+    async def get_next_pending_job(
+        self,
+        platform: str = "dy",
+        sec_user_id: Optional[str] = None,
+    ) -> Optional[DouyinMonitorJob]:
         async with get_monitor_session() as session:
             stmt = (
                 select(DouyinMonitorJob)
@@ -167,9 +238,10 @@ class MonitorRepository:
                     DouyinMonitorJob.platform == platform,
                     DouyinMonitorJob.status == "pending",
                 )
-                .order_by(DouyinMonitorJob.due_at.asc())
-                .limit(1)
             )
+            if sec_user_id:
+                stmt = stmt.where(DouyinMonitorJob.sec_user_id == sec_user_id)
+            stmt = stmt.order_by(DouyinMonitorJob.due_at.asc()).limit(1)
             return (await session.execute(stmt)).scalar_one_or_none()
 
     async def list_recent_abnormal_jobs(
@@ -177,10 +249,11 @@ class MonitorRepository:
         statuses: tuple[str, ...] = ("failed", "missed"),
         limit: int = 10,
         platform: str = "dy",
+        sec_user_id: Optional[str] = None,
     ) -> list[dict]:
         async with get_monitor_session() as session:
             stmt = (
-                select(DouyinMonitorJob, DouyinPost.title)
+                select(DouyinMonitorJob, DouyinPost.title, DouyinPost.canonical_url, DouyinPost.create_time)
                 .outerjoin(
                     DouyinPost,
                     (DouyinPost.platform == DouyinMonitorJob.platform)
@@ -190,48 +263,55 @@ class MonitorRepository:
                     DouyinMonitorJob.platform == platform,
                     DouyinMonitorJob.status.in_(statuses),
                 )
-                .order_by(DouyinMonitorJob.due_at.desc())
-                .limit(limit)
             )
+            if sec_user_id:
+                stmt = stmt.where(DouyinMonitorJob.sec_user_id == sec_user_id)
+            stmt = stmt.order_by(DouyinMonitorJob.due_at.desc()).limit(limit)
             return [
                 {
                     "id": job.id,
                     "aweme_id": job.aweme_id,
                     "title": title or job.aweme_id,
+                    "canonical_url": canonical_url,
+                    "create_time": create_time,
                     "stage": job.stage,
                     "due_at": job.due_at,
                     "status": job.status,
                     "miss_reason": job.miss_reason,
                     "last_error": job.last_error,
                 }
-                for job, title in (await session.execute(stmt)).all()
+                for job, title, canonical_url, create_time in (await session.execute(stmt)).all()
             ]
 
     async def list_jobs(
         self,
         status: Optional[str] = None,
         platform: str = "dy",
+        sec_user_id: Optional[str] = None,
         limit: int = 300,
     ) -> list[dict]:
         async with get_monitor_session() as session:
             stmt = (
-                select(DouyinMonitorJob, DouyinPost.title)
+                select(DouyinMonitorJob, DouyinPost.title, DouyinPost.canonical_url, DouyinPost.create_time)
                 .outerjoin(
                     DouyinPost,
                     (DouyinPost.platform == DouyinMonitorJob.platform)
                     & (DouyinPost.aweme_id == DouyinMonitorJob.aweme_id),
                 )
                 .where(DouyinMonitorJob.platform == platform)
-                .order_by(DouyinMonitorJob.due_at.asc())
-                .limit(limit)
             )
             if status:
                 stmt = stmt.where(DouyinMonitorJob.status == status)
+            if sec_user_id:
+                stmt = stmt.where(DouyinMonitorJob.sec_user_id == sec_user_id)
+            stmt = stmt.order_by(DouyinMonitorJob.due_at.asc()).limit(limit)
             return [
                 {
                     "id": job.id,
                     "aweme_id": job.aweme_id,
                     "title": title or job.aweme_id,
+                    "canonical_url": canonical_url,
+                    "create_time": create_time,
                     "stage": job.stage,
                     "due_at": job.due_at,
                     "status": job.status,
@@ -242,7 +322,7 @@ class MonitorRepository:
                     "started_at": job.started_at,
                     "finished_at": job.finished_at,
                 }
-                for job, title in (await session.execute(stmt)).all()
+                for job, title, canonical_url, create_time in (await session.execute(stmt)).all()
             ]
 
     async def retry_failed_job(self, job_id: int) -> Optional[DouyinMonitorJob]:
@@ -258,8 +338,26 @@ class MonitorRepository:
             job.started_at = None
             job.finished_at = None
             job.miss_reason = None
+            job.attempts = 0
             await session.flush()
             return job
+
+    async def retry_failed_jobs(self, job_ids: Optional[list[int]] = None) -> int:
+        now = _now_seconds()
+        async with get_monitor_session() as session:
+            stmt = select(DouyinMonitorJob).where(DouyinMonitorJob.status == "failed")
+            if job_ids:
+                stmt = stmt.where(DouyinMonitorJob.id.in_(job_ids))
+            jobs = list((await session.execute(stmt)).scalars().all())
+            for job in jobs:
+                job.status = "pending"
+                job.due_at = now
+                job.started_at = None
+                job.finished_at = None
+                job.miss_reason = None
+                job.attempts = 0
+            await session.flush()
+            return len(jobs)
 
     async def create_alert(
         self,
@@ -269,22 +367,25 @@ class MonitorRepository:
         message: str,
         dedupe_key: str,
         platform: str = "dy",
+        sec_user_id: str = "",
     ) -> Optional[MonitorAlert]:
         now = _now_seconds()
+        effective_key = f"{sec_user_id}:{dedupe_key}" if sec_user_id else dedupe_key
         async with get_monitor_session() as session:
             existing = await session.execute(
-                select(MonitorAlert).where(MonitorAlert.dedupe_key == dedupe_key)
+                select(MonitorAlert).where(MonitorAlert.dedupe_key == effective_key)
             )
             if existing.scalar_one_or_none() is not None:
                 return None
             alert = MonitorAlert(
                 platform=platform,
+                sec_user_id=sec_user_id,
                 alert_type=alert_type,
                 severity=severity,
                 title=title,
                 message=message,
                 status="unread",
-                dedupe_key=dedupe_key,
+                dedupe_key=effective_key,
                 created_at=now,
             )
             session.add(alert)
@@ -296,20 +397,29 @@ class MonitorRepository:
         status: Optional[str] = None,
         limit: int = 200,
         platform: str = "dy",
+        sec_user_id: Optional[str] = None,
     ) -> list[MonitorAlert]:
         async with get_monitor_session() as session:
             stmt = select(MonitorAlert).where(MonitorAlert.platform == platform)
             if status:
                 stmt = stmt.where(MonitorAlert.status == status)
+            if sec_user_id:
+                stmt = stmt.where(MonitorAlert.sec_user_id == sec_user_id)
             stmt = stmt.order_by(MonitorAlert.created_at.desc()).limit(limit)
             return list((await session.execute(stmt)).scalars().all())
 
-    async def count_unread_alerts(self, platform: str = "dy") -> int:
+    async def count_unread_alerts(
+        self,
+        platform: str = "dy",
+        sec_user_id: Optional[str] = None,
+    ) -> int:
         async with get_monitor_session() as session:
             stmt = select(func.count(MonitorAlert.id)).where(
                 MonitorAlert.platform == platform,
                 MonitorAlert.status == "unread",
             )
+            if sec_user_id:
+                stmt = stmt.where(MonitorAlert.sec_user_id == sec_user_id)
             return int((await session.execute(stmt)).scalar() or 0)
 
     async def mark_alert_read(self, alert_id: int) -> Optional[MonitorAlert]:
@@ -323,7 +433,11 @@ class MonitorRepository:
             await session.flush()
             return alert
 
-    async def mark_all_alerts_read(self, platform: str = "dy") -> int:
+    async def mark_all_alerts_read(
+        self,
+        platform: str = "dy",
+        sec_user_id: Optional[str] = None,
+    ) -> int:
         now = _now_seconds()
         async with get_monitor_session() as session:
             alerts = list((await session.execute(
@@ -332,29 +446,75 @@ class MonitorRepository:
                     MonitorAlert.status == "unread",
                 )
             )).scalars().all())
+            if sec_user_id:
+                alerts = [alert for alert in alerts if alert.sec_user_id == sec_user_id]
             for alert in alerts:
                 alert.status = "read"
                 alert.read_at = now
             await session.flush()
             return len(alerts)
 
-    async def get_last_snapshot(self, platform: str = "dy") -> Optional[DouyinPostSnapshot]:
+    async def set_alerts_status(
+        self,
+        alert_ids: Sequence[int],
+        status: str,
+    ) -> int:
+        if status not in ALERT_STATUSES:
+            raise ValueError(f"Unsupported alert status: {status}")
+        if not alert_ids:
+            return 0
+
+        now = _now_seconds()
+        async with get_monitor_session() as session:
+            alerts = list((await session.execute(
+                select(MonitorAlert).where(MonitorAlert.id.in_(alert_ids))
+            )).scalars().all())
+            for alert in alerts:
+                alert.status = status
+                if status == "unread":
+                    alert.read_at = None
+                    alert.resolved_at = None
+                elif status == "read":
+                    alert.read_at = now
+                    alert.resolved_at = None
+                else:
+                    alert.read_at = alert.read_at or now
+                    alert.resolved_at = now
+            await session.flush()
+            return len(alerts)
+
+    async def get_last_snapshot(
+        self,
+        platform: str = "dy",
+        sec_user_id: Optional[str] = None,
+    ) -> Optional[DouyinPostSnapshot]:
         async with get_monitor_session() as session:
             stmt = (
                 select(DouyinPostSnapshot)
                 .where(DouyinPostSnapshot.platform == platform)
-                .order_by(DouyinPostSnapshot.captured_at.desc())
-                .limit(1)
             )
+            if sec_user_id:
+                stmt = stmt.join(
+                    DouyinPost,
+                    (DouyinPost.platform == DouyinPostSnapshot.platform)
+                    & (DouyinPost.aweme_id == DouyinPostSnapshot.aweme_id),
+                ).where(DouyinPost.sec_user_id == sec_user_id)
+            stmt = stmt.order_by(DouyinPostSnapshot.captured_at.desc()).limit(1)
             return (await session.execute(stmt)).scalar_one_or_none()
 
-    async def get_job_counts(self, platform: str = "dy") -> dict[str, int]:
+    async def get_job_counts(
+        self,
+        platform: str = "dy",
+        sec_user_id: Optional[str] = None,
+    ) -> dict[str, int]:
         async with get_monitor_session() as session:
             stmt = (
                 select(DouyinMonitorJob.status, func.count(DouyinMonitorJob.id))
                 .where(DouyinMonitorJob.platform == platform)
                 .group_by(DouyinMonitorJob.status)
             )
+            if sec_user_id:
+                stmt = stmt.where(DouyinMonitorJob.sec_user_id == sec_user_id)
             return {status: int(count) for status, count in (await session.execute(stmt)).all()}
 
     async def upsert_post(
@@ -424,6 +584,7 @@ class MonitorRepository:
                 job = DouyinMonitorJob(
                     job_type="snapshot",
                     platform=post.platform,
+                    sec_user_id=post.sec_user_id,
                     dedupe_key=dedupe_key,
                     aweme_id=post.aweme_id,
                     stage=stage,
@@ -630,10 +791,17 @@ class MonitorRepository:
         self,
         aweme_id: Optional[str] = None,
         platform: str = "dy",
+        sec_user_id: Optional[str] = None,
         limit: int = 100,
     ) -> list[DouyinPostSnapshot]:
         async with get_monitor_session() as session:
             stmt = select(DouyinPostSnapshot).where(DouyinPostSnapshot.platform == platform)
+            if sec_user_id:
+                stmt = stmt.join(
+                    DouyinPost,
+                    (DouyinPost.platform == DouyinPostSnapshot.platform)
+                    & (DouyinPost.aweme_id == DouyinPostSnapshot.aweme_id),
+                ).where(DouyinPost.sec_user_id == sec_user_id)
             if aweme_id:
                 stmt = stmt.where(DouyinPostSnapshot.aweme_id == aweme_id)
             stmt = stmt.order_by(DouyinPostSnapshot.captured_at.desc()).limit(limit)

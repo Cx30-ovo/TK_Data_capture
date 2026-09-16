@@ -13,9 +13,9 @@ METRICS = ("liked_count", "collected_count", "comment_count", "share_count")
 
 
 class AnalyticsService:
-    async def get_data(self, limit: int = 100) -> dict:
-        posts = await monitor_repository.list_posts(limit=limit)
-        snapshots = await monitor_repository.list_snapshots(limit=100000)
+    async def get_data(self, limit: int = 100, sec_user_id: Optional[str] = None) -> dict:
+        posts = await monitor_repository.list_posts(limit=limit, sec_user_id=sec_user_id)
+        snapshots = await monitor_repository.list_snapshots(limit=100000, sec_user_id=sec_user_id)
         post_map = {post.aweme_id: post for post in posts}
 
         snapshots_by_post: dict[str, list] = {}

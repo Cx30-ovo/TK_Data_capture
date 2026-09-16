@@ -8,7 +8,7 @@ import config
 
 from database import db_session
 from database.monitor_repository import monitor_repository
-from api.services.monitor_service import DouyinMonitorFetcher, MonitorService
+from api.services.monitor_service import DouyinMonitorFetcher, MonitorService, classify_job_error
 from api.services.report_service import ReportService
 from api.services.analytics_service import AnalyticsService
 from api.services.maintenance_service import MaintenanceService
@@ -298,6 +298,48 @@ async def test_failed_job_can_be_manually_retried(isolated_monitor_db):
 
 
 @pytest.mark.asyncio
+async def test_failed_jobs_can_be_batch_retried_and_classified(isolated_monitor_db):
+    await db_session.create_tables("sqlite")
+    await monitor_repository.upsert_monitored_account(sec_user_id="batch_retry_user")
+    post, _ = await monitor_repository.upsert_post(
+        aweme_id="batch_retry_post",
+        sec_user_id="batch_retry_user",
+        title="batch retry",
+        desc="batch retry",
+        create_time=BASE_TIME,
+        canonical_url="https://www.douyin.com/video/batch_retry_post",
+    )
+    jobs = await monitor_repository.create_snapshot_jobs(post)
+
+    for job in jobs[:2]:
+        await monitor_repository.mark_job_running(job.id)
+        await monitor_repository.mark_job_retry(
+            job.id,
+            error="blocked by risk control",
+            retry_delay_seconds=600,
+            max_attempts=1,
+        )
+
+    failed_jobs = await monitor_repository.list_jobs(status="failed")
+    assert len(failed_jobs) == 2
+    assert classify_job_error(failed_jobs[0]) == "risk_control"
+
+    updated = await monitor_repository.retry_failed_jobs([jobs[0].id])
+    assert updated == 1
+    first = await monitor_repository.get_job(jobs[0].id)
+    second = await monitor_repository.get_job(jobs[1].id)
+    assert first.status == "pending"
+    assert first.attempts == 0
+    assert second.status == "failed"
+
+    updated = await monitor_repository.retry_failed_jobs()
+    assert updated == 1
+    second = await monitor_repository.get_job(jobs[1].id)
+    assert second.status == "pending"
+    assert second.attempts == 0
+
+
+@pytest.mark.asyncio
 async def test_alerts_are_deduplicated_and_can_be_marked_read(isolated_monitor_db):
     await db_session.create_tables("sqlite")
 
@@ -325,6 +367,100 @@ async def test_alerts_are_deduplicated_and_can_be_marked_read(isolated_monitor_d
 
     await monitor_repository.mark_alert_read(created.id)
     assert await monitor_repository.count_unread_alerts() == 0
+
+    updated = await monitor_repository.set_alerts_status([created.id], "ignored")
+    assert updated == 1
+    ignored_alerts = await monitor_repository.list_alerts(status="ignored")
+    assert len(ignored_alerts) == 1
+    assert ignored_alerts[0].resolved_at is not None
+
+    await monitor_repository.set_alerts_status([created.id], "resolved")
+    resolved_alerts = await monitor_repository.list_alerts(status="resolved")
+    assert len(resolved_alerts) == 1
+
+
+@pytest.mark.asyncio
+async def test_multiple_accounts_keep_posts_jobs_and_alerts_isolated(isolated_monitor_db):
+    await db_session.create_tables("sqlite")
+
+    account_a = await monitor_repository.upsert_monitored_account(
+        sec_user_id="account_a",
+        display_name="账号 A",
+        profile_url="https://www.douyin.com/user/account_a",
+    )
+    account_b = await monitor_repository.upsert_monitored_account(
+        sec_user_id="account_b",
+        display_name="账号 B",
+        profile_url="https://www.douyin.com/user/account_b",
+    )
+    accounts = await monitor_repository.list_monitored_accounts()
+    assert [account.sec_user_id for account in accounts] == ["account_a", "account_b"]
+
+    updated = await monitor_repository.update_monitored_account(
+        account_b.id,
+        display_name="账号 B2",
+        discover_interval_minutes=60,
+        enabled=False,
+    )
+    assert updated is not None
+    assert updated.display_name == "账号 B2"
+    assert updated.discover_interval_minutes == 60
+    assert updated.enabled is False
+
+    post_a, _ = await monitor_repository.upsert_post(
+        aweme_id="multi_post_a",
+        sec_user_id=account_a.sec_user_id,
+        title="A",
+        desc="A",
+        create_time=BASE_TIME,
+        canonical_url="https://www.douyin.com/video/multi_post_a",
+    )
+    post_b, _ = await monitor_repository.upsert_post(
+        aweme_id="multi_post_b",
+        sec_user_id=account_b.sec_user_id,
+        title="B",
+        desc="B",
+        create_time=BASE_TIME,
+        canonical_url="https://www.douyin.com/video/multi_post_b",
+    )
+    jobs_a = await monitor_repository.create_snapshot_jobs(post_a)
+    jobs_b = await monitor_repository.create_snapshot_jobs(post_b)
+    assert all(job.sec_user_id == account_a.sec_user_id for job in jobs_a)
+    assert all(job.sec_user_id == account_b.sec_user_id for job in jobs_b)
+
+    jobs_for_a = await monitor_repository.list_jobs(sec_user_id=account_a.sec_user_id)
+    jobs_for_b = await monitor_repository.list_jobs(sec_user_id=account_b.sec_user_id)
+    assert len(jobs_for_a) == 5
+    assert len(jobs_for_b) == 5
+    assert {job["aweme_id"] for job in jobs_for_a} == {"multi_post_a"}
+    assert {job["aweme_id"] for job in jobs_for_b} == {"multi_post_b"}
+
+    alert_a = await monitor_repository.create_alert(
+        alert_type="test",
+        severity="warning",
+        title="same alert",
+        message="A",
+        dedupe_key="shared-key",
+        sec_user_id=account_a.sec_user_id,
+    )
+    alert_b = await monitor_repository.create_alert(
+        alert_type="test",
+        severity="warning",
+        title="same alert",
+        message="B",
+        dedupe_key="shared-key",
+        sec_user_id=account_b.sec_user_id,
+    )
+    assert alert_a is not None
+    assert alert_b is not None
+    alerts_a = await monitor_repository.list_alerts(sec_user_id=account_a.sec_user_id)
+    alerts_b = await monitor_repository.list_alerts(sec_user_id=account_b.sec_user_id)
+    assert [alert.message for alert in alerts_a] == ["A"]
+    assert [alert.message for alert in alerts_b] == ["B"]
+
+    assert await monitor_repository.delete_monitored_account(account_b.id) is True
+    assert await monitor_repository.get_monitored_account_by_id(account_b.id) is None
+    assert await monitor_repository.get_post(post_b.aweme_id) is not None
 
 
 @pytest.mark.asyncio

@@ -4,24 +4,24 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyber-neon-cyan disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md font-sans text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyber-neon-cyan disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
   {
     variants: {
       variant: {
         default:
-          'bg-cyber-neon-cyan/20 text-cyber-neon-cyan border border-cyber-neon-cyan/50 hover:bg-cyber-neon-cyan/30 hover:shadow-glow-cyan-sm active:scale-95',
+          'border border-cyber-neon-cyan/50 bg-cyber-neon-cyan/15 text-cyber-neon-cyan hover:bg-cyber-neon-cyan/20 active:bg-cyber-neon-cyan/25',
         destructive:
-          'bg-cyber-neon-pink/20 text-cyber-neon-pink border border-cyber-neon-pink/50 hover:bg-cyber-neon-pink/30 hover:shadow-glow-pink-sm active:scale-95',
+          'border border-cyber-neon-pink/50 bg-cyber-neon-pink/15 text-cyber-neon-pink hover:bg-cyber-neon-pink/20 active:bg-cyber-neon-pink/25',
         outline:
-          'border border-cyber-border-DEFAULT bg-transparent hover:bg-cyber-bg-tertiary hover:border-cyber-neon-cyan/50 hover:text-cyber-neon-cyan',
+          'border border-cyber-border-DEFAULT bg-transparent hover:bg-cyber-bg-tertiary hover:border-cyber-border-default',
         secondary:
-          'bg-cyber-neon-green/20 text-cyber-neon-green border border-cyber-neon-green/50 hover:bg-cyber-neon-green/30 hover:shadow-glow-green-sm active:scale-95',
+          'border border-cyber-neon-green/50 bg-cyber-neon-green/15 text-cyber-neon-green hover:bg-cyber-neon-green/20',
         ghost:
-          'hover:bg-cyber-bg-tertiary hover:text-cyber-neon-cyan',
+          'hover:bg-cyber-bg-tertiary hover:text-cyber-text-primary',
         link:
           'text-cyber-neon-cyan underline-offset-4 hover:underline',
         glow:
-          'bg-cyber-neon-cyan/20 text-cyber-neon-cyan border border-cyber-neon-cyan/50 shadow-glow-cyan-sm hover:shadow-glow-cyan hover:bg-cyber-neon-cyan/30 active:scale-95',
+          'border border-cyber-neon-cyan/50 bg-cyber-neon-cyan/15 text-cyber-neon-cyan hover:bg-cyber-neon-cyan/20',
       },
       size: {
         default: 'h-10 px-4 py-2',

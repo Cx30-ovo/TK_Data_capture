@@ -312,6 +312,7 @@ class DouyinMonitoredAccount(Base):
     id = Column(Integer, primary_key=True, comment='主键ID')
     platform = Column(String(32), nullable=False, default='dy', index=True, comment='平台标识')
     sec_user_id = Column(String(255), nullable=False, index=True, comment='抖音账号安全标识')
+    display_name = Column(String(255), nullable=False, default='', comment='账号显示名称')
     profile_url = Column(Text, comment='监控主页URL')
     enabled = Column(Boolean, nullable=False, default=True, index=True, comment='是否启用监控')
     discover_interval_minutes = Column(Integer, nullable=False, default=30, comment='发现间隔，单位分钟')
@@ -367,6 +368,7 @@ class DouyinMonitorJob(Base):
     id = Column(Integer, primary_key=True, comment='主键ID')
     job_type = Column(String(32), nullable=False, index=True, comment='任务类型: discover/snapshot/topic')
     platform = Column(String(32), nullable=False, default='dy', index=True, comment='平台标识')
+    sec_user_id = Column(String(255), nullable=False, default='', index=True, comment='所属账号安全标识')
     dedupe_key = Column(String(255), nullable=False, unique=True, comment='任务去重键')
     aweme_id = Column(String(128), nullable=False, default='', index=True, comment='关联作品ID')
     stage = Column(String(16), nullable=False, default='', index=True, comment='快照阶段')
@@ -402,6 +404,7 @@ class MonitorAlert(Base):
 
     id = Column(Integer, primary_key=True, comment='主键ID')
     platform = Column(String(32), nullable=False, default='dy', index=True, comment='平台标识')
+    sec_user_id = Column(String(255), nullable=False, default='', index=True, comment='所属账号安全标识')
     alert_type = Column(String(64), nullable=False, index=True, comment='告警类型')
     severity = Column(String(16), nullable=False, default='warning', index=True, comment='严重级别: info/warning/error')
     title = Column(Text, nullable=False, comment='告警标题')

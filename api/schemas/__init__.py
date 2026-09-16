@@ -27,7 +27,7 @@ from .crawler import (
     SchedulerStatusResponse,
     LogEntry,
 )
-from .monitor import MonitorAccountConfigRequest
+from .monitor import MonitorAccountConfigRequest, MonitorAccountUpdateRequest, MonitorAlertStatusRequest
 
 __all__ = [
     "PlatformEnum",
@@ -40,4 +40,6 @@ __all__ = [
     "SchedulerStatusResponse",
     "LogEntry",
     "MonitorAccountConfigRequest",
+    "MonitorAccountUpdateRequest",
+    "MonitorAlertStatusRequest",
 ]

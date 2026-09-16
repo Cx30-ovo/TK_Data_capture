@@ -14,6 +14,7 @@ interface CrawlerState {
 
   // Config
   config: CrawlerConfig
+  savedConfig: CrawlerConfig
 
   // Actions
   setStatus: (status: CrawlerState['status']) => void
@@ -23,11 +24,13 @@ interface CrawlerState {
   clearLogs: () => void
   restoreLogs: () => void
   updateConfig: (config: Partial<CrawlerConfig>) => void
+  saveConfig: () => void
   reset: () => void
 }
 
 // 持久化相关的 localStorage key
 const CLEARED_LOG_ID_KEY = 'mediacrawler_cleared_log_id'
+const CONFIG_STORAGE_KEY = 'mediacrawler_crawler_config'
 
 // 从 localStorage 读取清除标记
 function getClearedLogIdFromStorage(): number | null {
@@ -63,6 +66,17 @@ const defaultConfig: CrawlerConfig = {
   headless: false,
 }
 
+function loadStoredConfig(): CrawlerConfig {
+  try {
+    const stored = localStorage.getItem(CONFIG_STORAGE_KEY)
+    return stored ? { ...defaultConfig, ...JSON.parse(stored) } : defaultConfig
+  } catch {
+    return defaultConfig
+  }
+}
+
+const initialConfig = loadStoredConfig()
+
 export const useCrawlerStore = create<CrawlerState>((set, get) => ({
   status: 'idle',
   platform: null,
@@ -70,7 +84,8 @@ export const useCrawlerStore = create<CrawlerState>((set, get) => ({
   startedAt: null,
   logs: [],
   clearedAfterLogId: getClearedLogIdFromStorage(), // 从 localStorage 初始化
-  config: defaultConfig,
+  config: initialConfig,
+  savedConfig: initialConfig,
 
   setStatus: (status) => {
     set({ status })
@@ -144,6 +159,12 @@ export const useCrawlerStore = create<CrawlerState>((set, get) => ({
     set((state) => ({
       config: { ...state.config, ...config },
     })),
+
+  saveConfig: () => {
+    const config = get().config
+    localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(config))
+    set({ savedConfig: config })
+  },
 
   reset: () =>
     set({

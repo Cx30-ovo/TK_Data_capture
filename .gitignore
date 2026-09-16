@@ -189,3 +189,6 @@ database/*.db
 output/*.log
 output/*.log.*
 output/backups/*
+output/exports/*
+output/reports/*
+output/pytest-tmp/

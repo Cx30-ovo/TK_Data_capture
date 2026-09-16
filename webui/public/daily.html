@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="抖音单账号监控日报，按日期查看新增作品、互动热点、快照事件和任务动态。" />
+    <title>抖音监控日报</title>
+    <link rel="stylesheet" href="/static/daily.css" />
+  </head>
+  <body>
+    <main class="daily-shell">
+      <header class="daily-header">
+        <a class="daily-brand" href="/" aria-label="返回监控工作台">
+          <span aria-hidden="true">DY</span>
+          抖音监控日报
+        </a>
+        <nav class="daily-product-nav" aria-label="日报导航">
+          <a class="active" href="/daily.html" aria-current="page">监控日报</a>
+          <a href="/">监控工作台</a>
+        </nav>
+        <div class="daily-date-control" aria-label="选择日报日期">
+          <button id="previousDay" type="button" aria-label="前一天">‹</button>
+          <input id="reportDate" type="date" aria-label="日报日期" />
+          <button id="nextDay" type="button" aria-label="后一天">›</button>
+        </div>
+        <p id="dailyStatus">正在读取监控数据…</p>
+      </header>
+
+      <section class="daily-overview" aria-label="今日概览">
+        <article class="daily-lead" id="dailyLead">
+          <p class="daily-loading">正在读取主推作品…</p>
+        </article>
+        <aside class="daily-hot" aria-labelledby="hotTitle">
+          <div class="daily-section-head">
+            <h2 id="hotTitle">互动热点</h2>
+            <span>按最新点赞数</span>
+          </div>
+          <ol id="hotList" class="hot-list"></ol>
+        </aside>
+      </section>
+
+      <nav class="daily-categories" id="dailyCategories" aria-label="内容分类"></nav>
+
+      <section class="daily-content">
+        <section class="daily-feed" aria-labelledby="feedTitle">
+          <div class="daily-section-head daily-feed-head">
+            <div>
+              <h2 id="feedTitle">当日作品</h2>
+              <p id="feedSummary">—</p>
+            </div>
+            <div class="daily-quick-stats" id="quickStats"></div>
+          </div>
+          <div id="dailyFeed" class="daily-feed-grid" aria-live="polite"></div>
+        </section>
+        <aside class="daily-activity" aria-labelledby="activityTitle">
+          <div class="daily-section-head">
+            <h2 id="activityTitle">采集动态</h2>
+          </div>
+          <div id="accountActivity" class="activity-list"></div>
+        </aside>
+      </section>
+
+      <footer class="daily-footer">数据来自抖音监控数据库 · 仅供个人研究使用</footer>
+    </main>
+    <div class="daily-toast" id="dailyToast" role="status"></div>
+    <script src="/static/daily.js"></script>
+  </body>
+</html>

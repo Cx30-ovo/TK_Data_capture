@@ -26,11 +26,52 @@ import signal
 import atexit
 from pathlib import Path
 from typing import Optional, Dict, Any
-from playwright.async_api import Browser, BrowserContext, Playwright
+from playwright.async_api import Browser, BrowserContext, Error as PlaywrightError, Page, Playwright
 
 import config
 from tools.browser_launcher import BrowserLauncher
 from tools import utils
+
+
+async def safe_page_goto(
+    page: Page,
+    url: str,
+    *,
+    accepted_hosts: tuple[str, ...] = (),
+    attempts: int = 2,
+    timeout_ms: int = 60_000,
+) -> None:
+    """Navigate without treating redirect-aborted loads as fatal."""
+    normalized_hosts = tuple(host.lower() for host in accepted_hosts)
+
+    def is_accepted_url() -> bool:
+        current_url = (page.url or "").lower()
+        return bool(current_url) and any(host in current_url for host in normalized_hosts)
+
+    if is_accepted_url():
+        return
+
+    last_error: Optional[PlaywrightError] = None
+    for attempt in range(max(1, attempts)):
+        try:
+            await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+            return
+        except PlaywrightError as exc:
+            last_error = exc
+            message = str(exc)
+            try:
+                await page.wait_for_load_state("domcontentloaded", timeout=5_000)
+            except PlaywrightError:
+                pass
+            if is_accepted_url():
+                if "ERR_ABORTED" in message:
+                    utils.logger.info("[safe_page_goto] Navigation redirected after ERR_ABORTED; reusing current page")
+                return
+            if attempt + 1 < max(1, attempts):
+                await asyncio.sleep(1)
+
+    if last_error is not None:
+        raise last_error
 
 
 class CDPBrowserManager:

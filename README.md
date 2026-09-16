@@ -1,411 +1,505 @@
-# 🔥 MediaCrawler - 自媒体平台爬虫 🕷️
+# TK Data Capture
 
-<div align="center">
+抖音账号持续监控、作品互动快照与分析导出工具。
 
-### 🤝 特别感谢金牌赞助商
+本项目是在开源项目 [NanmiCoder/MediaCrawler](https://github.com/NanmiCoder/MediaCrawler) 的基础上进行二次修改和功能扩展的版本，仓库地址为 [Cx30-ovo/TK_Data_capture](https://github.com/Cx30-ovo/TK_Data_capture)。
 
-<a href="https://www.browseract.ai/mediacrawler" target="_blank">
-  <img src="docs/static/images/browseract_ad.jpg" alt="BrowserAct" width="600">
-</a>
+本项目不是 MediaCrawler 官方项目，也不代表原作者。原始项目的浏览器自动化、媒体平台采集和基础 WebUI 能力来自 MediaCrawler；本仓库主要围绕抖音账号持续监控、互动生命周期快照、任务告警、数据分析和报告导出进行了扩展。
 
-<br>
+## 项目定位
 
-<a href="https://www.browseract.ai/mediacrawler" target="_blank">
-<small>BrowserAct 支持一句话从任意网站提取数据。无需代码，一次构建、稳定复用，Token 消耗极低。BrowserAct 使用真实浏览器自动构建数据采集 Bot，内置隐身浏览、验证码处理和住宅代理，直接输出结构化结果。立即免费试用。</small>
-</a>
+上游 MediaCrawler 更偏向一次性执行的关键词搜索、作品详情和创作者主页采集。本仓库在其基础上增加了持续监控能力，主要用于跟踪指定抖音账号的更新情况，并记录作品发布后的互动变化。
 
-</div>
+典型使用场景：
 
----
+- 监控多个抖音账号，定期发现新发布的作品。
+- 保存作品标题、正文、发布时间、作品 ID 和规范 URL。
+- 在作品发布后的 1h、6h、24h、72h 和 7d 采集互动快照。
+- 区分真实观测时间、计划时间和实际发布后年龄。
+- 查看点赞、收藏、评论、分享的变化趋势。
+- 对异常任务进行重试、分类和告警处理。
+- 导出作品列表、快照历史和日报、周报、月报。
+- 通过 WebUI 查看账号表现、作品排行、主题标签和生命周期分析。
 
-<div align="center">
+当前 WebUI 和持续监控能力以抖音为主。上游代码中仍保留了其他平台的采集实现，但本仓库没有对所有平台逐项验证，README 不将其作为当前版本的稳定功能承诺。
 
-<a href="https://trendshift.io/repositories/8291" target="_blank">
-  <img src="https://trendshift.io/api/badge/repositories/8291" alt="NanmiCoder%2FMediaCrawler | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/>
-</a>
+## 主要功能
 
-[![GitHub Stars](https://img.shields.io/github/stars/NanmiCoder/MediaCrawler?style=social)](https://github.com/NanmiCoder/MediaCrawler/stargazers)
-[![GitHub Forks](https://img.shields.io/github/forks/NanmiCoder/MediaCrawler?style=social)](https://github.com/NanmiCoder/MediaCrawler/network/members)
-[![GitHub Issues](https://img.shields.io/github/issues/NanmiCoder/MediaCrawler)](https://github.com/NanmiCoder/MediaCrawler/issues)
-[![GitHub Pull Requests](https://img.shields.io/github/issues-pr/NanmiCoder/MediaCrawler)](https://github.com/NanmiCoder/MediaCrawler/pulls)
-[![License](https://img.shields.io/github/license/NanmiCoder/MediaCrawler)](https://github.com/NanmiCoder/MediaCrawler/blob/main/LICENSE)
-[![中文](https://img.shields.io/badge/🇨🇳_中文-当前-blue)](README.md)
-[![English](https://img.shields.io/badge/🇺🇸_English-Available-green)](README_en.md)
-[![Español](https://img.shields.io/badge/🇪🇸_Español-Available-green)](README_es.md)
-</div>
+### 1. 抖音多账号监控
 
+- 支持新增、编辑、启用、停用和删除多个监控账号。
+- 监控账号必须使用抖音用户主页 URL 或 `sec_user_id`。
+- 支持为不同账号设置发现间隔。
+- 支持选择单个账号或全部账号查看监控数据。
+- 删除监控账号时保留已经采集的数据。
+- 支持修改账号显示名称，便于在 WebUI 中识别。
 
+### 2. 增量发现新作品
 
-> **免责声明：**
-> 
-> 大家请以学习为目的使用本仓库⚠️⚠️⚠️⚠️，[爬虫违法违规的案件](https://github.com/HiddenStrawberry/Crawler_Illegal_Cases_In_China)  <br>
->
->本仓库的所有内容仅供学习和参考之用，禁止用于商业用途。任何人或组织不得将本仓库的内容用于非法用途或侵犯他人合法权益。本仓库所涉及的爬虫技术仅用于学习和研究，不得用于对其他平台进行大规模爬虫或其他非法行为。对于因使用本仓库内容而引起的任何法律责任，本仓库不承担任何责任。使用本仓库的内容即表示您同意本免责声明的所有条款和条件。
->
-> 点击查看更为详细的免责声明。[点击跳转](#disclaimer)
+- 后台根据账号的发现间隔检查新作品。
+- 已存在的作品不会重复插入。
+- 发现新作品后保存作品基础信息和规范作品 URL。
+- 第一次发现作品时保存 `first_seen` 快照。
+- 不保证自动回填监控开始前的全部历史作品。
 
+### 3. 互动生命周期快照
 
+每个新作品默认生成以下快照任务：
 
+| 阶段 | 计划时间 | 允许执行窗口 |
+| --- | --- | --- |
+| `1h` | 发布后 1 小时 | 30 分钟 |
+| `6h` | 发布后 6 小时 | 2 小时 |
+| `24h` | 发布后 24 小时 | 6 小时 |
+| `72h` | 发布后 72 小时 | 12 小时 |
+| `7d` | 发布后 7 天 | 24 小时 |
 
-## 📖 项目简介
+每个快照记录：
 
-一个功能强大的**多平台自媒体数据采集工具**，支持小红书、抖音、快手、B站、微博、贴吧、知乎等主流平台的公开信息抓取。
+- 计划采集时间 `due_at`。
+- 实际观测时间 `captured_at`。
+- 实际发布后年龄 `actual_age_seconds`。
+- 点赞、收藏、评论和分享数量。
+- 任务状态、失败原因和错过原因。
 
-### 🔧 技术原理
+系统不会用后来的累计互动值倒填已经错过的历史阶段。超出允许窗口后，任务会标记为 `missed`，这是预期行为。
 
-- **核心技术**：基于 [Playwright](https://playwright.dev/) 浏览器自动化框架登录保存登录态
-- **无需JS逆向**：利用保留登录态的浏览器上下文环境，通过 JS 表达式获取签名参数
-- **优势特点**：无需逆向复杂的加密算法，大幅降低技术门槛
+### 4. 任务与告警
 
+- 任务中心支持查看待执行、执行中、已完成、失败和错过任务。
+- 支持按作品、状态和类型搜索任务。
+- 支持查看失败原因、错过原因、尝试次数和原始错误。
+- 支持单任务重试和失败任务批量重试。
+- 告警按问题合并展示，支持未读、已读、已解决和已忽略状态。
+- 系统健康页显示数据库、浏览器、采集循环、磁盘空间和备份状态。
 
-## ✨ 功能特性
-| 平台   | 关键词搜索 | 指定帖子ID爬取 | 二级评论 | 指定创作者主页 | 登录态缓存 | IP代理池 | 生成评论词云图 |
-| ------ | ---------- | -------------- | -------- | -------------- | ---------- | -------- | -------------- |
-| 小红书 | ✅          | ✅              | ✅        | ✅              | ✅          | ✅        | ✅              |
-| 抖音   | ✅          | ✅              | ✅        | ✅              | ✅          | ✅        | ✅              |
-| 快手   | ✅          | ✅              | ✅        | ✅              | ✅          | ✅        | ✅              |
-| B 站   | ✅          | ✅              | ✅        | ✅              | ✅          | ✅        | ✅              |
-| 微博   | ✅          | ✅              | ✅        | ✅              | ✅          | ✅        | ✅              |
-| 贴吧   | ✅          | ✅              | ✅        | ✅              | ✅          | ✅        | ✅              |
-| 知乎   | ✅          | ✅              | ✅        | ✅              | ✅          | ✅        | ✅              |
+### 5. 数据分析
 
+WebUI 的“监控数据”页面包含以下分析模块：
 
+- 作品效果总览和核心指标。
+- 按点赞、分享、评论切换的排行榜。
+- 点赞与评论四象限图。
+- 主题发布量与互动效果对比。
+- 主题互动气泡图。
+- 标签贡献关系和标签共现分析。
+- 多作品生命周期曲线。
+- 阶段增量和互动增长速度。
+- 点赞率、收藏率、评论率和分享率。
+- 发布时段热力图。
+- 异常爆发增长检测。
+- 重点生命周期明细和全部作品分页明细。
 
-<strong>MediaCrawlerPro 重磅发布！开源不易，欢迎订阅支持</strong>
+### 6. 导出与报告
 
-> 专注于学习成熟项目的架构设计，不仅仅是爬虫技术，Pro 版本的代码设计思路同样值得深入学习！
+- 导出作品列表为 CSV 或 Excel。
+- 搜索并多选作品后导出完整快照历史。
+- 生成日报、周报和月报。
+- 查看报告生成时间、时间范围、文件大小和状态。
+- 下载或删除已生成的报告。
 
-[MediaCrawlerPro](https://github.com/MediaCrawlerPro) 相较于开源版本的核心优势：
+### 7. 浏览器复用与风控重试
 
-#### 🎯 核心功能升级
-- ✅ **自媒体内容拆解Agent**（新增功能）
-- ✅ **断点续爬功能**（重点特性）
-- ✅ **多账号 + IP代理池支持**（重点特性）
-- ✅ **去除 Playwright 依赖**，使用更简单
-- ✅ **完整 Linux 环境支持**
+- 默认使用 CDP 模式连接 Chrome 或 Edge。
+- 优先复用同一个浏览器进程和稳定标签页。
+- 记录 CDP 端口，连接失效时自动扫描可用端口。
+- 采集遇到风控时可等待后重试。
+- 默认等待 600 秒，相关配置位于 `config/base_config.py`。
+- 浏览器和平台登录状态失效时，需要在浏览器中重新登录。
 
-#### 🏗️ 架构设计优化
-- ✅ **代码重构优化**，更易读易维护（解耦 JS 签名逻辑）
-- ✅ **企业级代码质量**，适合构建大型爬虫项目
-- ✅ **完美架构设计**，高扩展性，源码学习价值更大
+### 8. 自动维护
 
-#### 🎁 额外功能
-- ✅ **自媒体视频下载器桌面端**（适合学习全栈开发）
-- ✅ **多平台首页信息流推荐**（HomeFeed）
-- ✅ **AI Agent Skill 支持**（[OpenClaw](https://openclaw.ai/) 🦞 / Claude Code / Cursor 一键安装，让 Agent 自动爬取数据）
-- [ ] **基于评论分析AI Agent正在开发中 🚀🚀**
+- 支持 SQLite 自动备份。
+- 支持日志轮转和过期清理。
+- 支持后端异常退出后自动重启。
+- 提供 Windows PowerShell 启动脚本。
+- 提供 Windows 任务计划安装和卸载脚本。
 
-点击查看：[MediaCrawlerPro 项目主页](https://github.com/MediaCrawlerPro) 更多介绍
+## WebUI 页面
 
+当前 WebUI 包含五个主要页签：
 
+| 页签 | 功能 |
+| --- | --- |
+| 概览 | 今日新增、异常任务、下次发现、下次快照、最近事件和待处理问题 |
+| 监控数据 | 作品效果、排行榜、四象限、主题标签和生命周期分析 |
+| 任务与告警 | 任务队列、失败重试、告警和系统健康 |
+| 导出报告 | 作品与快照导出、日报/周报/月报 |
+| 采集配置 | 多账号监控、采集范围、运行策略和系统维护 |
 
-## 🚀 快速开始
+页面底部保留全局系统控制台抽屉，用于查看后端、调度器和监控循环日志。
 
-> 💡 **如果这个项目对您有帮助，请给个 ⭐ Star 支持一下！**
+## 技术栈
 
-## 📋 前置依赖
+- Python 3.11+
+- FastAPI
+- Uvicorn
+- SQLAlchemy
+- SQLite
+- Playwright / Chrome DevTools Protocol
+- React 18
+- TypeScript
+- Vite
+- Tailwind CSS
+- Radix UI
+- TanStack Query
+- Zustand
 
-### 🚀 uv 安装（推荐）
+## 环境要求
 
-在进行下一步操作之前，请确保电脑上已经安装了 uv：
+- Windows 10 或 Windows 11，推荐使用 Windows PowerShell。
+- Python 3.11 或更高版本。
+- Node.js 18 或更高版本。
+- npm。
+- Chrome 或 Edge。
+- `uv`，推荐用于创建 Python 环境和同步依赖。
 
-- **安装地址**：[uv 官方安装指南](https://docs.astral.sh/uv/getting-started/installation)
-- **验证安装**：终端输入命令 `uv --version`，如果正常显示版本号，证明已经安装成功
-- **推荐理由**：uv 是目前最强的 Python 包管理工具，速度快、依赖解析准确
+如果 PowerShell 禁止运行 `npm.ps1`，请使用 `npm.cmd`，或通过 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` 调整当前用户的脚本策略。
 
-### 🟢 Node.js 安装
+## 安装
 
-项目依赖 Node.js，请前往官网下载安装：
+### 1. 获取代码
 
-- **下载地址**：https://nodejs.org/en/download/
-- **版本要求**：>= 16.0.0
+```powershell
+git clone https://github.com/Cx30-ovo/TK_Data_capture.git
+cd TK_Data_capture
+```
 
-### 📦 Python 包安装
+如果源码位于其他目录，后续命令请替换为实际项目路径。
 
-```shell
-# 进入项目目录
-cd MediaCrawler
+### 2. 安装 Python 依赖
 
-# 使用 uv sync 命令来保证 python 版本和相关依赖包的一致性
+在项目根目录执行：
+
+```powershell
 uv sync
 ```
 
-### 🌐 浏览器驱动安装（可选）
+`uv sync` 会创建或同步项目虚拟环境。默认情况下，Windows 虚拟环境位于：
 
-> 如果使用默认的 CDP 模式（连接已有 Chrome 浏览器），**无需安装浏览器驱动**。仅在使用标准 Playwright 模式时需要安装。
-
-```shell
-# 仅在标准 Playwright 模式下需要安装浏览器驱动
-uv run playwright install
+```text
+.venv\Scripts\python.exe
 ```
 
-### 🌍 Chrome 浏览器配置（推荐）
+如果使用已经存在的虚拟环境，也可以执行：
 
-项目默认使用 CDP 模式连接用户已有的 Chrome 浏览器，可以复用浏览器已有的登录状态、Cookie、扩展等，**大幅降低平台风控检测风险**。
-
-使用前需要：
-
-1. **安装最新版 Chrome 浏览器**（版本 >= 144），[下载地址](https://www.google.com/chrome/)
-2. **开启远程调试功能**：在 Chrome 地址栏输入 `chrome://inspect/#remote-debugging`，勾选 **"Allow remote debugging for this browser instance"**
-3. 页面显示 `Server running at: 127.0.0.1:9222` 表示已就绪
-
-> 💡 **提示**：运行爬虫后，Chrome 浏览器会弹出确认对话框，点击"接受"即可。程序会等待用户确认，60秒内操作完成即可。
->
-> 如果不想使用 CDP 模式，可以在 `config/base_config.py` 中设置 `ENABLE_CDP_MODE = False` 切换为标准 Playwright 模式。
-
-## 🚀 运行爬虫程序
-
-```shell
-# 在 config/base_config.py 查看配置项目功能，写的有中文注释
-
-# 从配置文件中读取关键词搜索相关的帖子并爬取帖子信息与评论
-uv run main.py --platform xhs --lt qrcode --type search
-
-# 从配置文件中读取指定的帖子ID列表获取指定帖子的信息与评论信息
-uv run main.py --platform xhs --lt qrcode --type detail
-
-# 打开对应APP扫二维码登录
-
-# 其他平台爬虫使用示例，执行下面的命令查看
-uv run main.py --help
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-<details>
-<summary>🖥️ <strong>WebUI 可视化操作界面</strong></summary>
+### 3. 安装前端依赖
 
-MediaCrawler 提供了基于 Web 的可视化操作界面，无需命令行也能轻松使用爬虫功能。
-
-#### 开发调试（推荐）
-
-开发时需要同时启动后端 API 服务和前端 Vite 开发服务器：
-
-```shell
-# 终端 1：启动 API 服务器（默认端口 8080）
-uv run uvicorn api.main:app --port 8080 --reload
-
-# 终端 2：启动前端开发服务器
+```powershell
 cd webui
-npm install
-npm run dev        # 默认在 5173 端口启动，并代理 /api 到 8080
+npm.cmd install
+cd ..
 ```
 
-启动成功后，访问 `http://localhost:5173/` 即可打开 WebUI 界面。
+### 4. 构建生产版 WebUI
 
-> 首次打开会进行环境检测（调用 `/api/env/check`），请确保后端服务已启动。如果检测失败，可点击「跳过检测」临时跳过。
-
-#### 构建生产资源
-
-如果希望通过 API 服务器直接提供 WebUI 静态资源，需要先构建前端：
-
-```shell
+```powershell
 cd webui
-npm install
-npm run build      # 产物输出到 api/webui/
+npm.cmd run build
+cd ..
 ```
 
-构建完成后，只需启动 API 服务器：
+构建产物输出到 `api/webui/`。构建完成后，后端可以直接提供 WebUI 静态资源。
 
-```shell
-uv run uvicorn api.main:app --port 8080 --reload
+## 启动
+
+### 方式一：开发模式
+
+开发模式需要同时启动后端和 Vite 前端服务器。
+
+终端 1，启动后端：
+
+```powershell
+cd D:\Project\MediaCrawler-main
+uv run uvicorn api.main:app --host 127.0.0.1 --port 8080 --reload
 ```
 
-然后访问 `http://localhost:8080` 即可。
+终端 2，启动前端：
 
-#### WebUI 功能特性
-
-- 可视化配置爬虫参数（平台、登录方式、爬取类型等）
-- 实时查看爬虫运行状态和日志
-- 数据预览和导出
-
-#### 界面预览
-
-<img src="docs/static/images/img_8.png" alt="WebUI 界面预览">
-
-</details>
-
-<details>
-<summary>🔗 <strong>使用 Python 原生 venv 管理环境（不推荐）</strong></summary>
-
-#### 创建并激活 Python 虚拟环境
-
-> 如果是爬取抖音和知乎，需要提前安装 nodejs 环境，版本大于等于：`16` 即可
-
-```shell
-# 进入项目根目录
-cd MediaCrawler
-
-# 创建虚拟环境
-# 我的 python 版本是：3.11 requirements.txt 中的库是基于这个版本的
-# 如果是其他 python 版本，可能 requirements.txt 中的库不兼容，需自行解决
-python -m venv venv
-
-# macOS & Linux 激活虚拟环境
-source venv/bin/activate
-
-# Windows 激活虚拟环境
-venv\Scripts\activate
+```powershell
+cd D:\Project\MediaCrawler-main\webui
+npm.cmd run dev
 ```
 
-#### 安装依赖库
+浏览器访问：
 
-```shell
-pip install -r requirements.txt
+```text
+http://localhost:5173/
 ```
 
-#### 安装 playwright 浏览器驱动
+Vite 会把 `/api` 请求代理到 `http://localhost:8080`。
 
-```shell
-playwright install
+### 方式二：生产模式
+
+先完成前端构建，然后只启动后端：
+
+```powershell
+cd D:\Project\MediaCrawler-main
+.\.venv\Scripts\python.exe -m uvicorn api.main:app --host 127.0.0.1 --port 8080
 ```
 
-#### 运行爬虫程序（原生环境）
+浏览器访问：
 
-```shell
-# 项目默认是没有开启评论爬取模式，如需评论请在 config/base_config.py 中的 ENABLE_GET_COMMENTS 变量修改
-# 一些其他支持项，也可以在 config/base_config.py 查看功能，写的有中文注释
-
-# 从配置文件中读取关键词搜索相关的帖子并爬取帖子信息与评论
-python main.py --platform xhs --lt qrcode --type search
-
-# 从配置文件中读取指定的帖子ID列表获取指定帖子的信息与评论信息
-python main.py --platform xhs --lt qrcode --type detail
-
-# 打开对应APP扫二维码登录
-
-# 其他平台爬虫使用示例，执行下面的命令查看
-python main.py --help
+```text
+http://127.0.0.1:8080/
 ```
 
-</details>
+FastAPI 接口文档：
 
+```text
+http://127.0.0.1:8080/docs
+```
 
-## 💾 数据保存
+独立日报页面：
 
-MediaCrawler 支持多种数据存储方式，包括 CSV、JSON、JSONL、Excel、SQLite 和 MySQL 数据库。
+```text
+http://127.0.0.1:8080/daily.html
+```
 
-📖 **详细使用说明请查看：[数据存储指南](docs/data_storage_guide.md)**
+### 方式三：Windows 一键启动
 
+项目根目录提供：
 
-[🚀 MediaCrawlerPro 重磅发布 🚀！更多的功能，更好的架构设计！开源不易，欢迎订阅支持！](https://github.com/MediaCrawlerPro)
+```text
+start_mediacrawler.bat
+```
 
+双击后会启动：
 
-## 💬 交流群组
-- **微信交流群**：[点击加入](https://nanmicoder.github.io/MediaCrawler/%E5%BE%AE%E4%BF%A1%E4%BA%A4%E6%B5%81%E7%BE%A4.html)
-- **B站账号**：[关注我](https://space.bilibili.com/434377496)，分享AI与爬虫技术知识
+- 带自动重启的后端进程。
+- WebUI 开发服务器。
 
+使用前需要先完成 Python 依赖和前端依赖安装，并确保 `.venv\Scripts\python.exe` 存在。
 
-## 💰 赞助商展示
+## 使用流程
 
-<table>
-  <thead>
-    <tr>
-      <th width="220">赞助商</th>
-      <th align="left">介绍</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td align="center" valign="middle">
-        <a href="https://tikhub.io/?utm_source=github.com/NanmiCoder/MediaCrawler&utm_medium=marketing_social&utm_campaign=retargeting&utm_content=carousel_ad"><img src="docs/static/images/tikhub_banner_zh.png" width="180" alt="TikHub"></a>
-      </td>
-      <td valign="middle">
-        <a href="https://tikhub.io/?utm_source=github.com/NanmiCoder/MediaCrawler&utm_medium=marketing_social&utm_campaign=retargeting&utm_content=carousel_ad">TikHub.io</a> 提供 900+ 高稳定性数据接口，覆盖 TK、DY、XHS、Y2B、Ins、X 等 14+ 海内外主流平台，支持用户、内容、商品、评论等多维度公开数据 API，并配套 4000 万+ 已清洗结构化数据集，使用邀请码 <code>cfzyejV9</code> <a href="https://tikhub.io/?utm_source=github.com/NanmiCoder/MediaCrawler&utm_medium=marketing_social&utm_campaign=retargeting&utm_content=carousel_ad">注册并充值</a>，即可额外获得 $2 赠送额度。
-      </td>
-    </tr>
-    <tr>
-      <td align="center" valign="middle">
-        <a href="https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=mei%27da%27c%27rmeidacrawler"><img width="160" alt="Atlas Cloud" src="docs/static/images/atlas_cloud_logo_black.png#gh-light-mode-only"><img width="160" alt="Atlas Cloud" src="docs/static/images/atlas_cloud_logo_white.png#gh-dark-mode-only"></a>
-      </td>
-      <td valign="middle">
-        <a href="https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=mei%27da%27c%27rmeidacrawler">Atlas Cloud</a> 是一个全模态 AI 推理平台，让开发者通过统一的 AI API 访问视频生成、图像生成和 LLM API，无需分别维护多个厂商集成，即可调用 300+ 精选模型。Atlas Cloud 最新推出 <a href="https://www.atlascloud.ai/console/coding-plan">coding plan 优惠</a>，为开发者提供更具性价比的 API 访问预算。
-      </td>
-    </tr>
-    <tr>
-      <td align="center" valign="middle">
-        <a href="https://go.nodemaven.com/MediaCrawlergh"><img src="docs/static/images/nodemaven_banner.png" width="180" alt="NodeMaven"></a>
-      </td>
-      <td valign="middle">
-        <a href="https://go.nodemaven.com/MediaCrawlergh">NodeMaven</a> 是面向网页抓取和自动化场景的高效代理服务商，提供市面上最高质量的 IP。主要优势包括 99.9% 可用性、ZIP 邮编定位、IP 过滤（所有代理的欺诈评分均低于 97%）、无需 KYC，以及代理带宽检测器、Meta 标签检测器、IP 查询等独家免费工具。MediaCrawler 用户使用优惠码 <code>CRAWLER35</code> 可享移动和住宅代理 35% 折扣，使用 <code>CRAWLER40</code> 可享 ISP（静态）代理 40% 折扣。👉 <a href="https://go.nodemaven.com/MediaCrawlergh">访问 NodeMaven</a>
-      </td>
-    </tr>
-  </tbody>
-</table>
+1. 启动后端服务。
+2. 等待项目专用浏览器启动，并完成抖音登录。
+3. 打开 WebUI，进入“采集配置”。
+4. 点击“新增账号”，填写账号显示名称和抖音主页 URL 或 `sec_user_id`。
+5. 设置发现间隔，启用监控并保存配置。
+6. 可点击“立即发现”验证账号和登录状态。
+7. 进入“概览”和“监控数据”查看作品、任务和快照结果。
+8. 进入“任务与告警”处理失败任务和系统告警。
+9. 进入“导出报告”导出数据或生成周期报告。
 
----
+监控任务依赖后端服务持续运行。关闭后端后，到期快照和定时发现不会继续执行。
 
-## 🤝 成为赞助者
+## 浏览器和 CDP 配置
 
-成为赞助者，可以将您的产品展示在这里，每天获得大量曝光！
+主要配置位于 `config/base_config.py`：
 
-**联系方式**：
-- 微信：`relakkes`
-- 邮箱：`relakkes@gmail.com`
----
+```python
+ENABLE_CDP_MODE = True
+CDP_DEBUG_PORT = 9222
+START_BROWSER_ON_SERVICE_START = True
+AUTO_CLOSE_BROWSER = False
+```
 
-## ☕ 请作者喝杯咖啡
+相关说明：
 
-如果这个项目对您有帮助，欢迎打赏支持，您的每一份支持都是我持续更新的动力 ❤️
+- `ENABLE_CDP_MODE=True` 时使用真实 Chrome 或 Edge 环境。
+- 后端启动时可以自动准备项目专用浏览器。
+- 浏览器数据默认保存在 `browser_data/`，该目录不提交到 Git。
+- 项目会优先复用已经存在且有效的 CDP 端口。
+- 如果浏览器连接失败，检查端口占用、浏览器登录状态和远程调试权限。
 
-<table>
-<tr>
-<td align="center" width="33%">
-<img src="docs/static/images/wechat_pay.jpeg" width="250" alt="微信赞赏"><br>
-<b>微信赞赏</b>
-</td>
-<td align="center" width="33%">
-<img src="docs/static/images/zfb_pay.png" width="250" alt="支付宝"><br>
-<b>支付宝</b>
-</td>
-<td align="center" width="33%">
-<a href="https://buymeacoffee.com/relakkes" target="_blank">
-<img src="docs/static/images/bmc_button.png" width="250" alt="Buy Me a Coffee">
-</a><br>
-<b>Buy Me a Coffee</b>
-</td>
-</tr>
-</table>
+使用外部已启动的浏览器时，需要确保浏览器启用了远程调试，并监听配置的 CDP 端口。
 
----
+## 风控重试配置
 
-## 📚 其他
-- **常见问题**：[MediaCrawler 完整文档](https://nanmicoder.github.io/MediaCrawler/)
-- **爬虫入门教程**：[CrawlerTutorial 免费教程](https://github.com/NanmiCoder/CrawlerTutorial)
-- **新闻爬虫开源项目**：[NewsCrawlerCollection](https://github.com/NanmiCoder/NewsCrawlerCollection)
+```python
+ENABLE_RISK_CONTROL_RETRY = True
+RISK_CONTROL_RETRY_DELAY_SECONDS = 600
+```
 
+默认行为是在遇到风控后等待 600 秒再重试。重试仍然受到任务允许窗口和最大尝试次数限制。系统不会通过延迟重试伪造历史快照。
 
-## ⭐ Star 趋势图
+## 数据存储
 
-如果这个项目对您有帮助，请给个 ⭐ Star 支持一下，让更多的人看到 MediaCrawler！
+### SQLite 数据库
 
-[![Star History Chart](https://www.repostars.dev/api/embed?repo=NanmiCoder%2FMediaCrawler&theme=ocean)](https://www.repostars.dev/?repos=NanmiCoder%2FMediaCrawler&theme=ocean)
+监控模块默认使用：
 
+```text
+database/sqlite_tables.db
+```
 
-## 📚 参考
+主要数据表：
 
-- **小红书签名仓库**：[Cloxl 的 xhs 签名仓库](https://github.com/Cloxl/xhshow)
-- **小红书客户端**：[ReaJason 的 xhs 仓库](https://github.com/ReaJason/xhs)
-- **短信转发**：[SmsForwarder 参考仓库](https://github.com/pppscn/SmsForwarder)
-- **内网穿透工具**：[ngrok 官方文档](https://ngrok.com/docs/)
+| 表名 | 用途 |
+| --- | --- |
+| `douyin_monitored_accounts` | 监控账号、显示名称、间隔和最近发现时间 |
+| `douyin_posts` | 作品基础信息、发布时间和首次发现时间 |
+| `douyin_post_snapshots` | `first_seen` 及 1h、6h、24h、72h、7d 快照 |
+| `douyin_monitor_jobs` | 发现、快照和选题任务队列 |
+| `douyin_topic_profiles` | 周期选题分析结果 |
+| `monitor_alerts` | 系统告警、严重级别和处理状态 |
 
+数据库初始化由后端启动流程自动完成。升级已有数据时，项目会执行必要的表结构迁移。
 
-# 免责声明
-<div id="disclaimer"> 
+### 运行文件
 
-## 1. 项目目的与性质
-本项目（以下简称“本项目”）是作为一个技术研究与学习工具而创建的，旨在探索和学习网络数据采集技术。本项目专注于自媒体平台的数据爬取技术研究，旨在提供给学习者和研究者作为技术交流之用。
+| 路径 | 内容 |
+| --- | --- |
+| `output/crawler.log` | Python 爬虫日志 |
+| `output/webui.log` | WebUI、调度器和监控循环日志 |
+| `output/exports/` | CSV 和 Excel 导出文件 |
+| `output/reports/` | 日报、周报和月报 |
+| `output/backups/` | SQLite 自动备份 |
+| `data/` | 上游采集器生成的原始数据 |
+| `browser_data/` | 项目专用浏览器用户数据 |
 
-## 2. 法律合规性声明
-本项目开发者（以下简称“开发者”）郑重提醒用户在下载、安装和使用本项目时，严格遵守中华人民共和国相关法律法规，包括但不限于《中华人民共和国网络安全法》、《中华人民共和国反间谍法》等所有适用的国家法律和政策。用户应自行承担一切因使用本项目而可能引起的法律责任。
+上述运行目录中的日志、数据库备份、导出文件和浏览器数据通常不会提交到 Git。
 
-## 3. 使用目的限制
-本项目严禁用于任何非法目的或非学习、非研究的商业行为。本项目不得用于任何形式的非法侵入他人计算机系统，不得用于任何侵犯他人知识产权或其他合法权益的行为。用户应保证其使用本项目的目的纯属个人学习和技术研究，不得用于任何形式的非法活动。
+## 常用配置
 
-## 4. 免责声明
-开发者已尽最大努力确保本项目的正当性及安全性，但不对用户使用本项目可能引起的任何形式的直接或间接损失承担责任。包括但不限于由于使用本项目而导致的任何数据丢失、设备损坏、法律诉讼等。
+在 `config/base_config.py` 中可以调整：
 
-## 5. 知识产权声明
-本项目的知识产权归开发者所有。本项目受到著作权法和国际著作权条约以及其他知识产权法律和条约的保护。用户在遵守本声明及相关法律法规的前提下，可以下载和使用本项目。
+```python
+PLATFORM = "dy"
+CRAWLER_TYPE = "creator"
+START_TIME = ""
+END_TIME = ""
+CRAWLER_MAX_NOTES_COUNT = 15
+ENABLE_GET_COMMENTS = True
+ENABLE_GET_SUB_COMMENTS = False
+SAVE_DATA_OPTION = "jsonl"
+```
 
-## 6. 最终解释权
-关于本项目的最终解释权归开发者所有。开发者保留随时更改或更新本免责声明的权利，恕不另行通知。
-</div>
+说明：
+
+- `START_TIME` 和 `END_TIME` 用于抖音作品发布时间区间筛选。
+- `CRAWLER_MAX_NOTES_COUNT` 控制单次任务最多处理的作品数量。
+- `ENABLE_GET_COMMENTS` 控制是否采集评论。
+- `ENABLE_GET_SUB_COMMENTS` 控制是否采集二级评论。
+- `SAVE_DATA_OPTION` 控制上游一次性采集任务的数据保存方式。
+- 多账号持续监控的数据统一写入监控 SQLite 表，不受 `SAVE_DATA_OPTION` 直接控制。
+
+## 主要 API
+
+启动后端后可访问 `/docs` 查看完整接口。常用接口如下：
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/health` | 后端健康检查 |
+| POST | `/api/crawler/start` | 启动一次性爬虫任务 |
+| POST | `/api/crawler/stop` | 停止当前爬虫任务 |
+| GET | `/api/crawler/status` | 查询爬虫状态 |
+| GET | `/api/monitor/accounts` | 查询监控账号 |
+| POST | `/api/monitor/accounts` | 新增监控账号 |
+| PUT | `/api/monitor/accounts/{account_id}` | 修改监控账号 |
+| DELETE | `/api/monitor/accounts/{account_id}` | 删除监控账号 |
+| POST | `/api/monitor/accounts/{account_id}/discover` | 立即发现指定账号的新作品 |
+| GET | `/api/monitor/overview` | 查询概览数据 |
+| GET | `/api/monitor/jobs` | 查询任务列表 |
+| GET | `/api/monitor/alerts` | 查询告警 |
+| GET | `/api/monitor/health` | 查询系统健康状态 |
+| GET | `/api/monitor/analytics` | 查询分析数据 |
+| GET | `/api/monitor/export/posts` | 导出作品列表 |
+| GET | `/api/monitor/export/snapshots` | 导出快照历史 |
+| POST | `/api/monitor/reports/generate` | 生成周期报告 |
+
+## Windows 任务计划
+
+项目提供以下脚本：
+
+```text
+install_windows_task.bat
+uninstall_windows_task.bat
+```
+
+安装任务计划：
+
+```powershell
+.\install_windows_task.bat
+```
+
+脚本会创建名为 `MediaCrawlerBackend` 的计划任务，在用户登录时启动后端，并在进程异常退出后尝试重启。
+
+卸载任务计划：
+
+```powershell
+.\uninstall_windows_task.bat
+```
+
+任务计划只负责启动后端。WebUI 开发服务器通常不需要安装为计划任务；生产使用时应先将 WebUI 构建到 `api/webui/`，再由后端提供服务。
+
+## 测试
+
+运行监控模块测试：
+
+```powershell
+$env:PYTHONDONTWRITEBYTECODE='1'
+.\.venv\Scripts\python.exe -m pytest tests\test_monitor_repository.py -q -p no:cacheprovider --basetemp=output\pytest-tmp
+```
+
+验证前端 TypeScript 和生产构建：
+
+```powershell
+cd webui
+npm.cmd run build
+```
+
+当前监控模块测试覆盖账号隔离、作品去重、快照任务、错过窗口、失败重试、导出报告、分析指标和自动维护等主要流程。
+
+## 目录结构
+
+```text
+.
+|-- api/                    FastAPI 服务、路由、服务和模型
+|-- config/                 爬虫和系统配置
+|-- database/               SQLAlchemy 模型、会话和仓储
+|-- docs/                   项目文档
+|-- media_platform/         各平台采集实现
+|-- output/                 日志、导出、报告和数据库备份
+|-- scripts/                Windows 启动和维护脚本
+|-- tests/                  Python 测试
+|-- tools/                  CDP 浏览器和通用工具
+|-- webui/                  React WebUI 源码
+|-- main.py                 上游命令行采集入口
+`-- start_mediacrawler.bat  Windows 一键启动入口
+```
+
+## 已知限制
+
+- 持续监控主要针对抖音，其他平台来自上游代码，当前 WebUI 未完整保留其全部操作入口。
+- 监控开始前已经错过的阶段不会自动倒填，符合预期的数据会保持为 `missed`。
+- 后端服务停止时不会执行发现和快照任务。
+- 首次发现的互动值不等于 1h 快照，系统会分别保存 `first_seen` 和计划阶段。
+- 账号登录失效后需要重新登录，程序不会绕过验证码或平台安全机制。
+- 大幅修改数据库结构或清理 `browser_data/` 前，应先备份数据库和登录状态。
+- 日报、周报和月报是本地 Markdown 报告，不是在线协作文档。
+- 数据分析和主题分类依赖已有作品文本，数据量不足时部分图表可能为空。
+
+## 安全与合规
+
+本项目仅用于个人学习、研究和合规的数据分析。
+
+使用时必须遵守：
+
+- 目标平台的服务条款和 robots 规则。
+- 适用的法律法规和隐私要求。
+- 合理控制请求频率。
+- 不进行大规模抓取、批量骚扰、账号操纵或非法传播。
+- 不采集、传播或滥用敏感个人信息。
+- 不使用本项目绕过登录、验证码、访问控制或其他安全机制。
+
+使用者应自行承担因部署、运行、采集、存储和使用数据产生的责任。
+
+## 来源、致谢与许可证
+
+本项目的上游项目为：
+
+- [NanmiCoder/MediaCrawler](https://github.com/NanmiCoder/MediaCrawler)
+- 上游文档：[https://nanmicoder.github.io/MediaCrawler/](https://nanmicoder.github.io/MediaCrawler/)
+
+本仓库是在上游代码基础上进行的二次修改，主要新增和调整了抖音多账号监控、互动快照、任务队列、告警、系统健康、分析可视化和报告导出等功能。
+
+感谢 MediaCrawler 原作者 NanmiCoder 及所有贡献者提供基础的浏览器自动化和平台采集实现。
+
+本仓库继续遵循根目录 [LICENSE](LICENSE) 中的许可证要求。上游项目声明为非商业学习许可，使用前请完整阅读许可证，不要将本项目用于商业用途或其他违反许可证和相关法律的场景。

@@ -82,6 +82,42 @@ async def create_tables(db_type: str = None):
     if engine:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            if db_type == "sqlite":
+                await _migrate_monitor_columns(conn)
+
+
+async def _migrate_monitor_columns(conn) -> None:
+    """Apply lightweight SQLite migrations for the monitor module."""
+    migrations = {
+        "douyin_monitored_accounts": {
+            "display_name": "ALTER TABLE douyin_monitored_accounts ADD COLUMN display_name VARCHAR(255) NOT NULL DEFAULT ''",
+        },
+        "douyin_monitor_jobs": {
+            "sec_user_id": "ALTER TABLE douyin_monitor_jobs ADD COLUMN sec_user_id VARCHAR(255) NOT NULL DEFAULT ''",
+        },
+        "monitor_alerts": {
+            "sec_user_id": "ALTER TABLE monitor_alerts ADD COLUMN sec_user_id VARCHAR(255) NOT NULL DEFAULT ''",
+        },
+    }
+    for table, columns in migrations.items():
+        result = await conn.execute(text(f"PRAGMA table_info({table})"))
+        existing = {row[1] for row in result.fetchall()}
+        for column, statement in columns.items():
+            if column not in existing:
+                await conn.execute(text(statement))
+
+    await conn.execute(text(
+        "UPDATE douyin_monitor_jobs "
+        "SET sec_user_id = COALESCE(("
+        "SELECT sec_user_id FROM douyin_posts "
+        "WHERE douyin_posts.platform = douyin_monitor_jobs.platform "
+        "AND douyin_posts.aweme_id = douyin_monitor_jobs.aweme_id "
+        "LIMIT 1"
+        "), '') "
+        "WHERE sec_user_id = ''"
+    ))
+    await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_douyin_monitor_jobs_sec_user_id ON douyin_monitor_jobs (sec_user_id)"))
+    await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_monitor_alerts_sec_user_id ON monitor_alerts (sec_user_id)"))
 
 
 @asynccontextmanager

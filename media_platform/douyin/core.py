@@ -36,7 +36,7 @@ from base.base_crawler import AbstractCrawler
 from proxy.proxy_ip_pool import IpInfoModel, create_ip_pool
 from store import douyin as douyin_store
 from tools import utils
-from tools.cdp_browser import CDPBrowserManager
+from tools.cdp_browser import CDPBrowserManager, safe_page_goto
 from var import crawler_type_var, source_keyword_var
 
 from .client import DouYinClient
@@ -95,7 +95,7 @@ class DouYinCrawler(AbstractCrawler):
                 await self.browser_context.add_init_script(path="libs/stealth.min.js")
 
             self.context_page = await self._get_or_create_context_page()
-            await self.context_page.goto(self.index_url)
+            await safe_page_goto(self.context_page, self.index_url, accepted_hosts=("douyin.com",))
 
             self.dy_client = await self.create_douyin_client(httpx_proxy_format)
             if not await self.dy_client.pong(browser_context=self.browser_context):

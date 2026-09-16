@@ -13,7 +13,7 @@ from playwright.async_api import async_playwright
 import config
 from database.monitor_repository import monitor_repository
 from media_platform.douyin.core import DouYinCrawler
-from tools.cdp_browser import CDPBrowserManager
+from tools.cdp_browser import CDPBrowserManager, safe_page_goto
 
 from .crawler_manager import crawler_manager
 
@@ -23,6 +23,25 @@ def _to_int(value: Any) -> int:
         return int(value or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def classify_job_error(job: dict) -> str:
+    text = f"{job.get('last_error') or ''} {job.get('miss_reason') or ''}".lower()
+    if not text.strip():
+        return "none"
+    if "argus" in text or "风控" in text or "blocked" in text:
+        return "risk_control"
+    if "login" in text or "登录" in text:
+        return "login_required"
+    if "browser" in text or "cdp" in text or "websocket" in text or "disconnected" in text:
+        return "browser_disconnected"
+    if "timeout" in text or "timed out" in text or "connection" in text:
+        return "network_timeout"
+    if "not found" in text or "不存在" in text:
+        return "post_not_found"
+    if "json" in text or "decode" in text:
+        return "parse_error"
+    return "unknown"
 
 
 class DouyinMonitorFetcher:
@@ -44,7 +63,11 @@ class DouyinMonitorFetcher:
         )
         self._crawler.browser_context = browser_context
         self._crawler.context_page = await self._crawler._get_or_create_context_page()
-        await self._crawler.context_page.goto(self._crawler.index_url)
+        await safe_page_goto(
+            self._crawler.context_page,
+            self._crawler.index_url,
+            accepted_hosts=("douyin.com",),
+        )
         self._client = await self._crawler.create_douyin_client(None)
         if not await self._client.pong(browser_context=self._crawler.browser_context):
             raise RuntimeError("Douyin login required. Please run a normal crawler task first to refresh the login state.")
@@ -182,6 +205,13 @@ class MonitorService:
     def is_running(self) -> bool:
         return bool(self._task and not self._task.done())
 
+    async def _resolve_account(self, account_id: Optional[int] = None, all_accounts: bool = False):
+        if all_accounts:
+            return None
+        if account_id is not None:
+            return await monitor_repository.get_monitored_account_by_id(account_id)
+        return await monitor_repository.get_enabled_monitored_account()
+
     async def start(self) -> None:
         if not self.is_running:
             self._task = asyncio.create_task(self._loop())
@@ -228,13 +258,17 @@ class MonitorService:
 
         await self.run_due_snapshots()
 
-        account = await monitor_repository.get_enabled_monitored_account()
-        if account is None:
-            return
+        accounts = await monitor_repository.list_monitored_accounts(include_disabled=False)
         now = int(time.time())
-        interval_seconds = max(1, account.discover_interval_minutes) * 60
-        last_discovered_at = int(account.last_discovered_at or 0)
-        if now - last_discovered_at >= interval_seconds:
+        for account in accounts:
+            interval_seconds = max(1, account.discover_interval_minutes) * 60
+            last_discovered_at = int(account.last_discovered_at or 0)
+            if now - last_discovered_at < interval_seconds:
+                continue
+            await crawler_manager.add_log(
+                f"[Monitor] Multi-account discovery due for {account.display_name or account.sec_user_id}",
+                "info",
+            )
             await self.discover_account(sec_user_id=account.sec_user_id)
 
     def _crawler_is_busy(self) -> bool:
@@ -310,6 +344,7 @@ class MonitorService:
                     title="发现新作品",
                     message=f"发现 {created_posts} 篇新作品，生成 {created_jobs} 个快照任务。",
                     dedupe_key=f"new_posts:{int(time.time())}",
+                    sec_user_id=account.sec_user_id,
                 )
             await crawler_manager.add_log(
                 f"[Monitor] Discovery result: fetched={len(posts)}, new_posts={created_posts}, new_jobs={created_jobs}",
@@ -349,6 +384,7 @@ class MonitorService:
             completed = 0
             retried = 0
             failed = 0
+            account_results: dict[str, dict[str, int]] = {}
             async with fetcher as active_fetcher:
                 for job in due_jobs:
                     running_job = await monitor_repository.mark_job_running(job.id)
@@ -365,6 +401,8 @@ class MonitorService:
                             captured_at=now,
                         )
                         completed += 1
+                        result = account_results.setdefault(job.sec_user_id or "unassigned", {"completed": 0, "retried": 0, "failed": 0})
+                        result["completed"] += 1
                     except Exception as exc:
                         retry_job = await monitor_repository.mark_job_retry(
                             job_id=job.id,
@@ -373,22 +411,30 @@ class MonitorService:
                         )
                         if retry_job and retry_job.status == "failed":
                             failed += 1
+                            result = account_results.setdefault(job.sec_user_id or "unassigned", {"completed": 0, "retried": 0, "failed": 0})
+                            result["failed"] += 1
                         else:
                             retried += 1
+                            result = account_results.setdefault(job.sec_user_id or "unassigned", {"completed": 0, "retried": 0, "failed": 0})
+                            result["retried"] += 1
 
             await crawler_manager.add_log(
                 f"[Monitor] Snapshot cycle result: completed={completed}, retried={retried}, failed={failed}",
                 "success" if completed and not retried and not failed else "info",
             )
             if retried > 0 or failed > 0:
-                severity = "error" if failed > 0 else "warning"
-                await self._create_alert(
-                    alert_type="snapshot_errors",
-                    severity=severity,
-                    title="快照执行异常",
-                    message=f"本轮完成 {completed} 个，重试 {retried} 个，失败 {failed} 个。",
-                    dedupe_key=f"snapshot_errors:{int(time.time() // 3600)}",
-                )
+                for sec_user_id, result in account_results.items():
+                    if result["retried"] == 0 and result["failed"] == 0:
+                        continue
+                    severity = "error" if result["failed"] > 0 else "warning"
+                    await self._create_alert(
+                        alert_type="snapshot_errors",
+                        severity=severity,
+                        title="快照执行异常",
+                        message=f"本轮完成 {result['completed']} 个，重试 {result['retried']} 个，失败 {result['failed']} 个。",
+                        dedupe_key=f"snapshot_errors:{sec_user_id}:{int(time.time() // 3600)}",
+                        sec_user_id=sec_user_id if sec_user_id != "unassigned" else "",
+                    )
             return {"status": "ok", "completed": completed, "retried": retried, "failed": failed}
 
     async def _create_alert(
@@ -398,6 +444,7 @@ class MonitorService:
         title: str,
         message: str,
         dedupe_key: str,
+        sec_user_id: str = "",
     ) -> None:
         await monitor_repository.create_alert(
             alert_type=alert_type,
@@ -405,6 +452,7 @@ class MonitorService:
             title=title,
             message=message,
             dedupe_key=dedupe_key,
+            sec_user_id=sec_user_id,
         )
 
     async def ensure_browser_ready(self) -> dict:
@@ -423,19 +471,28 @@ class MonitorService:
             crawler = DouYinCrawler()
             crawler.browser_context = browser_context
             page = await crawler._get_or_create_context_page()
-            await page.goto(crawler.index_url)
+            await safe_page_goto(page, crawler.index_url, accepted_hosts=("douyin.com",))
             await manager.cleanup()
         await crawler_manager.add_log("[Monitor] Dedicated browser is ready", "success")
         return {"status": "ok"}
 
-    async def list_alerts(self, status: Optional[str] = None, limit: int = 200) -> dict:
-        alerts = await monitor_repository.list_alerts(status=status, limit=limit)
-        unread = await monitor_repository.count_unread_alerts()
+    async def list_alerts(
+        self,
+        status: Optional[str] = None,
+        limit: int = 200,
+        account_id: Optional[int] = None,
+        all_accounts: bool = False,
+    ) -> dict:
+        account = await self._resolve_account(account_id, all_accounts=all_accounts) if account_id is not None or all_accounts else None
+        sec_user_id = account.sec_user_id if account else None
+        alerts = await monitor_repository.list_alerts(status=status, limit=limit, sec_user_id=sec_user_id)
+        unread = await monitor_repository.count_unread_alerts(sec_user_id=sec_user_id)
         return {
             "alerts": [
                 {
                     "id": alert.id,
                     "alert_type": alert.alert_type,
+                    "sec_user_id": alert.sec_user_id,
                     "severity": alert.severity,
                     "title": alert.title,
                     "message": alert.message,
@@ -454,19 +511,31 @@ class MonitorService:
             raise ValueError(f"Alert not found: {alert_id}")
         return {"id": alert.id, "status": alert.status, "read_at": alert.read_at}
 
-    async def mark_all_alerts_read(self) -> dict:
-        count = await monitor_repository.mark_all_alerts_read()
+    async def mark_all_alerts_read(self, account_id: Optional[int] = None, all_accounts: bool = False) -> dict:
+        account = await self._resolve_account(account_id, all_accounts=all_accounts) if account_id is not None or all_accounts else None
+        count = await monitor_repository.mark_all_alerts_read(
+            sec_user_id=account.sec_user_id if account else None,
+        )
         return {"updated": count}
 
-    async def get_health_data(self) -> dict:
+    async def update_alerts_status(self, alert_ids: list[int], status: str) -> dict:
+        count = await monitor_repository.set_alerts_status(alert_ids=alert_ids, status=status)
+        await crawler_manager.add_log(
+            f"[Monitor] Updated {count} alerts to status={status}",
+            "info",
+        )
+        return {"updated": count, "status": status}
+
+    async def get_health_data(self, account_id: Optional[int] = None, all_accounts: bool = False) -> dict:
         now = int(time.time())
         checks: list[dict] = []
         try:
-            job_counts = await monitor_repository.get_job_counts()
-            last_snapshot = await monitor_repository.get_last_snapshot()
-            next_job = await monitor_repository.get_next_pending_job()
-            account = await monitor_repository.get_enabled_monitored_account()
-            unread_alerts = await monitor_repository.count_unread_alerts()
+            account = await self._resolve_account(account_id, all_accounts=all_accounts)
+            sec_user_id = account.sec_user_id if account else None
+            job_counts = await monitor_repository.get_job_counts(sec_user_id=sec_user_id)
+            last_snapshot = await monitor_repository.get_last_snapshot(sec_user_id=sec_user_id)
+            next_job = await monitor_repository.get_next_pending_job(sec_user_id=sec_user_id)
+            unread_alerts = await monitor_repository.count_unread_alerts(sec_user_id=sec_user_id)
             checks.append({"key": "database", "status": "ok", "value": "connected", "detail": ""})
         except Exception as exc:
             return {
@@ -474,6 +543,7 @@ class MonitorService:
                 "overall_status": "error",
                 "checks": [{"key": "database", "status": "error", "value": "failed", "detail": str(exc)}],
                 "metrics": {},
+                "system_config": {},
             }
 
         browser_ok, browser_port = await CDPBrowserManager().probe_existing_browser()
@@ -552,14 +622,24 @@ class MonitorService:
                 "last_backup_at": latest_backup_at,
                 "backup_count": len(backups),
             },
+            "system_config": {
+                "auto_backup": bool(config.ENABLE_AUTO_BACKUP),
+                "backup_interval_hours": int(config.BACKUP_INTERVAL_HOURS),
+                "backup_retention_days": int(config.BACKUP_RETENTION_DAYS),
+                "log_retention_days": int(config.LOG_RETENTION_DAYS),
+                "start_browser_on_service_start": bool(config.START_BROWSER_ON_SERVICE_START),
+                "cdp_debug_port": int(config.CDP_DEBUG_PORT),
+                "maintenance_check_interval_seconds": int(config.MAINTENANCE_CHECK_INTERVAL_SECONDS),
+            },
         }
 
-    async def get_dashboard_data(self, limit: int = 100) -> dict:
+    async def get_dashboard_data(self, limit: int = 100, account_id: Optional[int] = None, all_accounts: bool = False) -> dict:
         """Return the data needed by the WebUI monitoring dashboard."""
-        account = await monitor_repository.get_enabled_monitored_account()
-        posts = await monitor_repository.list_posts(limit=limit)
-        snapshots = await monitor_repository.list_snapshots(limit=1000)
-        job_counts = await monitor_repository.get_job_counts()
+        account = await self._resolve_account(account_id, all_accounts=all_accounts)
+        sec_user_id = account.sec_user_id if account else None
+        posts = await monitor_repository.list_posts(limit=limit, sec_user_id=sec_user_id)
+        snapshots = await monitor_repository.list_snapshots(limit=1000, sec_user_id=sec_user_id)
+        job_counts = await monitor_repository.get_job_counts(sec_user_id=sec_user_id)
 
         snapshots_by_post: dict[str, list[dict]] = {}
         for snapshot in sorted(snapshots, key=lambda item: item.captured_at):
@@ -579,6 +659,7 @@ class MonitorService:
             "account": {
                 "id": account.id,
                 "sec_user_id": account.sec_user_id,
+                "display_name": account.display_name or account.sec_user_id,
                 "profile_url": account.profile_url,
                 "enabled": account.enabled,
                 "discover_interval_minutes": account.discover_interval_minutes,
@@ -604,19 +685,69 @@ class MonitorService:
             ],
         }
 
-    async def get_overview_data(self) -> dict:
+    async def get_account_comparison(self, limit: int = 100) -> dict:
+        accounts = await monitor_repository.list_monitored_accounts()
+        result = []
+        for account in accounts:
+            posts = await monitor_repository.list_posts(limit=limit, sec_user_id=account.sec_user_id)
+            snapshots = await monitor_repository.list_snapshots(limit=100000, sec_user_id=account.sec_user_id)
+            job_counts = await monitor_repository.get_job_counts(sec_user_id=account.sec_user_id)
+            latest_by_post = {}
+            for snapshot in snapshots:
+                current = latest_by_post.get(snapshot.aweme_id)
+                if current is None or snapshot.captured_at > current.captured_at:
+                    latest_by_post[snapshot.aweme_id] = snapshot
+            interactions = [
+                (latest_by_post[post.aweme_id].liked_count
+                 + latest_by_post[post.aweme_id].collected_count
+                 + latest_by_post[post.aweme_id].comment_count
+                 + latest_by_post[post.aweme_id].share_count)
+                for post in posts if post.aweme_id in latest_by_post
+            ]
+            sorted_interactions = sorted(interactions)
+            count = len(sorted_interactions)
+            median_value = 0 if count == 0 else (
+                sorted_interactions[count // 2]
+                if count % 2
+                else (sorted_interactions[count // 2 - 1] + sorted_interactions[count // 2]) / 2
+            )
+            average_value = sum(sorted_interactions) / count if count else 0
+            burst_threshold = max(median_value * 2, 1)
+            result.append({
+                "id": account.id,
+                "display_name": account.display_name or account.sec_user_id,
+                "sec_user_id": account.sec_user_id,
+                "enabled": account.enabled,
+                "profile_url": account.profile_url,
+                "last_discovered_at": account.last_discovered_at,
+                "posts": len(posts),
+                "snapshots": len(snapshots),
+                "total_interaction": sum(sorted_interactions),
+                "average_interaction": round(average_value, 2),
+                "median_interaction": round(median_value, 2),
+                "burst_rate": round(sum(1 for value in sorted_interactions if value >= burst_threshold) / count * 100, 2) if count else 0,
+                "zero_rate": round(sum(1 for value in sorted_interactions if value == 0) / count * 100, 2) if count else 0,
+                "jobs": job_counts,
+            })
+        return {
+            "generated_at": datetime.now().isoformat(timespec="seconds"),
+            "accounts": result,
+        }
+
+    async def get_overview_data(self, account_id: Optional[int] = None, all_accounts: bool = False) -> dict:
         """Return the operational overview shown on the first WebUI tab."""
         now = int(time.time())
-        account = await monitor_repository.get_enabled_monitored_account()
-        job_counts = await monitor_repository.get_job_counts()
-        next_job = await monitor_repository.get_next_pending_job()
+        account = await self._resolve_account(account_id, all_accounts=all_accounts)
+        sec_user_id = account.sec_user_id if account else None
+        job_counts = await monitor_repository.get_job_counts(sec_user_id=sec_user_id)
+        next_job = await monitor_repository.get_next_pending_job(sec_user_id=sec_user_id)
         next_job_post = (
             await monitor_repository.get_post(next_job.aweme_id)
             if next_job else None
         )
         start_of_day = int(datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
-        today_new_posts = await monitor_repository.count_posts_since(start_of_day)
-        abnormal_jobs = await monitor_repository.list_recent_abnormal_jobs(limit=10)
+        today_new_posts = await monitor_repository.count_posts_since(start_of_day, sec_user_id=sec_user_id)
+        abnormal_jobs = await monitor_repository.list_recent_abnormal_jobs(limit=10, sec_user_id=sec_user_id)
 
         next_discovery_at = None
         if account and account.last_discovered_at:
@@ -629,6 +760,7 @@ class MonitorService:
             "account": {
                 "id": account.id,
                 "sec_user_id": account.sec_user_id,
+                "display_name": account.display_name or account.sec_user_id,
                 "profile_url": account.profile_url,
                 "enabled": account.enabled,
                 "discover_interval_minutes": account.discover_interval_minutes,
@@ -648,8 +780,15 @@ class MonitorService:
             "recent_abnormal_jobs": abnormal_jobs,
         }
 
-    async def list_jobs(self, status: Optional[str] = None, limit: int = 300) -> dict:
-        jobs = await monitor_repository.list_jobs(status=status, limit=limit)
+    async def list_jobs(self, status: Optional[str] = None, limit: int = 300, account_id: Optional[int] = None, all_accounts: bool = False) -> dict:
+        account = await self._resolve_account(account_id, all_accounts=all_accounts)
+        jobs = await monitor_repository.list_jobs(
+            status=status,
+            limit=limit,
+            sec_user_id=account.sec_user_id if account else None,
+        )
+        for job in jobs:
+            job["error_category"] = classify_job_error(job)
         return {"jobs": jobs, "count": len(jobs)}
 
     async def retry_job(self, job_id: int) -> dict:
@@ -665,6 +804,11 @@ class MonitorService:
             "due_at": job.due_at,
             "attempts": job.attempts,
         }
+
+    async def retry_failed_jobs(self, job_ids: Optional[list[int]] = None) -> dict:
+        count = await monitor_repository.retry_failed_jobs(job_ids=job_ids)
+        await crawler_manager.add_log(f"[Monitor] Manually retried {count} failed jobs", "info")
+        return {"updated": count}
 
 
 monitor_service = MonitorService()

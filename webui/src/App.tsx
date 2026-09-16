@@ -4,13 +4,11 @@ import { Toaster } from 'sonner'
 import { Activity, BarChart3, Download, LayoutDashboard, Settings2 } from 'lucide-react'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { ConsoleDrawer } from '@/components/layout/ConsoleDrawer'
+import { GlobalStatusBar } from '@/components/layout/GlobalStatusBar'
 import { CrawlerConfigPanel } from '@/components/config/CrawlerConfigPanel'
 import { MonitorOverview } from '@/components/monitor/MonitorOverview'
-import { MonitorDashboard } from '@/components/monitor/MonitorDashboard'
-import { MonitorAnalytics } from '@/components/monitor/MonitorAnalytics'
-import { MonitorTasks } from '@/components/monitor/MonitorTasks'
-import { MonitorAlerts } from '@/components/monitor/MonitorAlerts'
-import { MonitorHealth } from '@/components/monitor/MonitorHealth'
+import { MonitorDataCenter } from '@/components/monitor/MonitorDataCenter'
+import { MonitorOpsCenter, type MonitorOpsTarget } from '@/components/monitor/MonitorOpsCenter'
 import { MonitorExport } from '@/components/monitor/MonitorExport'
 import { EnvironmentCheck, isEnvChecked } from '@/components/env/EnvironmentCheck'
 import { LicenseDisclaimer, isLicenseAccepted } from '@/components/license/LicenseDisclaimer'
@@ -19,12 +17,12 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 function App() {
   const { t } = useTranslation('common')
   const [activeTab, setActiveTab] = useState('overview')
+  const [opsTarget, setOpsTarget] = useState<MonitorOpsTarget>({ section: 'tasks', taskStatus: 'pending', token: 0 })
+  const [dataFocusAwemeId, setDataFocusAwemeId] = useState<string>()
   // Initialize by checking localStorage if license has been accepted
   const [licenseAccepted, setLicenseAccepted] = useState(() => isLicenseAccepted())
   // Initialize by checking localStorage if env check has passed
   const [envChecked, setEnvChecked] = useState(() => isEnvChecked())
-  // State for showing disclaimer manually
-  const [showDisclaimer, setShowDisclaimer] = useState(false)
 
   const handleEnvCheckComplete = () => {
     setEnvChecked(true)
@@ -32,68 +30,104 @@ function App() {
 
   const handleLicenseAccept = () => {
     setLicenseAccepted(true)
-    setShowDisclaimer(false)
   }
 
-  const handleShowDisclaimer = () => {
-    setShowDisclaimer(true)
+
+  const openTasks = (status = 'pending', jobId?: number) => {
+    setOpsTarget((current) => ({
+      section: 'tasks',
+      taskStatus: status,
+      jobId,
+      token: current.token + 1,
+    }))
+    setActiveTab('ops')
+  }
+
+  const openAlerts = (alertId?: number) => {
+    setOpsTarget((current) => ({
+      section: 'alerts',
+      alertView: alertId ? 'all' : 'unread',
+      alertId,
+      token: current.token + 1,
+    }))
+    setActiveTab('ops')
+  }
+
+  const openData = (awemeId?: string) => {
+    setDataFocusAwemeId(awemeId)
+    setActiveTab('data')
+  }
+
+  const openHealth = () => {
+    setOpsTarget((current) => ({ section: 'health', token: current.token + 1 }))
+    setActiveTab('ops')
   }
 
   return (
     <div className="flex flex-col min-h-screen cyber-grid relative">
       {/* License Disclaimer Modal - Shows first or when triggered */}
-      {(!licenseAccepted || showDisclaimer) && (
+      {!licenseAccepted && (
         <LicenseDisclaimer onAccept={handleLicenseAccept} />
       )}
 
       {/* Environment Check Modal - Shows after license accepted */}
-      {licenseAccepted && !showDisclaimer && !envChecked && (
+      {licenseAccepted && !envChecked && (
         <EnvironmentCheck onCheckComplete={handleEnvCheckComplete} />
       )}
 
       {/* Header Bar */}
-      <Sidebar onShowDisclaimer={handleShowDisclaimer} />
+      <Sidebar />
+      <GlobalStatusBar
+        onOpenOverview={() => setActiveTab('overview')}
+        onOpenHealth={openHealth}
+        onOpenPending={() => openTasks('pending')}
+        onOpenAlerts={() => openAlerts()}
+        onOpenSnapshot={() => openTasks('pending')}
+      />
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col gap-3 p-3 pb-14 min-h-0">
-        <TabsList className="w-fit max-w-full flex-wrap h-auto">
-          <TabsTrigger value="overview" className="gap-2">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-1 flex-col gap-3 p-2 pb-14 sm:p-3 min-h-0">
+        <TabsList className="h-auto w-full max-w-full justify-start overflow-x-auto p-1 sm:w-fit">
+          <TabsTrigger value="overview" className="shrink-0 gap-2">
             <LayoutDashboard className="w-4 h-4" />
             {t('tabs.overview')}
           </TabsTrigger>
-          <TabsTrigger value="data" className="gap-2">
+          <TabsTrigger value="data" className="shrink-0 gap-2">
             <BarChart3 className="w-4 h-4" />
             {t('tabs.monitorData')}
           </TabsTrigger>
-          <TabsTrigger value="ops" className="gap-2">
+          <TabsTrigger value="ops" className="shrink-0 gap-2">
             <Activity className="w-4 h-4" />
             {t('tabs.ops')}
           </TabsTrigger>
-          <TabsTrigger value="export" className="gap-2">
+          <TabsTrigger value="export" className="shrink-0 gap-2">
             <Download className="w-4 h-4" />
             {t('tabs.export')}
           </TabsTrigger>
-          <TabsTrigger value="config" className="gap-2">
+          <TabsTrigger value="config" className="shrink-0 gap-2">
             <Settings2 className="w-4 h-4" />
             {t('tabs.config')}
           </TabsTrigger>
         </TabsList>
 
-        {activeTab === 'overview' && <MonitorOverview />}
-        {activeTab === 'config' && <CrawlerConfigPanel />}
-        {activeTab === 'data' && (
-          <div className="space-y-4">
-            <MonitorDashboard />
-            <MonitorAnalytics />
-          </div>
-        )}
-        {activeTab === 'ops' && (
-          <div className="space-y-4">
-            <MonitorTasks />
-            <MonitorHealth />
-            <MonitorAlerts />
-          </div>
-        )}
-        {activeTab === 'export' && <MonitorExport />}
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-12">
+          {activeTab === 'overview' && (
+            <div className="md:col-span-2 xl:col-span-12">
+              <MonitorOverview onOpenTasks={openTasks} onOpenAlerts={openAlerts} onOpenData={openData} />
+            </div>
+          )}
+          {activeTab === 'config' && (
+            <div className="md:col-span-2 xl:col-span-12"><CrawlerConfigPanel /></div>
+          )}
+          {activeTab === 'data' && (
+            <div className="md:col-span-2 xl:col-span-12"><MonitorDataCenter focusAwemeId={dataFocusAwemeId} /></div>
+          )}
+          {activeTab === 'ops' && (
+            <div className="md:col-span-2 xl:col-span-12"><MonitorOpsCenter target={opsTarget} /></div>
+          )}
+          {activeTab === 'export' && (
+            <div className="md:col-span-2 xl:col-span-12"><MonitorExport /></div>
+          )}
+        </div>
       </Tabs>
 
       <ConsoleDrawer />

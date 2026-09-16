@@ -25,6 +25,54 @@
       "description": "Discover posts incrementally and capture 1h/6h/24h/72h/7d snapshots"
     }
   },
+  "configCenter": {
+    "title": "Collection configuration",
+    "unsaved": "Unsaved changes",
+    "saved": "Configuration saved",
+    "saveAll": "Save all configuration",
+    "saveHint": "Save collection settings, monitor account and schedule",
+    "configSaved": "Collection settings saved",
+    "scheduleDisabled": "Scheduled collection disabled",
+    "dangerFailed": "Dangerous action failed",
+    "parameter": "Parameter",
+    "current": "Current",
+    "recommended": "Recommended",
+    "on": "On",
+    "off": "Off",
+    "maintenanceReadOnly": "Maintenance values come from the backend base configuration. This page only shows current and recommended values; edit config/base_config.py and restart the service to change them.",
+    "sections": {
+      "monitorAccount": "Monitor account",
+      "monitorAccountHint": "Configure the Douyin account and discovery interval",
+      "collectionRange": "Collection range",
+      "collectionRangeHint": "Configure post source, time range and quantity boundaries",
+      "runtimeStrategy": "Runtime strategy",
+      "runtimeStrategyHint": "Login, output, comments, browser and schedule settings",
+      "systemMaintenance": "System maintenance",
+      "systemMaintenanceHint": "Automatic backup, log retention and browser startup settings",
+      "dangerZone": "Danger zone",
+      "dangerZoneHint": "These actions immediately affect running jobs"
+    },
+    "values": {
+      "monitorCurrent": "Current monitor settings",
+      "monitorRecommended": "Discover every 30 minutes",
+      "unlimited": "Leave empty for no limit"
+    },
+    "maintenance": {
+      "autoBackup": "Automatic backup",
+      "backupInterval": "Backup interval",
+      "backupRetention": "Backup retention",
+      "logRetention": "Log retention",
+      "startBrowser": "Prewarm browser on startup",
+      "cdpPort": "CDP debug port"
+    },
+    "danger": {
+      "stopCrawler": "Stop current crawler",
+      "stopHint": "The running crawler receives a stop signal and unfinished work will not resume automatically.",
+      "disableSchedule": "Disable scheduled collection",
+      "disableScheduleHint": "Jobs will no longer start automatically at the configured times.",
+      "confirmAgain": "Click again to confirm"
+    }
+  },
   "field": {
     "platform": "PLATFORM",
     "platformPlaceholder": "Select platform",
@@ -94,6 +142,19 @@
     "lastResult": "Last result"
   },
   "monitor": {
+    "accountList": "Monitored accounts ({{count}})",
+    "allAccounts": "All accounts",
+    "addAccount": "Add account",
+    "editingAccount": "Editing: {{name}}",
+    "creatingAccount": "Adding a new account",
+    "selectAccount": "Select an account to edit",
+    "noAccounts": "No monitored accounts yet",
+    "displayName": "Display name",
+    "displayNamePlaceholder": "Example: Xiamen Daily Douyin",
+    "delete": "Delete account",
+    "confirmDelete": "Delete {{name}}? Collected data will be retained.",
+    "deleted": "Monitor account deleted",
+    "deleteFailed": "Failed to delete account",
     "account": "Account URL or sec_user_id",
     "interval": "Discovery interval",
     "enable": "Enable monitor",
@@ -116,6 +177,21 @@
   "monitorDashboard": {
     "title": "MONITOR DATA",
     "description": "Engagement trends, job status and snapshot details",
+    "summaryTitle": "Metric summary",
+    "summaryHint": "Current filters and selected post overview",
+    "dataScope": "Data scope",
+    "lastSnapshot": "Last snapshot",
+    "samplingQuality": "Sampling quality",
+    "currentKeyMetrics": "Selected post metrics",
+    "stageCoverage": "Stage coverage",
+    "problemJobs": "Problem jobs",
+    "selectedSummary": "Selected post summary",
+    "currentStage": "Latest stage",
+    "latestAge": "Latest age",
+    "accountAverage": "Account average",
+    "compareAverage": "Compare average",
+    "trendTitle": "Post interaction trend",
+    "trendHint": "True growth is separated from missed, failed and insufficient data",
     "totalPosts": "Posts",
     "snapshots": "Snapshots",
     "pending": "Pending",
@@ -131,6 +207,17 @@
     "clearSelection": "Clear selection",
     "totalSnapshots": "{{count}} snapshots total",
     "noSnapshots": "No snapshot data",
+    "selectPostHint": "Select a post to inspect its growth curve",
+    "expandTable": "Expand data table",
+    "markerState": "Data state",
+    "marker": {
+      "actual": "Actual snapshot",
+      "missed": "Missed snapshot",
+      "failed": "Job failed",
+      "pending": "Pending",
+      "insufficient": "Insufficient data",
+      "future": "Not due yet"
+    },
     "metricLikes": "Likes",
     "metricCollections": "Collections",
     "metricComments": "Comments",
@@ -143,9 +230,205 @@
     "comments": "Comments",
     "shares": "Shares"
   },
+  "dataCenter": {
+    "title": "Douyin monitor data",
+    "description": "Inspect engagement trends and data quality by post, stage and sampling status",
+    "redesignedDescription": "Post performance, topic/tag analysis and lifecycle snapshots",
+    "modules": {
+      "label": "Monitor data modules",
+      "overview": "Post performance",
+      "topics": "Topics / tags",
+      "lifecycle": "Lifecycle"
+    },
+    "lastUpdated": "Last updated",
+    "refresh": "Refresh",
+    "filters": "Data filters",
+    "loading": "Loading monitor data",
+    "loadFailed": "Failed to load monitor data",
+    "reset": "Reset filters",
+    "resultCount": "Filtered result: {{count}} posts",
+    "allPosts": "All posts",
+    "allStages": "All stages",
+    "allStatuses": "All statuses",
+    "timeRangeLabel": "Time range",
+    "postList": "Post list",
+    "leadKicker": "Featured post",
+    "manualSelection": "Manually selected",
+    "recommendedByScore": "Highest score in the last 7 days",
+    "fallbackLatest": "No post in the last 7 days; using the latest post",
+    "compositeScore": "Composite score",
+    "noExcerpt": "No excerpt available",
+    "noLead": "No posts match the current filters",
+    "hotTitle": "Interaction hotspots",
+    "hotHint": "Last 7 days · by latest likes",
+    "noHotPosts": "No hotspot posts",
+    "categories": "Data categories",
+    "trendContext": "Sampling status",
+    "currentSnapshot": "Current snapshot",
+    "samplingStatus": "Sampling status",
+    "postSearchPlaceholder": "Search post title or ID",
+    "noPosts": "No matching posts",
+    "activeFilters": "Active filters",
+    "timeRange": {
+      "24h": "Last 24h",
+      "7d": "Last 7d",
+      "30d": "Last 30d",
+      "all": "All time"
+    },
+    "status": {
+      "all": "All statuses",
+      "normal": "Normal",
+      "insufficient": "Insufficient data",
+      "missed": "Has missed jobs",
+      "abnormal": "Has failures"
+    }
+  },
+  "performance": {
+    "posts": "Posts",
+    "totalInteraction": "Total interactions",
+    "averageInteraction": "Average interactions",
+    "medianInteraction": "Median interactions",
+    "burstRate": "Burst rate",
+    "zeroRate": "Zero-interaction rate",
+    "firstSeenDelay": "First-seen delay",
+    "structure": "Likes / collections / comments / shares",
+    "ranking": "TOP10 posts",
+    "rankingHint": "Ranked by latest total interactions",
+    "meanMedianAlert": "Average and median differ sharply; attention is concentrated in very few breakout posts",
+    "meanMedianRatio": "Average / median",
+    "topTenConcentration": "TOP10 interaction share",
+    "concentrationHint": "When the average is much higher than the median, a small number of posts are pulling up the overall average.",
+    "rankingMetrics": {
+      "liked_count": "By likes",
+      "share_count": "By shares",
+      "comment_count": "By comments"
+    },
+    "quadrantTitle": "Post quadrants",
+    "quadrantHint": "Split by median likes and comments",
+    "extremeBreakout": "Extreme breakout",
+    "topRightExtreme": "Top-right extreme: high likes / high comments",
+    "bottomRightExtreme": "Bottom-right extreme: high likes / low comments",
+    "medianLikesLine": "Median likes {{value}}",
+    "medianCommentsLine": "Median comments {{value}}",
+    "themeLegend": "Theme legend",
+    "likes": "Likes",
+    "comments": "Comments",
+    "quadrants": {
+      "highHigh": "High likes / high comments",
+      "highLow": "High likes / low comments",
+      "lowHigh": "Low likes / high comments",
+      "lowLow": "Low likes / low comments"
+    }
+  },
+  "accountComparison": {
+    "title": "Account performance comparison",
+    "hint": "Compare volume, total, average, median interactions and burst rate"
+  },
+  "topics": {
+    "comparison": "Theme performance",
+    "comparisonHint": "Volume and interaction by theme",
+    "theme": "Theme",
+    "volume": "Volume",
+    "total": "Total interactions",
+    "average": "Average interactions",
+    "median": "Median interactions",
+    "burstRate": "Burst rate",
+    "bubbleTitle": "Theme interaction bubble chart",
+    "bubbleScaleHint": "Y axis uses a logarithmic average-interaction scale",
+    "tags": "TOP tags",
+    "tagContribution": "Tag contribution",
+    "tagModes": {
+      "theme": "Topic tags",
+      "generic": "Generic tags"
+    },
+    "singleBurst": "Single hit",
+    "noTags": "No tags",
+    "cooccurrence": "Tag co-occurrence",
+    "networkTitle": "Tag network",
+    "networkHint": "Node size shows frequency; edge width shows co-occurrence",
+    "noCooccurrence": "No co-occurring tags",
+    "keywordCloud": "Title keywords",
+    "excludedEntities": "Editorial credits and person names excluded",
+    "noKeywords": "No keywords",
+    "themes": {
+      "xiamenMetro": "Xiamen Metro",
+      "minchao": "Fujian football",
+      "investmentFair": "Investment fair",
+      "taiwan": "Taiwan issues",
+      "localLife": "Xiamen local life",
+      "culture": "Culture / opera",
+      "international": "International news",
+      "education": "Education / training",
+      "health": "Health",
+      "other": "Other"
+    }
+  },
+  "lifecycle": {
+    "multiCurve": "Multi-post lifecycle curves",
+    "topPosts": "TOP5 by interactions",
+    "fixedSampleHint": "Fixed sample: {{count}} posts with all four stages",
+    "fixedSample": "Only posts with 1h, 6h, 24h and 72h snapshots are included",
+    "noFixedSample": "No posts currently have all four snapshots, so a reliable fixed-sample average cannot be calculated.",
+    "noCurveData": "No posts are available for this rhythm type",
+    "fullAverage": "Overall average lifecycle",
+    "groups": {
+      "top": "TOP5 by interactions",
+      "earlyBurst": "Instant pulse TOP5",
+      "quickDecline": "Fast decline TOP5",
+      "longTail": "Long-tail TOP5",
+      "sustained": "Sustained TOP5"
+    },
+    "noData": "No data",
+    "incrementContribution": "Increment share",
+    "classificationHint": "Classification uses stage increments: highest 1h gain is instant pulse, highest 6h gain is fast decline, highest 24h gain is long-tail, and continued 72h growth is sustained.",
+    "detailTable": "Lifecycle details",
+    "focusDetail": "Key lifecycle details",
+    "allPosts": "All posts",
+    "completeness": "Snapshot completeness",
+    "completenessValues": {
+      "complete": "All four stages",
+      "missing72": "Missing 72h",
+      "incomplete": "Other stages missing"
+    },
+    "filters": {
+      "type": {
+        "all": "All rhythms",
+        "earlyBurst": "Instant pulse",
+        "quickDecline": "Fast decline",
+        "longTail": "Long tail",
+        "sustained": "Sustained"
+      },
+      "allThemes": "All themes",
+      "completeness": {
+        "all": "All completeness",
+        "complete": "All four stages",
+        "missing72": "Missing 72h",
+        "incomplete": "Has missing stages"
+      }
+    },
+    "noFilteredData": "No posts match the filters",
+    "detailResult": "{{count}} posts",
+    "closeDetail": "Close snapshot details",
+    "publishDate": "Published",
+    "theme": "Theme",
+    "averageCurve": "Average interaction curve",
+    "increments": "Stage increments",
+    "rhythm": "Burst rhythm classification",
+    "type": "Type",
+    "burst": "1h burst",
+    "tail": "24h tail",
+    "persistence": "72h persistence",
+    "types": {
+      "earlyBurst": "Early burst",
+      "sustained": "Sustained",
+      "longTail": "Long tail",
+      "quickDecline": "Fast decline"
+    }
+  },
   "overview": {
     "title": "OPERATIONS OVERVIEW",
     "description": "Next runs, new posts today and abnormal jobs",
+    "optimizedDescription": "Today's activity, recent events and open issues",
     "updatedAt": "Updated",
     "nextDiscovery": "Next discovery",
     "nextSnapshot": "Next snapshot",
@@ -153,6 +436,33 @@
     "todayNewPosts": "New posts today",
     "todayUnit": "posts",
     "abnormalJobs": "Abnormal jobs",
+    "failedMissed": "Failed {{failed}} · Missed {{missed}}",
+    "timelineTitle": "Recent activity",
+    "timelineDescription": "New posts, completed snapshots, job failures and alerts",
+    "issuesTitle": "Needs attention",
+    "issuesDescription": "Sorted by severity and latest occurrence",
+    "noTimeline": "No recent activity",
+    "noIssues": "No open issues",
+    "timeline": {
+      "newPost": "New post discovered",
+      "snapshotComplete": "{{stage}} snapshot completed",
+      "taskFailed": "Job failed",
+      "taskMissed": "Job missed its window"
+    },
+    "relative": {
+      "justNow": "just now",
+      "minutesAgo": "{{count}}m ago",
+      "hoursAgo": "{{count}}h ago",
+      "daysAgo": "{{count}}d ago"
+    },
+    "countdown": {
+      "none": "No plan",
+      "due": "Due now",
+      "seconds": "in {{count}}s",
+      "minutes": "in {{count}}m",
+      "hours": "in {{count}}h",
+      "days": "in {{count}}d"
+    },
     "recentAbnormal": "Recent abnormal jobs",
     "status": "Status",
     "stage": "Stage",
@@ -161,11 +471,36 @@
     "reason": "Reason",
     "noAbnormal": "No abnormal jobs"
   },
+  "opsCenter": {
+    "tasks": "Job queue",
+    "alerts": "Alerts",
+    "health": "System health",
+    "pendingAria": "{{count}} pending jobs",
+    "unreadAria": "{{count}} unread alerts",
+    "overall": "System: {{status}}",
+    "metrics": {
+      "pending": "Pending",
+      "pendingDetail": "Waiting for scheduling",
+      "abnormal": "Abnormal jobs",
+      "abnormalDetail": "Failed {{failed}} · Missed {{missed}}",
+      "unread": "Unread alerts",
+      "unreadDetail": "Issue groups needing attention",
+      "system": "System status",
+      "systemDetail": "Browser, database and loop"
+    }
+  },
   "tasks": {
     "title": "JOB CENTER",
     "description": "Pending, failed and missed jobs",
     "total": "{{count}} jobs",
     "searchPlaceholder": "Search title or post ID",
+    "sortBy": "Sort jobs",
+    "sort": {
+      "dueAsc": "Scheduled: earliest first",
+      "dueDesc": "Scheduled: latest first",
+      "attemptsDesc": "Attempts: most first",
+      "failedDesc": "Failed: most recent first"
+    },
     "statusColumn": "Status",
     "stage": "Stage",
     "post": "Post",
@@ -176,12 +511,46 @@
     "retry": "Retry",
     "retrySuccess": "Job returned to the pending queue",
     "retryFailed": "Retry failed",
+    "retrySelected": "Retry selected ({{count}})",
+    "retryAllFailed": "Retry all failed",
+    "batchRetrySuccess": "Returned {{count}} failed jobs to the pending queue",
+    "selectAllFailed": "Select all failed",
+    "unselectAllFailed": "Clear selection",
+    "selectJob": "Select job",
+    "details": "View details",
+    "selectJobHint": "Select a job to view details",
+    "selectJobHintDetail": "Job details stay pinned on the right without covering the list.",
+    "detailTitle": "Job details",
+    "closeDetails": "Close details",
+    "openPost": "Open post",
+    "publishTime": "Published",
+    "createdAt": "Created",
+    "startedAt": "Started",
+    "finishedAt": "Finished",
+    "moreTimes": "More time details",
+    "errorCategoryLabel": "Error category",
+    "rawError": "Raw error",
+    "pageInfo": "Showing {{from}}-{{to}} of {{total}}",
+    "pageOf": "Page {{page}} / {{total}}",
+    "previousPage": "Previous page",
+    "nextPage": "Next page",
     "noJobs": "No matching jobs",
+    "errorCategory": {
+      "none": "None",
+      "risk_control": "Risk control",
+      "login_required": "Login required",
+      "browser_disconnected": "Browser disconnected",
+      "network_timeout": "Network timeout",
+      "post_not_found": "Post not found",
+      "parse_error": "Parse error",
+      "unknown": "Unknown error"
+    },
     "status": {
       "all": "All",
       "pending": "Pending",
       "running": "Running",
       "done": "Done",
+      "abnormal": "Abnormal",
       "failed": "Failed",
       "missed": "Missed"
     }
@@ -189,11 +558,43 @@
   "alerts": {
     "title": "ALERT CENTER",
     "description": "New posts, job failures and runtime alerts",
+    "groupedDescription": "Similar issues are grouped for faster triage",
     "unread": "{{count}} unread",
     "markAllRead": "Mark all read",
     "markedAll": "Marked {{count}} alerts as read",
     "markRead": "Mark read",
-    "empty": "No alerts",
+    "empty": "No alerts match the filters",
+    "view": {
+      "open": "Open only",
+      "unread": "Unread",
+      "resolved": "Resolved",
+      "ignored": "Ignored",
+      "all": "All"
+    },
+    "severity": {
+      "all": "All severities",
+      "error": "Error",
+      "warning": "Warning",
+      "info": "Info"
+    },
+    "status": {
+      "unread": "Unread",
+      "read": "Read",
+      "resolved": "Resolved",
+      "ignored": "Ignored"
+    },
+    "occurrences": "{{count}} occurrences",
+    "firstAt": "First",
+    "lastAt": "Latest",
+    "viewTask": "View jobs",
+    "retry": "Retry failed jobs",
+    "retrySuccess": "Returned {{count}} failed jobs to the queue",
+    "retryEmpty": "No failed jobs are available to retry",
+    "ignore": "Ignore",
+    "ignored": "Ignored {{count}} alerts",
+    "resolve": "Resolve",
+    "resolved": "Resolved {{count}} alerts",
+    "actionFailed": "Alert action failed",
     "filter": {
       "unread": "Unread",
       "read": "Read",
@@ -203,10 +604,42 @@
   "health": {
     "title": "SYSTEM HEALTH",
     "description": "Service, browser, database and monitor loop status",
+    "optimizedDescription": "Runtime, collection pipeline and maintenance overview",
+    "updatedAt": "Last checked",
+    "refresh": "Refresh",
+    "loadFailed": "Failed to load system health",
+    "loading": "Checking system health",
+    "healthyPercent": "Checks healthy",
+    "groupOk": "All healthy",
+    "groupWarnings": "{{count}} need attention",
+    "groupErrors": "{{count}} errors",
     "status": {
       "ok": "Healthy",
       "warning": "Attention",
       "error": "Error"
+    },
+    "groups": {
+      "runtime": "Runtime",
+      "pipeline": "Collection pipeline",
+      "maintenance": "Data maintenance"
+    },
+    "values": {
+      "connected": "Connected",
+      "running": "Running",
+      "stopped": "Stopped",
+      "disconnected": "Disconnected",
+      "port": "CDP port {{port}}",
+      "secondsAgo": "{{count}}s ago",
+      "minutesAgo": "{{count}}m ago",
+      "hoursAgo": "{{count}}h ago",
+      "backupCount": "{{count}} backups"
+    },
+    "details": {
+      "browser": "No reusable browser instance is currently available.",
+      "account": "No enabled monitored account is configured.",
+      "discovery": "Discovery has not completed recently.",
+      "disk": "Available disk space is low.",
+      "backup": "No recent automatic backup was found."
     },
     "checks": {
       "database": "Database",
@@ -220,14 +653,58 @@
     "metrics": {
       "unreadAlerts": "Unread alerts",
       "dbSize": "Database size",
+      "diskFree": "Disk free",
       "lastSnapshot": "Last snapshot",
       "nextSnapshot": "Next snapshot"
-      ,"lastBackup": "Last backup"
+      ,"lastBackup": "Last backup",
+      "backupCount": "Backup count"
     }
   },
   "export": {
     "title": "EXPORT & REPORTS",
     "description": "Export posts, snapshot history and periodic reports",
+    "quickActions": "Quick actions",
+    "postsCsv": "Posts CSV",
+    "postsExcel": "Posts Excel",
+    "snapshotsCsv": "Snapshots CSV",
+    "snapshotsExcel": "Snapshots Excel",
+    "generate": {
+      "daily": "Generate daily",
+      "weekly": "Generate weekly",
+      "monthly": "Generate monthly"
+    },
+    "selectObject": "Select export object",
+    "selectObjectHint": "Choose posts or snapshot history to export",
+    "objectType": {
+      "posts": "Posts",
+      "snapshots": "Snapshot history"
+    },
+    "postObjectHint": "Export a summary of all monitored posts",
+    "preview": "Export & report preview",
+    "previewHint": "Preview the current export and recent reports",
+    "previewPosts": "Post export field preview",
+    "previewSnapshots": "{{count}} posts selected; all snapshot history will be exported",
+    "columns": {
+      "postId": "Post ID",
+      "publishTime": "Published",
+      "title": "Title",
+      "snapshotCount": "Snapshots"
+    },
+    "snapshotCount": "{{count}} snapshots",
+    "reportListHint": "Newest first with a fixed-height scroll area",
+    "generatedAt": "Generated",
+    "timeRange": "Range",
+    "reportType": {
+      "daily": "Daily",
+      "weekly": "Weekly",
+      "monthly": "Monthly",
+      "unknown": "Other"
+    },
+    "status": {
+      "ready": "Ready",
+      "generating": "Generating",
+      "failed": "Failed"
+    },
     "postsList": "Export post list",
     "postHistory": "Export snapshot history (multi-select)",
     "selectPost": "Select post",
@@ -253,6 +730,19 @@
     }
   },
   "analytics": {
+    "tabs": {
+      "label": "Analytics view",
+      "stage": "Stages",
+      "growth": "Growth",
+      "ranking": "Ranking",
+      "distribution": "Distribution & anomalies"
+    },
+    "rankingScope": "Ranking scope",
+    "scope": {
+      "7d": "Last 7 days",
+      "filtered": "Current filters",
+      "all": "All posts"
+    },
     "stageDelta": "STAGE DELTAS",
     "stageDeltaHint": "Average growth from first_seen",
     "stage": "Stage",
@@ -279,6 +769,22 @@
     "publishHeatmap": "PUBLISH TIME HEATMAP",
     "anomalies": "ANOMALOUS GROWTH",
     "noData": "No analytics data",
-    "noAnomalies": "No anomalous growth detected"
+    "noAnomalies": "No anomalous growth detected",
+    "metric": {
+      "liked_count": "Likes",
+      "collected_count": "Collections",
+      "comment_count": "Comments",
+      "share_count": "Shares"
+    },
+    "samplesValue": "{{count}} samples",
+    "average": "average",
+    "expandTable": "Expand data table",
+    "growthHint": "Ranked by hourly interaction growth",
+    "range": "Growth range",
+    "perHour": "Per hour",
+    "value": "Value",
+    "abnormalGrowth": "Abnormal spike",
+    "baseline": "Baseline",
+    "multiple": "Multiple"
   }
 }

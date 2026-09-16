@@ -18,8 +18,22 @@
     "title": "System Console",
     "entries": "{{count}} logs"
   },
+  "statusbar": {
+    "collection": "Collection",
+    "browser": "Browser link",
+    "pendingJobs": "Pending jobs",
+    "unreadAlerts": "Unread alerts",
+    "nextSnapshot": "Next snapshot",
+    "browserPort": "CDP port {{port}}",
+    "pendingDetail": "Waiting for scheduling",
+    "unreadDetail": "Needs attention",
+    "today": "Today",
+    "tomorrow": "Tomorrow"
+  },
   "sidebar": {
     "title": "MediaCrawler",
+    "subtitle": "Douyin account monitor",
+    "repository": "View repository",
     "api": "API",
     "local": "LOCAL",
     "disclaimer": "For personal learning only, commercial use prohibited",

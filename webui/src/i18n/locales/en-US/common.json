@@ -14,6 +14,7 @@
     "tasks": "Tasks",
     "alerts": "Alerts",
     "health": "Health",
+    "export": "Export & Reports",
     "console": "Console"
   },
   "sidebar": {

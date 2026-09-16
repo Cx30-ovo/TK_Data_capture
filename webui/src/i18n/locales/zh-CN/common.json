@@ -14,6 +14,7 @@
     "tasks": "任务中心",
     "alerts": "告警中心",
     "health": "系统健康",
+    "export": "导出报告",
     "console": "系统控制台"
   },
   "sidebar": {

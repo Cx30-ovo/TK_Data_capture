@@ -3,6 +3,7 @@ import pytest
 from database import db_session
 from database.monitor_repository import monitor_repository
 from api.services.monitor_service import DouyinMonitorFetcher, MonitorService
+from api.services.report_service import ReportService
 from media_platform.douyin.core import DouYinCrawler
 
 
@@ -316,3 +317,37 @@ async def test_alerts_are_deduplicated_and_can_be_marked_read(isolated_monitor_d
 
     await monitor_repository.mark_alert_read(created.id)
     assert await monitor_repository.count_unread_alerts() == 0
+
+
+@pytest.mark.asyncio
+async def test_monitor_exports_and_daily_report(isolated_monitor_db, tmp_path):
+    await db_session.create_tables("sqlite")
+    await monitor_repository.upsert_monitored_account(sec_user_id="export_user")
+    post, _ = await monitor_repository.upsert_post(
+        aweme_id="export_post",
+        sec_user_id="export_user",
+        title="export title",
+        desc="export body",
+        create_time=BASE_TIME,
+        canonical_url="https://www.douyin.com/video/export_post",
+    )
+    await monitor_repository.record_first_seen_snapshot(
+        aweme_id=post.aweme_id,
+        liked_count=1,
+        collected_count=2,
+        comment_count=3,
+        share_count=4,
+        captured_at=BASE_TIME + 60,
+    )
+
+    service = ReportService(output_root=tmp_path)
+    csv_path = await service.export_posts(file_format="csv")
+    xlsx_path = await service.export_posts(file_format="xlsx")
+    snapshot_path = await service.export_post_snapshots(post.aweme_id, file_format="csv")
+    report = await service.generate_report(period="daily")
+
+    assert csv_path.exists()
+    assert xlsx_path.exists()
+    assert snapshot_path.exists()
+    assert "抖音监控日报" in report["content"]
+    assert len(service.list_reports()) == 1

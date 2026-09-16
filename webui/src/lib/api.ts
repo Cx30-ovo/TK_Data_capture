@@ -227,6 +227,19 @@ export interface MonitorHealth {
   }
 }
 
+export interface MonitorReport {
+  name: string
+  size: number
+  modified_at: number
+}
+
+export interface GeneratedMonitorReport {
+  filename: string
+  content: string
+  path: string
+  download_url: string
+}
+
 // API functions
 export const crawlerApi = {
   start: (config: CrawlerConfig) => api.post('/crawler/start', config),
@@ -289,6 +302,13 @@ export const monitorApi = {
   markAlertRead: (alertId: number) => api.post('/monitor/alerts/' + alertId + '/read'),
   markAllAlertsRead: () => api.post('/monitor/alerts/read-all'),
   getHealth: () => api.get<MonitorHealth>('/monitor/health'),
+  getReports: () => api.get<{ reports: MonitorReport[] }>('/monitor/reports'),
+  generateReport: (period: 'daily' | 'weekly' | 'monthly') =>
+    api.post<GeneratedMonitorReport>('/monitor/reports/generate', null, { params: { period } }),
+  exportPostsUrl: (format: 'csv' | 'xlsx') => `/api/monitor/export/posts?format=${format}`,
+  exportPostSnapshotsUrl: (awemeId: string, format: 'csv' | 'xlsx') =>
+    `/api/monitor/export/post/${encodeURIComponent(awemeId)}?format=${format}`,
+  reportDownloadUrl: (name: string) => `/api/monitor/reports/download?name=${encodeURIComponent(name)}`,
 }
 
 export default api

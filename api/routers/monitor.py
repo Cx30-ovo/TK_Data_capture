@@ -3,12 +3,14 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
 
 from database.monitor_repository import monitor_repository
 
 from ..schemas import MonitorAccountConfigRequest
 from ..services.monitor_service import monitor_service
+from ..services.report_service import report_service
 
 router = APIRouter(prefix="/monitor", tags=["monitor"])
 
@@ -104,3 +106,45 @@ async def mark_all_monitor_alerts_read():
 @router.get("/health")
 async def get_monitor_health():
     return await monitor_service.get_health_data()
+
+
+@router.get("/export/posts")
+async def export_monitor_posts(file_format: str = Query("csv", alias="format")):
+    try:
+        path = await report_service.export_posts(file_format=file_format)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return FileResponse(path, filename=path.name)
+
+
+@router.get("/export/post/{aweme_id}")
+async def export_monitor_post_snapshots(aweme_id: str, file_format: str = Query("csv", alias="format")):
+    try:
+        path = await report_service.export_post_snapshots(aweme_id=aweme_id, file_format=file_format)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return FileResponse(path, filename=path.name)
+
+
+@router.post("/reports/generate")
+async def generate_monitor_report(period: str = "daily"):
+    try:
+        result = await report_service.generate_report(period=period)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    result["download_url"] = f"/api/monitor/reports/download?name={result['filename']}"
+    return result
+
+
+@router.get("/reports")
+async def list_monitor_reports():
+    return {"reports": report_service.list_reports()}
+
+
+@router.get("/reports/download")
+async def download_monitor_report(name: str):
+    try:
+        path = report_service.resolve_report(name)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return FileResponse(path, filename=path.name)

@@ -222,5 +222,23 @@
       "lastSnapshot": "最近快照",
       "nextSnapshot": "下次快照"
     }
+  },
+  "export": {
+    "title": "导出与报告",
+    "description": "导出作品、快照历史和生成周期报告",
+    "postsList": "导出作品列表",
+    "postHistory": "导出单篇作品完整快照",
+    "selectPost": "选择作品",
+    "reports": "生成周期报告",
+    "download": "下载",
+    "recentReports": "最近生成的报告",
+    "noReports": "暂无已生成报告",
+    "reportGenerated": "报告生成成功",
+    "reportFailed": "报告生成失败",
+    "period": {
+      "daily": "生成日报",
+      "weekly": "生成周报",
+      "monthly": "生成月报"
+    }
   }
 }

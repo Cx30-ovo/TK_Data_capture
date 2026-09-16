@@ -222,5 +222,23 @@
       "lastSnapshot": "Last snapshot",
       "nextSnapshot": "Next snapshot"
     }
+  },
+  "export": {
+    "title": "EXPORT & REPORTS",
+    "description": "Export posts, snapshot history and periodic reports",
+    "postsList": "Export post list",
+    "postHistory": "Export complete snapshot history",
+    "selectPost": "Select post",
+    "reports": "Generate periodic report",
+    "download": "Download",
+    "recentReports": "Recent reports",
+    "noReports": "No reports generated yet",
+    "reportGenerated": "Report generated",
+    "reportFailed": "Report generation failed",
+    "period": {
+      "daily": "Generate daily report",
+      "weekly": "Generate weekly report",
+      "monthly": "Generate monthly report"
+    }
   }
 }

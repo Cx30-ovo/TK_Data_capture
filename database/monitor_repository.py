@@ -206,6 +206,60 @@ class MonitorRepository:
                 for job, title in (await session.execute(stmt)).all()
             ]
 
+    async def list_jobs(
+        self,
+        status: Optional[str] = None,
+        platform: str = "dy",
+        limit: int = 300,
+    ) -> list[dict]:
+        async with get_monitor_session() as session:
+            stmt = (
+                select(DouyinMonitorJob, DouyinPost.title)
+                .outerjoin(
+                    DouyinPost,
+                    (DouyinPost.platform == DouyinMonitorJob.platform)
+                    & (DouyinPost.aweme_id == DouyinMonitorJob.aweme_id),
+                )
+                .where(DouyinMonitorJob.platform == platform)
+                .order_by(DouyinMonitorJob.due_at.asc())
+                .limit(limit)
+            )
+            if status:
+                stmt = stmt.where(DouyinMonitorJob.status == status)
+            return [
+                {
+                    "id": job.id,
+                    "aweme_id": job.aweme_id,
+                    "title": title or job.aweme_id,
+                    "stage": job.stage,
+                    "due_at": job.due_at,
+                    "status": job.status,
+                    "attempts": job.attempts,
+                    "last_error": job.last_error,
+                    "miss_reason": job.miss_reason,
+                    "created_at": job.created_at,
+                    "started_at": job.started_at,
+                    "finished_at": job.finished_at,
+                }
+                for job, title in (await session.execute(stmt)).all()
+            ]
+
+    async def retry_failed_job(self, job_id: int) -> Optional[DouyinMonitorJob]:
+        now = _now_seconds()
+        async with get_monitor_session() as session:
+            job = await session.get(DouyinMonitorJob, job_id)
+            if job is None:
+                return None
+            if job.status != "failed":
+                raise ValueError(f"Only failed jobs can be retried; job {job_id} is {job.status}.")
+            job.status = "pending"
+            job.due_at = now
+            job.started_at = None
+            job.finished_at = None
+            job.miss_reason = None
+            await session.flush()
+            return job
+
     async def get_job_counts(self, platform: str = "dy") -> dict[str, int]:
         async with get_monitor_session() as session:
             stmt = (

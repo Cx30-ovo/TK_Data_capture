@@ -11,6 +11,7 @@
     "overview": "概览",
     "config": "采集配置",
     "analytics": "数据可视化",
+    "tasks": "任务中心",
     "console": "系统控制台"
   },
   "sidebar": {

@@ -3,7 +3,7 @@
 
 from typing import Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from database.monitor_repository import monitor_repository
 
@@ -68,3 +68,16 @@ async def get_monitor_dashboard(limit: int = 100):
 @router.get("/overview")
 async def get_monitor_overview():
     return await monitor_service.get_overview_data()
+
+
+@router.get("/jobs")
+async def list_monitor_jobs(status: Optional[str] = None, limit: int = 300):
+    return await monitor_service.list_jobs(status=status, limit=limit)
+
+
+@router.post("/jobs/{job_id}/retry")
+async def retry_monitor_job(job_id: int):
+    try:
+        return await monitor_service.retry_job(job_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc

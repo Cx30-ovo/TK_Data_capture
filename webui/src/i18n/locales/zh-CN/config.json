@@ -160,5 +160,30 @@
     "time": "计划时间",
     "reason": "原因",
     "noAbnormal": "暂无异常任务"
+  },
+  "tasks": {
+    "title": "任务中心",
+    "description": "待执行、失败和错过任务",
+    "total": "共 {{count}} 个任务",
+    "searchPlaceholder": "搜索作品标题或作品 ID",
+    "statusColumn": "状态",
+    "stage": "阶段",
+    "post": "作品",
+    "dueAt": "计划时间",
+    "attempts": "尝试次数",
+    "reason": "原因",
+    "action": "操作",
+    "retry": "重试",
+    "retrySuccess": "任务已重新加入待执行队列",
+    "retryFailed": "重试失败",
+    "noJobs": "没有符合条件的任务",
+    "status": {
+      "all": "全部",
+      "pending": "待执行",
+      "running": "执行中",
+      "done": "已完成",
+      "failed": "失败",
+      "missed": "错过"
+    }
   }
 }

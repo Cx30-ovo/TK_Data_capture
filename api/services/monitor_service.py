@@ -405,5 +405,23 @@ class MonitorService:
             "recent_abnormal_jobs": abnormal_jobs,
         }
 
+    async def list_jobs(self, status: Optional[str] = None, limit: int = 300) -> dict:
+        jobs = await monitor_repository.list_jobs(status=status, limit=limit)
+        return {"jobs": jobs, "count": len(jobs)}
+
+    async def retry_job(self, job_id: int) -> dict:
+        job = await monitor_repository.retry_failed_job(job_id)
+        if job is None:
+            raise ValueError(f"Monitor job not found: {job_id}")
+        await crawler_manager.add_log(f"[Monitor] Job {job_id} manually retried", "info")
+        return {
+            "id": job.id,
+            "aweme_id": job.aweme_id,
+            "stage": job.stage,
+            "status": job.status,
+            "due_at": job.due_at,
+            "attempts": job.attempts,
+        }
+
 
 monitor_service = MonitorService()

@@ -249,3 +249,40 @@ async def test_monitor_discovery_scans_past_known_pinned_post():
     )
 
     assert [post["aweme_id"] for post in posts] == ["new_post"]
+
+
+@pytest.mark.asyncio
+async def test_failed_job_can_be_manually_retried(isolated_monitor_db):
+    await db_session.create_tables("sqlite")
+    await monitor_repository.upsert_monitored_account(sec_user_id="retry_user")
+    post, _ = await monitor_repository.upsert_post(
+        aweme_id="retry_post",
+        sec_user_id="retry_user",
+        title="retry",
+        desc="retry",
+        create_time=BASE_TIME,
+        canonical_url="https://www.douyin.com/video/retry_post",
+    )
+    jobs = await monitor_repository.create_snapshot_jobs(post)
+    job = jobs[0]
+
+    await monitor_repository.mark_job_running(job.id)
+    failed = await monitor_repository.mark_job_retry(
+        job.id,
+        error="blocked",
+        retry_delay_seconds=600,
+        max_attempts=1,
+    )
+    assert failed.status == "failed"
+
+    retried = await monitor_repository.retry_failed_job(job.id)
+    assert retried is not None
+    assert retried.status == "pending"
+    assert retried.started_at is None
+    assert retried.miss_reason is None
+
+    pending_jobs = await monitor_repository.list_jobs(status="pending")
+    assert any(item["id"] == job.id for item in pending_jobs)
+
+    with pytest.raises(ValueError):
+        await monitor_repository.retry_failed_job(jobs[1].id)

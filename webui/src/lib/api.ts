@@ -180,6 +180,21 @@ export interface MonitorOverview {
   recent_abnormal_jobs: MonitorAbnormalJob[]
 }
 
+export interface MonitorJob {
+  id: number
+  aweme_id: string
+  title: string
+  stage: string
+  due_at: number
+  status: string
+  attempts: number
+  last_error: string | null
+  miss_reason: string | null
+  created_at: number
+  started_at: number | null
+  finished_at: number | null
+}
+
 // API functions
 export const crawlerApi = {
   start: (config: CrawlerConfig) => api.post('/crawler/start', config),
@@ -234,6 +249,9 @@ export const monitorApi = {
   getDashboard: (limit = 100) =>
     api.get<MonitorDashboard>('/monitor/dashboard', { params: { limit } }),
   getOverview: () => api.get<MonitorOverview>('/monitor/overview'),
+  getJobs: (status?: string, limit = 300) =>
+    api.get<{ jobs: MonitorJob[]; count: number }>('/monitor/jobs', { params: { status, limit } }),
+  retryJob: (jobId: number) => api.post('/monitor/jobs/' + jobId + '/retry'),
 }
 
 export default api

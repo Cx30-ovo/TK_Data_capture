@@ -160,5 +160,30 @@
     "time": "Scheduled time",
     "reason": "Reason",
     "noAbnormal": "No abnormal jobs"
+  },
+  "tasks": {
+    "title": "JOB CENTER",
+    "description": "Pending, failed and missed jobs",
+    "total": "{{count}} jobs",
+    "searchPlaceholder": "Search title or post ID",
+    "statusColumn": "Status",
+    "stage": "Stage",
+    "post": "Post",
+    "dueAt": "Scheduled time",
+    "attempts": "Attempts",
+    "reason": "Reason",
+    "action": "Action",
+    "retry": "Retry",
+    "retrySuccess": "Job returned to the pending queue",
+    "retryFailed": "Retry failed",
+    "noJobs": "No matching jobs",
+    "status": {
+      "all": "All",
+      "pending": "Pending",
+      "running": "Running",
+      "done": "Done",
+      "failed": "Failed",
+      "missed": "Missed"
+    }
   }
 }

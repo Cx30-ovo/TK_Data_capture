@@ -407,6 +407,27 @@ class MonitorService:
             dedupe_key=dedupe_key,
         )
 
+    async def ensure_browser_ready(self) -> dict:
+        """Start or reuse the dedicated browser when the backend starts."""
+        if self._crawler_is_busy():
+            return {"status": "skipped", "reason": "crawler already running"}
+
+        async with async_playwright() as playwright:
+            manager = CDPBrowserManager()
+            browser_context = await manager.launch_and_connect(
+                playwright,
+                None,
+                None,
+                headless=config.CDP_HEADLESS,
+            )
+            crawler = DouYinCrawler()
+            crawler.browser_context = browser_context
+            page = await crawler._get_or_create_context_page()
+            await page.goto(crawler.index_url)
+            await manager.cleanup()
+        await crawler_manager.add_log("[Monitor] Dedicated browser is ready", "success")
+        return {"status": "ok"}
+
     async def list_alerts(self, status: Optional[str] = None, limit: int = 200) -> dict:
         alerts = await monitor_repository.list_alerts(status=status, limit=limit)
         unread = await monitor_repository.count_unread_alerts()

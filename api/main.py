@@ -28,6 +28,7 @@ import subprocess
 from contextlib import asynccontextmanager
 from pathlib import Path
 import uvicorn
+import config
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -37,6 +38,7 @@ from .routers import crawler_router, data_router, monitor_router, scheduler_rout
 from .services.monitor_service import monitor_service
 from .services import scheduler_service
 from .services.maintenance_service import maintenance_service
+from .services.crawler_manager import crawler_manager
 from database import db
 
 # Project root directory (used for running subprocesses like uv run main.py)
@@ -49,6 +51,14 @@ async def lifespan(_: FastAPI):
     await scheduler_service.start()
     await monitor_service.start()
     await maintenance_service.start()
+    if config.START_BROWSER_ON_SERVICE_START:
+        try:
+            await monitor_service.ensure_browser_ready()
+        except Exception as exc:
+            await crawler_manager.add_log(
+                f"[Monitor] Failed to prepare dedicated browser: {exc}",
+                "warning",
+            )
     try:
         yield
     finally:

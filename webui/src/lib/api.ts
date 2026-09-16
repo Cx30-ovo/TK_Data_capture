@@ -309,6 +309,7 @@ export const monitorApi = {
   exportPostSnapshotsUrl: (awemeId: string, format: 'csv' | 'xlsx') =>
     `/api/monitor/export/post/${encodeURIComponent(awemeId)}?format=${format}`,
   reportDownloadUrl: (name: string) => `/api/monitor/reports/download?name=${encodeURIComponent(name)}`,
+  deleteReport: (name: string) => api.delete('/monitor/reports', { params: { name } }),
 }
 
 export default api

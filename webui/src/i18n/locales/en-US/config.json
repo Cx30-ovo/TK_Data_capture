@@ -235,6 +235,10 @@
     "noReports": "No reports generated yet",
     "reportGenerated": "Report generated",
     "reportFailed": "Report generation failed",
+    "reportDeleted": "Report deleted",
+    "delete": "Delete report",
+    "deleteFailed": "Failed to delete report",
+    "confirmDelete": "Delete report {{name}}?",
     "period": {
       "daily": "Generate daily report",
       "weekly": "Generate weekly report",

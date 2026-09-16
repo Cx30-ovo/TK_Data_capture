@@ -255,5 +255,12 @@ class ReportService:
             raise ValueError("Report not found.")
         return path
 
+    def delete_report(self, name: str) -> bool:
+        path = self.resolve_report(name)
+        path.unlink(missing_ok=True)
+        if path.suffix.lower() == ".md":
+            path.with_suffix(".json").unlink(missing_ok=True)
+        return True
+
 
 report_service = ReportService()

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { CalendarDays, Download, FileSpreadsheet, FileText, History } from 'lucide-react'
+import { CalendarDays, Download, FileSpreadsheet, FileText, History, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { monitorApi } from '@/lib/api'
@@ -41,6 +41,17 @@ export function MonitorExport() {
       queryClient.invalidateQueries({ queryKey: ['monitorReports'] })
     },
     onError: (error: Error) => toast.error(`${t('export.reportFailed')}: ${error.message}`),
+  })
+  const deleteReport = useMutation({
+    mutationFn: (name: string) => monitorApi.deleteReport(name),
+    onSuccess: (_response, name) => {
+      toast.success(t('export.reportDeleted'))
+      if (generateReport.data?.data.filename === name) {
+        generateReport.reset()
+      }
+      queryClient.invalidateQueries({ queryKey: ['monitorReports'] })
+    },
+    onError: (error: Error) => toast.error(`${t('export.deleteFailed')}: ${error.message}`),
   })
 
   const posts = dashboard?.posts || []
@@ -163,6 +174,22 @@ export function MonitorExport() {
                     {t('export.download')}
                   </Button>
                 </a>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  title={t('export.delete')}
+                  aria-label={t('export.delete')}
+                  disabled={deleteReport.isPending}
+                  onClick={() => {
+                    if (window.confirm(t('export.confirmDelete', { name: report.name }))) {
+                      deleteReport.mutate(report.name)
+                    }
+                  }}
+                  className="h-7 w-7 p-0 text-cyber-text-muted hover:text-cyber-neon-pink hover:bg-cyber-neon-pink/10"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
               </div>
             )) : (
               <div className="py-4 text-xs font-mono text-cyber-text-muted">{t('export.noReports')}</div>

@@ -148,3 +148,12 @@ async def download_monitor_report(name: str):
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return FileResponse(path, filename=path.name)
+
+
+@router.delete("/reports")
+async def delete_monitor_report(name: str):
+    try:
+        await report_service.delete_report(name)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"status": "ok", "name": name}

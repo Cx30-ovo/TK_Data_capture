@@ -235,6 +235,10 @@
     "noReports": "暂无已生成报告",
     "reportGenerated": "报告生成成功",
     "reportFailed": "报告生成失败",
+    "reportDeleted": "报告已删除",
+    "delete": "删除报告",
+    "deleteFailed": "删除报告失败",
+    "confirmDelete": "确定删除报告 {{name}} 吗？",
     "period": {
       "daily": "生成日报",
       "weekly": "生成周报",

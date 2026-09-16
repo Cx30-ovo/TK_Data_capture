@@ -352,4 +352,5 @@ async def test_monitor_exports_and_daily_report(isolated_monitor_db, tmp_path):
     assert "抖音监控日报" in report["content"]
     assert len(service.list_reports()) == 1
     assert service.delete_report(report["filename"]) is True
+    assert service.delete_report(report["filename"]) is False
     assert service.list_reports() == []

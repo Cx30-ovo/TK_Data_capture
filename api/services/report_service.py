@@ -256,7 +256,13 @@ class ReportService:
         return path
 
     def delete_report(self, name: str) -> bool:
-        path = self.resolve_report(name)
+        if Path(name).name != name:
+            raise ValueError("Invalid report name.")
+        path = self.report_dir / name
+        if path.suffix.lower() not in (".md", ".json"):
+            raise ValueError("Report not found.")
+        if not path.exists():
+            return False
         path.unlink(missing_ok=True)
         if path.suffix.lower() == ".md":
             path.with_suffix(".json").unlink(missing_ok=True)

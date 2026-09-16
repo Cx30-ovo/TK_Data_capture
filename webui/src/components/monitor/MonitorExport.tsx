@@ -51,7 +51,18 @@ export function MonitorExport() {
       }
       queryClient.invalidateQueries({ queryKey: ['monitorReports'] })
     },
-    onError: (error: Error) => toast.error(`${t('export.deleteFailed')}: ${error.message}`),
+    onError: (error: Error, name) => {
+      const status = (error as Error & { response?: { status?: number } }).response?.status
+      if (status === 404) {
+        toast.success(t('export.reportDeleted'))
+        if (generateReport.data?.data.filename === name) {
+          generateReport.reset()
+        }
+        queryClient.invalidateQueries({ queryKey: ['monitorReports'] })
+        return
+      }
+      toast.error(`${t('export.deleteFailed')}: ${error.message}`)
+    },
   })
 
   const posts = dashboard?.posts || []

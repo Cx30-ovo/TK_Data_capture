@@ -18,7 +18,7 @@ from .ai_model_service import AIServiceError, ai_model_service
 
 
 TOPIC_PROMPT_VERSION = "topic-v1"
-LIFECYCLE_PROMPT_VERSION = "lifecycle-v1"
+LIFECYCLE_PROMPT_VERSION = "lifecycle-v2"
 TIME_RANGE_SECONDS = {
     "24h": 24 * 60 * 60,
     "7d": 7 * 24 * 60 * 60,
@@ -68,7 +68,7 @@ LIFECYCLE_SYSTEM_PROMPT = """
 任务要求：
 1. 解释作品在 1h、6h、24h、72h 阶段的传播变化。
 2. 区分早爆、快速衰退、长尾和持续型节奏。
-3. 每个作品判断必须引用允许的作品 ID，post_insights 最多返回 5 条。
+3. 每条 post_insights 都必须填写 aweme_id 字段，但不要在 pattern、evidence 或其他文字中直接写作品 ID；需要指向作品时使用作品标题，post_insights 最多返回 5 条。
 4. 不允许编造数字、发布时间、缺失快照或因果关系。
 5. 数据不完整时写入 caveats。
 6. overall_summary 不得为空，必须用业务语言描述主要增长阶段。
@@ -527,9 +527,9 @@ class AIAnalysisService:
                 "title": source.get("title") or post_id,
                 "lifecycle_type": source.get("lifecycle_type"),
                 "metrics": source.get("lifecycle_metrics") or {},
-                "pattern": _safe_text(row.get("pattern"), 500),
-                "evidence": _string_list(row.get("evidence"), 10),
-                "possible_factors": _string_list(row.get("possible_factors"), 10),
+                "pattern": self._replace_post_ids(_safe_text(row.get("pattern"), 500), posts_by_id),
+                "evidence": [self._replace_post_ids(item, posts_by_id) for item in _string_list(row.get("evidence"), 10)],
+                "possible_factors": [self._replace_post_ids(item, posts_by_id) for item in _string_list(row.get("possible_factors"), 10)],
                 "confidence": self._confidence(row.get("confidence")),
                 "source": "model",
             })
@@ -568,13 +568,13 @@ class AIAnalysisService:
 
         stage_observation = self._lifecycle_stage_observation(posts, stage_summary)
         return {
-            "overall_summary": _safe_text(result.get("overall_summary"), 2000) or stage_observation,
+            "overall_summary": self._replace_post_ids(_safe_text(result.get("overall_summary"), 2000), posts_by_id) or stage_observation,
             "stage_observation": stage_observation,
             "post_insights": insights,
-            "content_patterns": _string_list(result.get("content_patterns"), 20),
-            "anomaly_notes": _string_list(result.get("anomaly_notes"), 20),
-            "recommendations": _string_list(result.get("recommendations"), 20),
-            "caveats": _string_list(result.get("caveats"), 20),
+            "content_patterns": [self._replace_post_ids(item, posts_by_id) for item in _string_list(result.get("content_patterns"), 20)],
+            "anomaly_notes": [self._replace_post_ids(item, posts_by_id) for item in _string_list(result.get("anomaly_notes"), 20)],
+            "recommendations": [self._replace_post_ids(item, posts_by_id) for item in _string_list(result.get("recommendations"), 20)],
+            "caveats": [self._replace_post_ids(item, posts_by_id) for item in _string_list(result.get("caveats"), 20)],
             "type_distribution": distribution,
             "stage_summary": stage_summary,
             "source_post_count": len(posts),
@@ -594,6 +594,15 @@ class AIAnalysisService:
         if missing_72:
             observation += f" 同时有 {missing_72} 篇作品缺少 72h 快照，长尾判断仍需更多数据。"
         return observation
+
+    @staticmethod
+    def _replace_post_ids(text: str, posts_by_id: Mapping[str, Mapping[str, Any]]) -> str:
+        result = str(text or "")
+        for post_id, post in posts_by_id.items():
+            title = str(post.get("title") or "").strip()
+            if title:
+                result = result.replace(post_id, f"《{title}》")
+        return result
 
     @staticmethod
     def _fallback_lifecycle_pattern(lifecycle_type: Any) -> str:

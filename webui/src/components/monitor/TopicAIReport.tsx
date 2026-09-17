@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { BrainCircuit, CheckCircle2, ChevronDown, Copy, History, Lightbulb, RefreshCw, Sparkles, TriangleAlert } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -34,6 +34,7 @@ function analysisErrorMessage(error: unknown): string {
 export function TopicAIReport({ accountId, timeRange, postLimit }: TopicAIReportProps) {
   const { t } = useTranslation('config')
   const queryClient = useQueryClient()
+  const currentAccountRef = useRef(accountId)
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const historyKey = ['aiTopicHistory', accountId]
   const statusQuery = useQuery({
@@ -51,20 +52,29 @@ export function TopicAIReport({ accountId, timeRange, postLimit }: TopicAIReport
     },
   })
   const mutation = useMutation({
-    mutationFn: async (force: boolean) => {
-      if (typeof accountId !== 'number') throw new Error(t('topicReport.singleAccountRequired'))
-      return monitorApi.analyzeTopics({ account_id: accountId, time_range: timeRange, post_limit: postLimit, force })
+    mutationFn: async (variables: { force: boolean; accountId: number; timeRange: TopicAIReportProps['timeRange']; postLimit: number }) => {
+      return monitorApi.analyzeTopics({ account_id: variables.accountId, time_range: variables.timeRange, post_limit: variables.postLimit, force: variables.force })
     },
-    onSuccess: (response) => {
+    onSuccess: (response, variables) => {
+      if (currentAccountRef.current !== variables.accountId) return
       setSelectedId(response.data.id)
-      queryClient.setQueryData<AIAnalysisResponse<AITopicAnalysisResult>[]>(historyKey, (current = []) => [response.data, ...current.filter((item) => item.id !== response.data.id)])
+      queryClient.setQueryData<AIAnalysisResponse<AITopicAnalysisResult>[]>(['aiTopicHistory', variables.accountId], (current = []) => [response.data, ...current.filter((item) => item.id !== response.data.id)])
       toast.success(t('topicReport.completed'))
     },
-    onError: (error: Error) => toast.error(`${t('topicReport.failed')}: ${analysisErrorMessage(error)}`),
+    onError: (error: Error, variables) => {
+      if (currentAccountRef.current === variables.accountId) toast.error(`${t('topicReport.failed')}: ${analysisErrorMessage(error)}`)
+    },
   })
 
+  useEffect(() => {
+    currentAccountRef.current = accountId
+    setSelectedId(null)
+    mutation.reset()
+  }, [accountId])
+
   const history = historyQuery.data || []
-  const current = mutation.data?.data || history.find((item) => item.id === selectedId) || history[0] || null
+  const mutationResult = mutation.variables?.accountId === accountId ? mutation.data?.data : null
+  const current = mutationResult || history.find((item) => item.id === selectedId) || history[0] || null
   const configured = Boolean(statusQuery.data?.configured)
   const disabled = typeof accountId !== 'number' || !configured || mutation.isPending
   const tagCloud = useMemo(() => {
@@ -113,7 +123,7 @@ export function TopicAIReport({ accountId, timeRange, postLimit }: TopicAIReport
               )) : <div className="px-3 py-8 text-center text-xs text-slate-400">{t('topicReport.noHistory')}</div>}
             </div>
           </details>
-          <Button type="button" disabled={disabled} onClick={() => mutation.mutate(Boolean(current))} className="h-9 bg-[#165DFF] px-4 text-xs text-white hover:bg-[#0E4FD8]">
+          <Button type="button" disabled={disabled} onClick={() => typeof accountId === 'number' && mutation.mutate({ force: Boolean(current), accountId, timeRange, postLimit })} className="h-9 bg-[#165DFF] px-4 text-xs text-white hover:bg-[#0E4FD8]">
             {mutation.isPending ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
             {mutation.isPending ? t('topicReport.analyzing') : current ? t('topicReport.reanalyze') : t('topicReport.analyze')}
           </Button>
@@ -122,7 +132,7 @@ export function TopicAIReport({ accountId, timeRange, postLimit }: TopicAIReport
 
       {typeof accountId !== 'number' ? <ReportNotice tone="warning" text={t('topicReport.singleAccountRequired')} /> : null}
       {typeof accountId === 'number' && !configured && !statusQuery.isLoading ? <ReportNotice tone="warning" text={t('topicReport.notConfigured')} /> : null}
-      {mutation.isPending ? <TopicReportSkeleton /> : current ? <TopicReportContent current={current} tagCloud={tagCloud} onCopyTag={copyTag} /> : typeof accountId === 'number' && configured ? <EmptyReport onAnalyze={() => mutation.mutate(false)} /> : null}
+      {mutation.isPending || historyQuery.isLoading ? <TopicReportSkeleton /> : current ? <TopicReportContent current={current} tagCloud={tagCloud} onCopyTag={copyTag} /> : typeof accountId === 'number' && configured ? <EmptyReport onAnalyze={() => mutation.mutate({ force: false, accountId, timeRange, postLimit })} /> : null}
     </div>
   )
 }

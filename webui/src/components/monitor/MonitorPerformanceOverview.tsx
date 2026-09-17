@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Activity, BarChart3, CalendarDays, Flame, Gauge, Heart, MessageSquare, Share2 } from 'lucide-react'
+import { Activity, ArrowDown, ArrowUp, ArrowUpDown, BarChart3, Flame, Gauge, Search } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { MonitorDashboardPost } from '@/lib/api'
 import { classifyTheme, firstSeenDelayHours, latestSnapshot, mean, median, postInteraction, THEME_COLORS } from '@/lib/monitorMetrics'
 
@@ -30,20 +32,6 @@ function formatCompactNumber(value: number): string {
 }
 
 
-type RankingMetric = 'liked_count' | 'share_count' | 'comment_count'
-
-const RANKING_BOARDS = [
-  { metric: 'liked_count', icon: Heart, iconClass: 'text-cyber-neon-cyan', fillClass: 'bg-cyber-neon-cyan/10', accentClass: 'bg-cyber-neon-cyan', badgeClass: 'bg-cyber-neon-cyan text-cyber-bg-primary' },
-  { metric: 'share_count', icon: Share2, iconClass: 'text-cyber-neon-orange', fillClass: 'bg-cyber-neon-orange/10', accentClass: 'bg-cyber-neon-orange', badgeClass: 'bg-cyber-neon-orange text-cyber-bg-primary' },
-  { metric: 'comment_count', icon: MessageSquare, iconClass: 'text-cyber-neon-pink', fillClass: 'bg-cyber-neon-pink/10', accentClass: 'bg-cyber-neon-pink', badgeClass: 'bg-cyber-neon-pink text-cyber-bg-primary' },
-] as const satisfies ReadonlyArray<{ metric: RankingMetric; icon: typeof Heart; iconClass: string; fillClass: string; accentClass: string; badgeClass: string }>
-
-
-function rankingValue(post: MonitorDashboardPost, metric: RankingMetric): number {
-  return latestSnapshot(post)?.[metric] || 0
-}
-
-
 function formatPublishedAt(value: number): string {
   const date = new Date(value * 1000)
   if (Number.isNaN(date.getTime())) return '-'
@@ -58,9 +46,30 @@ function formatPublishedAt(value: number): string {
 }
 
 
+function stageBadgeClass(stage?: string): string {
+  if (stage === '1h') return 'border-cyber-neon-cyan/30 bg-cyber-neon-cyan/10 text-cyber-neon-cyan'
+  if (stage === '6h') return 'border-cyber-neon-green/30 bg-cyber-neon-green/10 text-cyber-neon-green'
+  if (stage === '24h') return 'border-cyber-neon-purple/30 bg-cyber-neon-purple/10 text-cyber-neon-purple'
+  if (stage === '72h') return 'border-cyber-neon-orange/30 bg-cyber-neon-orange/10 text-cyber-neon-orange'
+  if (stage === '7d') return 'border-cyber-neon-pink/30 bg-cyber-neon-pink/10 text-cyber-neon-pink'
+  if (stage === 'first_seen') return 'border-cyber-border-default bg-cyber-bg-tertiary text-cyber-text-secondary'
+  return 'border-cyber-border-subtle bg-cyber-bg-tertiary/60 text-cyber-text-muted'
+}
+
+
+type OverviewSort = 'publishDesc' | 'publishAsc' | 'likesDesc' | 'likesAsc' | 'collectionsDesc' | 'collectionsAsc' | 'commentsDesc' | 'commentsAsc' | 'sharesDesc' | 'sharesAsc' | 'interactionDesc' | 'interactionAsc'
+
+
+function SortableHeader({ label, active, direction, numeric = false, onClick }: { label: string; active: boolean; direction: 'asc' | 'desc'; numeric?: boolean; onClick: () => void }) {
+  return <th data-numeric={numeric ? 'true' : undefined} className={`px-4 py-3 ${numeric ? 'text-right' : 'text-left'} ${active ? 'bg-cyber-neon-cyan/[0.06] text-cyber-neon-cyan' : ''}`}><button type="button" onClick={onClick} className={`inline-flex items-center gap-1 ${numeric ? 'ml-auto' : ''} hover:text-cyber-neon-cyan`}>{label}{active ? direction === 'desc' ? <ArrowDown className="h-3 w-3" /> : <ArrowUp className="h-3 w-3" /> : <ArrowUpDown className="h-3 w-3 opacity-40" />}</button></th>
+}
+
+
 export function MonitorPerformanceOverview({ posts }: { posts: MonitorDashboardPost[] }) {
   const { t } = useTranslation('config')
   const [activeStructureMetric, setActiveStructureMetric] = useState<'liked' | 'collected' | 'comment' | 'share' | null>(null)
+  const [overviewSearch, setOverviewSearch] = useState('')
+  const [overviewSort, setOverviewSort] = useState<OverviewSort>('publishDesc')
   const interactions = posts.map(postInteraction)
   const average = mean(interactions)
   const middle = median(interactions)
@@ -89,18 +98,32 @@ export function MonitorPerformanceOverview({ posts }: { posts: MonitorDashboardP
     { key: 'share' as const, label: t('monitorDashboard.metricShares'), value: structure.share, percent: structureShares.share, barClass: 'bg-cyber-neon-orange', borderClass: 'border-cyber-neon-orange' },
   ]
   const dominantStructure = structureItems.reduce((best, item) => item.value > best.value ? item : best, structureItems[0])
-  const rankingBoards = useMemo(() => RANKING_BOARDS.map((board) => {
-    const ranking = [...posts]
-      .sort((left, right) => rankingValue(right, board.metric) - rankingValue(left, board.metric)
-        || postInteraction(right) - postInteraction(left)
-        || right.create_time - left.create_time)
-      .slice(0, 10)
-    return {
-      ...board,
-      ranking,
-      maxValue: Math.max(...ranking.map((post) => rankingValue(post, board.metric)), 1),
+  const overviewPosts = useMemo(() => {
+    const keyword = overviewSearch.trim().toLowerCase()
+    const metricValue = (post: MonitorDashboardPost, metric: 'liked_count' | 'collected_count' | 'comment_count' | 'share_count' | 'interaction') => {
+      const snapshot = latestSnapshot(post)
+      if (!snapshot) return 0
+      if (metric === 'interaction') return snapshot.liked_count + snapshot.collected_count + snapshot.comment_count + snapshot.share_count
+      return snapshot[metric]
     }
-  }), [posts])
+    return posts
+      .filter((post) => !keyword || (post.title || '').toLowerCase().includes(keyword) || post.aweme_id.toLowerCase().includes(keyword))
+      .sort((left, right) => {
+        if (overviewSort === 'publishAsc') return left.create_time - right.create_time
+        if (overviewSort === 'publishDesc') return right.create_time - left.create_time
+        const metric = overviewSort.startsWith('likes') ? 'liked_count' : overviewSort.startsWith('collections') ? 'collected_count' : overviewSort.startsWith('comments') ? 'comment_count' : overviewSort.startsWith('shares') ? 'share_count' : 'interaction'
+        const difference = metricValue(right, metric) - metricValue(left, metric)
+        return overviewSort.endsWith('Asc') ? -difference : difference
+      })
+  }, [overviewSearch, overviewSort, posts])
+
+  const toggleOverviewSort = (group: 'publish' | 'likes' | 'collections' | 'comments' | 'shares' | 'interaction') => {
+    setOverviewSort((current) => {
+      const desc = `${group}Desc` as OverviewSort
+      const asc = `${group}Asc` as OverviewSort
+      return current === desc ? asc : desc
+    })
+  }
   const meanMedianRatio = middle > 0 ? average / middle : 0
   const topTenInteraction = [...posts].sort((left, right) => postInteraction(right) - postInteraction(left)).slice(0, 10).reduce((sum, post) => sum + postInteraction(post), 0)
   const totalInteraction = interactions.reduce((sum, value) => sum + value, 0)
@@ -142,7 +165,7 @@ export function MonitorPerformanceOverview({ posts }: { posts: MonitorDashboardP
   ]
 
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col space-y-3">
       <section className={`rounded-lg border p-4 ${meanMedianRatio >= 1.5 ? 'border-cyber-neon-orange/35 bg-cyber-neon-orange/5' : 'border-cyber-neon-cyan/30 bg-cyber-neon-cyan/5'}`}>
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
           <div className="text-xs font-semibold text-cyber-text-primary">{t('performance.meanMedianAlert')}</div>
@@ -165,7 +188,34 @@ export function MonitorPerformanceOverview({ posts }: { posts: MonitorDashboardP
         ))}
       </div>
 
-      <div className="space-y-3">
+      <section className="order-3 overflow-hidden rounded-lg border border-cyber-border-subtle bg-cyber-bg-panel shadow-sm">
+        <div className="h-0.5 bg-gradient-to-r from-cyber-neon-cyan via-cyber-neon-purple to-cyber-neon-pink" />
+        <div className="flex flex-wrap items-end justify-between gap-3 border-b border-cyber-border-subtle px-4 py-3">
+          <div><div className="text-xs font-semibold text-cyber-text-primary">{t('performance.postOverview')}</div><div className="mt-1 text-[9px] text-cyber-text-muted">{t('performance.postOverviewHint')}</div></div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative"><Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-cyber-text-muted" /><Input value={overviewSearch} onChange={(event) => setOverviewSearch(event.target.value)} placeholder={t('performance.postSearchPlaceholder')} className="h-8 w-[240px] pl-8 text-xs" /></div>
+            <Select value={overviewSort} onValueChange={(value) => setOverviewSort(value as OverviewSort)}><SelectTrigger className="h-8 w-[190px] text-xs"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="publishDesc">{t('performance.sort.publishDesc')}</SelectItem><SelectItem value="publishAsc">{t('performance.sort.publishAsc')}</SelectItem><SelectItem value="likesDesc">{t('performance.sort.likesDesc')}</SelectItem><SelectItem value="likesAsc">{t('performance.sort.likesAsc')}</SelectItem><SelectItem value="collectionsDesc">{t('performance.sort.collectionsDesc')}</SelectItem><SelectItem value="collectionsAsc">{t('performance.sort.collectionsAsc')}</SelectItem><SelectItem value="commentsDesc">{t('performance.sort.commentsDesc')}</SelectItem><SelectItem value="commentsAsc">{t('performance.sort.commentsAsc')}</SelectItem><SelectItem value="sharesDesc">{t('performance.sort.sharesDesc')}</SelectItem><SelectItem value="sharesAsc">{t('performance.sort.sharesAsc')}</SelectItem><SelectItem value="interactionDesc">{t('performance.sort.interactionDesc')}</SelectItem><SelectItem value="interactionAsc">{t('performance.sort.interactionAsc')}</SelectItem></SelectContent></Select>
+            <span className="rounded border border-cyber-neon-cyan/25 bg-cyber-neon-cyan/5 px-2 py-1 text-[10px] numeric-value text-cyber-neon-cyan">{t('performance.postOverviewCount', { count: overviewPosts.length })}</span>
+          </div>
+        </div>
+        <div className="max-h-[520px] overflow-auto">
+          <table className="w-full min-w-[980px] text-xs">
+            <thead className="sticky top-0 z-20 bg-cyber-bg-tertiary/95 text-left text-[9px] uppercase tracking-[0.08em] text-cyber-text-muted backdrop-blur">
+              <tr className="border-b border-cyber-border-default"><th className="sticky left-0 z-30 min-w-[300px] bg-cyber-bg-tertiary/95 px-4 py-3">{t('performance.postTitle')}</th><SortableHeader label={t('performance.publishTime')} active={overviewSort.startsWith('publish')} direction={overviewSort.endsWith('Asc') ? 'asc' : 'desc'} onClick={() => toggleOverviewSort('publish')} /><th className="px-4 py-3">{t('performance.latestStage')}</th><SortableHeader label={t('monitorDashboard.metricLikes')} active={overviewSort.startsWith('likes')} direction={overviewSort.endsWith('Asc') ? 'asc' : 'desc'} numeric onClick={() => toggleOverviewSort('likes')} /><SortableHeader label={t('monitorDashboard.metricCollections')} active={overviewSort.startsWith('collections')} direction={overviewSort.endsWith('Asc') ? 'asc' : 'desc'} numeric onClick={() => toggleOverviewSort('collections')} /><SortableHeader label={t('monitorDashboard.metricComments')} active={overviewSort.startsWith('comments')} direction={overviewSort.endsWith('Asc') ? 'asc' : 'desc'} numeric onClick={() => toggleOverviewSort('comments')} /><SortableHeader label={t('monitorDashboard.metricShares')} active={overviewSort.startsWith('shares')} direction={overviewSort.endsWith('Asc') ? 'asc' : 'desc'} numeric onClick={() => toggleOverviewSort('shares')} /><SortableHeader label={t('performance.totalInteraction')} active={overviewSort.startsWith('interaction')} direction={overviewSort.endsWith('Asc') ? 'asc' : 'desc'} numeric onClick={() => toggleOverviewSort('interaction')} /></tr>
+            </thead>
+            <tbody>
+              {overviewPosts.map((post) => {
+                const snapshot = latestSnapshot(post)
+                const total = snapshot ? snapshot.liked_count + snapshot.collected_count + snapshot.comment_count + snapshot.share_count : 0
+                return <tr key={post.aweme_id} className="group border-b border-cyber-border-subtle/35 odd:bg-cyber-bg-tertiary/10 hover:bg-cyber-neon-cyan/[0.055]"><td className="sticky left-0 z-10 max-w-[360px] border-l-2 border-l-transparent bg-cyber-bg-panel px-4 py-3 transition-colors group-hover:border-l-cyber-neon-cyan group-hover:bg-[rgb(var(--cyber-bg-panel))]"><div title={post.title || post.aweme_id} className="truncate font-medium text-cyber-text-primary">{post.title || post.aweme_id}</div><div className="mt-0.5 truncate text-[9px] text-cyber-text-muted">{post.aweme_id}</div></td><td className="whitespace-nowrap px-4 py-3 numeric-value text-cyber-text-secondary">{formatPublishedAt(post.create_time)}</td><td className="whitespace-nowrap px-4 py-3"><span className={`inline-flex rounded-full border px-2 py-1 text-[9px] font-medium ${stageBadgeClass(snapshot?.stage)}`}>{snapshot?.stage || t('performance.noSnapshot')}</span></td><td data-numeric="true" className="border-l border-cyber-border-subtle/25 px-4 py-3 text-right numeric-value text-cyber-text-secondary">{snapshot ? formatNumber(snapshot.liked_count) : '-'}</td><td data-numeric="true" className="px-4 py-3 text-right numeric-value text-cyber-text-secondary">{snapshot ? formatNumber(snapshot.collected_count) : '-'}</td><td data-numeric="true" className="px-4 py-3 text-right numeric-value text-cyber-text-secondary">{snapshot ? formatNumber(snapshot.comment_count) : '-'}</td><td data-numeric="true" className="px-4 py-3 text-right numeric-value text-cyber-text-secondary">{snapshot ? formatNumber(snapshot.share_count) : '-'}</td><td data-numeric="true" className="border-l border-cyber-border-subtle/25 px-4 py-3 text-right"><span className="inline-flex min-w-[72px] justify-end rounded bg-cyber-neon-cyan/10 px-2 py-1 font-semibold numeric-value text-cyber-neon-cyan">{snapshot ? formatNumber(total) : '-'}</span></td></tr>
+              })}
+            </tbody>
+          </table>
+          {overviewPosts.length === 0 ? <div className="px-4 py-12 text-center text-xs text-cyber-text-muted">{t('performance.noMatchingPosts')}</div> : null}
+        </div>
+      </section>
+
+      <div className="order-2 space-y-3">
         <section className="rounded-lg border border-cyber-border-subtle bg-cyber-bg-panel p-4 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -208,49 +258,9 @@ export function MonitorPerformanceOverview({ posts }: { posts: MonitorDashboardP
           </div>
         </section>
 
-        <section className="rounded-lg border border-cyber-border-subtle bg-cyber-bg-panel p-4 shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <div className="text-xs font-semibold text-cyber-text-primary">{t('performance.ranking')}</div>
-              <div className="mt-1 text-[9px] text-cyber-text-muted">{t('performance.rankingHint')}</div>
-            </div>
-          </div>
-          <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
-            {rankingBoards.map((board) => (
-              <div key={board.metric} className="min-w-0 rounded-md border border-cyber-border-subtle bg-cyber-bg-tertiary/10 p-2.5">
-                <div className="flex items-center gap-2 border-b border-cyber-border-subtle/60 pb-1.5">
-                  <board.icon className={`h-3.5 w-3.5 ${board.iconClass}`} />
-                  <span className="text-[11px] font-semibold text-cyber-text-primary">{t(`performance.rankingMetrics.${board.metric}`)}</span>
-                  <span className="ml-auto rounded border border-cyber-border-subtle px-1.5 py-0.5 text-[8px] font-medium text-cyber-text-muted">TOP10</span>
-                </div>
-                <div className="mt-2 space-y-0.5">
-                  {board.ranking.length > 0 ? board.ranking.map((post, index) => {
-                    const value = rankingValue(post, board.metric)
-                    const width = Math.max(value > 0 ? 0.75 : 0, value / board.maxValue * 100)
-                    return (
-                      <div key={`${board.metric}-${post.aweme_id}`} className="relative grid h-[34px] grid-cols-[22px_minmax(0,1fr)_82px] items-center gap-1.5 overflow-hidden rounded-sm border border-cyber-border-subtle/30 bg-cyber-bg-panel/45 px-1.5">
-                        <div className={`absolute inset-y-0 left-0 ${board.fillClass}`} style={{ width: `${width}%` }} />
-                        <div className={`absolute inset-y-0 left-0 w-0.5 ${board.accentClass}`} />
-                        <span className={`relative flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-bold ${index < 3 ? board.badgeClass : 'text-cyber-text-muted'}`}>{index + 1}</span>
-                        <div className="relative flex min-w-0 items-center gap-2">
-                          <span title={post.title || post.aweme_id} className="min-w-0 flex-1 truncate text-[10px] text-cyber-text-primary">{post.title || post.aweme_id}</span>
-                          <span className="flex shrink-0 items-center gap-1 text-[8px] text-cyber-text-muted" title={new Date(post.create_time * 1000).toLocaleString()}>
-                            <CalendarDays className="h-2.5 w-2.5" />
-                            {formatPublishedAt(post.create_time)}
-                          </span>
-                        </div>
-                        <span className="relative text-right text-[10px] font-semibold numeric-value text-cyber-text-primary" title={formatNumber(value)}>{formatCompactNumber(value)}</span>
-                      </div>
-                    )
-                  }) : <div className="py-6 text-center text-[10px] text-cyber-text-muted">{t('performance.rankingEmpty')}</div>}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
       </div>
 
-      <section className="rounded-lg border border-cyber-border-subtle bg-cyber-bg-panel p-4 shadow-sm">
+      <section className="order-4 rounded-lg border border-cyber-border-subtle bg-cyber-bg-panel p-4 shadow-sm">
         <div className="flex items-baseline justify-between"><div className="text-xs font-semibold text-cyber-text-primary">{t('performance.quadrantTitle')}</div><span className="text-[9px] text-cyber-text-muted">{t('performance.quadrantHint')}</span></div>
         <div className="relative mt-4 h-[440px] overflow-hidden rounded-md border border-cyber-border-subtle bg-cyber-bg-tertiary/10">
           <div className="absolute left-0 top-0 bg-cyber-neon-cyan/5" style={{ width: `${medianX}%`, height: `${100 - medianY}%` }} />

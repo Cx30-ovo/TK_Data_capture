@@ -34,7 +34,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from .routers import crawler_router, data_router, monitor_router, scheduler_router, websocket_router
+from .routers import ai_router, crawler_router, data_router, monitor_router, scheduler_router, websocket_router
 from .services.monitor_service import monitor_service
 from .services import scheduler_service
 from .services.maintenance_service import maintenance_service
@@ -95,6 +95,7 @@ app.add_middleware(
 app.include_router(crawler_router, prefix="/api")
 app.include_router(data_router, prefix="/api")
 app.include_router(monitor_router, prefix="/api")
+app.include_router(ai_router, prefix="/api")
 app.include_router(scheduler_router, prefix="/api")
 app.include_router(websocket_router, prefix="/api")
 

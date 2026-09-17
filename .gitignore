@@ -191,4 +191,4 @@ output/*.log.*
 output/backups/*
 output/exports/*
 output/reports/*
-output/pytest-tmp/
+output/pytest-*/

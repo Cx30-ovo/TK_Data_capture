@@ -132,8 +132,8 @@ export function MonitorDataCenter({ focusAwemeId: _focusAwemeId }: { focusAwemeI
       </nav>
 
       {activeModule === 'overview' ? <MonitorPerformanceOverview posts={scopedPosts} /> : null}
-      {activeModule === 'topics' ? <MonitorTopicAnalytics posts={scopedPosts} /> : null}
-      {activeModule === 'lifecycle' ? <MonitorLifecycleAnalytics posts={scopedPosts} /> : null}
+      {activeModule === 'topics' ? <MonitorTopicAnalytics posts={scopedPosts} timeRange={timeRange} /> : null}
+      {activeModule === 'lifecycle' ? <MonitorLifecycleAnalytics posts={scopedPosts} timeRange={timeRange} /> : null}
     </div>
   )
 }

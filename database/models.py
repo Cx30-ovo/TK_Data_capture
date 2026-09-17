@@ -414,3 +414,38 @@ class MonitorAlert(Base):
     created_at = Column(BigInteger, nullable=False, index=True, comment='创建时间戳')
     read_at = Column(BigInteger, comment='读取时间戳')
     resolved_at = Column(BigInteger, comment='解决时间戳')
+
+
+class AIAnalysisResult(Base):
+    __tablename__ = 'ai_analysis_results'
+    __table_args__ = (
+        UniqueConstraint(
+            'platform',
+            'sec_user_id',
+            'analysis_type',
+            'scope_key',
+            'input_hash',
+            'provider',
+            'model_name',
+            'prompt_version',
+            name='uq_ai_analysis_cache_key',
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, comment='主键ID')
+    platform = Column(String(32), nullable=False, default='dy', index=True, comment='平台标识')
+    sec_user_id = Column(String(255), nullable=False, default='', index=True, comment='账号安全标识')
+    analysis_type = Column(String(32), nullable=False, index=True, comment='分析类型: topic/lifecycle')
+    scope_key = Column(String(255), nullable=False, index=True, comment='分析范围键')
+    scope_json = Column(Text, comment='分析范围JSON')
+    input_hash = Column(String(64), nullable=False, index=True, comment='输入数据哈希')
+    provider = Column(String(64), nullable=False, default='', comment='模型服务商')
+    model_name = Column(String(128), nullable=False, default='', comment='模型名称')
+    prompt_version = Column(String(64), nullable=False, default='', comment='提示词版本')
+    status = Column(String(16), nullable=False, default='pending', index=True, comment='状态: pending/running/done/failed')
+    result_json = Column(Text, comment='分析结果JSON')
+    usage_json = Column(Text, comment='模型用量JSON')
+    error = Column(Text, comment='失败原因')
+    expires_at = Column(BigInteger, index=True, comment='缓存过期时间戳')
+    created_at = Column(BigInteger, nullable=False, index=True, comment='创建时间戳')
+    updated_at = Column(BigInteger, nullable=False, index=True, comment='更新时间戳')

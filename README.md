@@ -4,7 +4,7 @@
 
 本项目是在开源项目 [NanmiCoder/MediaCrawler](https://github.com/NanmiCoder/MediaCrawler) 的基础上进行二次修改和功能扩展的版本，仓库地址为 [Cx30-ovo/TK_Data_capture](https://github.com/Cx30-ovo/TK_Data_capture)。
 
-本项目不是 MediaCrawler 官方项目，也不代表原作者。原始项目的浏览器自动化、媒体平台采集和基础 WebUI 能力来自 MediaCrawler；本仓库主要围绕抖音账号持续监控、互动生命周期快照、任务告警、数据分析和报告导出进行了扩展。
+本项目不是 MediaCrawler 官方项目，也不代表原作者。原始项目的浏览器自动化、媒体平台采集和基础 WebUI 能力来自 MediaCrawler；本仓库主要围绕抖音账号持续监控、互动生命周期快照、任务告警、AI 研报、数据分析和报告导出进行了扩展。
 
 ## 项目定位
 
@@ -18,6 +18,7 @@
 - 区分真实观测时间、计划时间和实际发布后年龄。
 - 查看点赞、收藏、评论、分享的变化趋势。
 - 对异常任务进行重试、分类和告警处理。
+- 使用云端或本地 OpenAI 兼容模型生成主题和生命周期 AI 研报。
 - 导出作品列表、快照历史和日报、周报、月报。
 - 通过 WebUI 查看账号表现、作品排行、主题标签和生命周期分析。
 
@@ -78,19 +79,29 @@
 WebUI 的“监控数据”页面包含以下分析模块：
 
 - 作品效果总览和核心指标。
-- 按点赞、分享、评论切换的排行榜。
+- 点赞榜、分享榜和评论榜同时展示的 TOP10 榜单。
 - 点赞与评论四象限图。
-- 主题发布量与互动效果对比。
-- 主题互动气泡图。
-- 标签贡献关系和标签共现分析。
-- 多作品生命周期曲线。
-- 阶段增量和互动增长速度。
+- AI 主题与标签研报。
+- AI 生命周期研报。
+- 生命周期节奏分布。
+- 作品快照节点和 AI 生命周期诊断。
 - 点赞率、收藏率、评论率和分享率。
 - 发布时段热力图。
 - 异常爆发增长检测。
-- 重点生命周期明细和全部作品分页明细。
 
-### 6. 导出与报告
+### 6. AI 智能分析
+
+- 支持 OpenAI 兼容的云端模型，例如 Qwen。
+- 支持 Ollama、vLLM、LM Studio 和 LiteLLM 等兼容接口。
+- 主题分析生成核心总结、主题洞察、核心标签、代表作特征和行动建议。
+- 生命周期分析生成阶段观察、传播节奏分布和作品级 AI 诊断。
+- 模型只负责归纳和解释，互动数字、阶段增量和节奏类型仍由后端计算。
+- 分析结果写入 `ai_analysis_results` 缓存表。
+- 相同账号、数据和提示词版本优先读取缓存。
+- 支持“重新生成”强制刷新。
+- 模型输出异常、上下文超限或超时时返回结构化错误。
+
+### 7. 导出与报告
 
 - 导出作品列表为 CSV 或 Excel。
 - 搜索并多选作品后导出完整快照历史。
@@ -98,7 +109,7 @@ WebUI 的“监控数据”页面包含以下分析模块：
 - 查看报告生成时间、时间范围、文件大小和状态。
 - 下载或删除已生成的报告。
 
-### 7. 浏览器复用与风控重试
+### 8. 浏览器复用与风控重试
 
 - 默认使用 CDP 模式连接 Chrome 或 Edge。
 - 优先复用同一个浏览器进程和稳定标签页。
@@ -107,7 +118,7 @@ WebUI 的“监控数据”页面包含以下分析模块：
 - 默认等待 600 秒，相关配置位于 `config/base_config.py`。
 - 浏览器和平台登录状态失效时，需要在浏览器中重新登录。
 
-### 8. 自动维护
+### 9. 自动维护
 
 - 支持 SQLite 自动备份。
 - 支持日志轮转和过期清理。
@@ -122,7 +133,7 @@ WebUI 的“监控数据”页面包含以下分析模块：
 | 页签 | 功能 |
 | --- | --- |
 | 概览 | 今日新增、异常任务、下次发现、下次快照、最近事件和待处理问题 |
-| 监控数据 | 作品效果、排行榜、四象限、主题标签和生命周期分析 |
+| 监控数据 | 作品效果、三个 TOP10 榜单、AI 主题研报和 AI 生命周期研报 |
 | 任务与告警 | 任务队列、失败重试、告警和系统健康 |
 | 导出报告 | 作品与快照导出、日报/周报/月报 |
 | 采集配置 | 多账号监控、采集范围、运行策略和系统维护 |
@@ -144,6 +155,8 @@ WebUI 的“监控数据”页面包含以下分析模块：
 - Radix UI
 - TanStack Query
 - Zustand
+- OpenAI 兼容模型接口
+- Qwen / LiteLLM / Ollama / vLLM
 
 ## 环境要求
 
@@ -204,6 +217,37 @@ cd ..
 ```
 
 构建产物输出到 `api/webui/`。构建完成后，后端可以直接提供 WebUI 静态资源。
+
+### 5. 可选：配置 AI 分析
+
+复制环境变量模板：
+
+```powershell
+Copy-Item .env.example .env
+```
+
+编辑项目根目录的 `.env`：
+
+```env
+AI_ENABLED=true
+AI_PROVIDER=openai_compatible
+AI_BASE_URL=http://192.168.101.244:4000/v1
+AI_API_KEY=你的本地APIKey
+AI_MODEL=Qwen3.8-27B-FP8
+AI_TIMEOUT_SECONDS=300
+AI_MAX_TOKENS=8192
+AI_TEMPERATURE=0.2
+AI_MAX_RETRIES=2
+AI_ANALYSIS_CACHE_TTL_HOURS=24
+```
+
+说明：
+
+- `.env` 已被 Git 忽略，不要提交 API Key。
+- `AI_BASE_URL` 必须包含兼容接口的 `/v1` 路径。
+- 修改 `.env` 后需要重启后端。
+- 本地模型不需要 API Key 时可以将 `AI_API_KEY` 留空。
+- 首次 AI 分析通常需要 30 到 120 秒，生成后写入缓存，再次打开可快速读取。
 
 ## 启动
 
@@ -284,8 +328,9 @@ start_mediacrawler.bat
 5. 设置发现间隔，启用监控并保存配置。
 6. 可点击“立即发现”验证账号和登录状态。
 7. 进入“概览”和“监控数据”查看作品、任务和快照结果。
-8. 进入“任务与告警”处理失败任务和系统告警。
-9. 进入“导出报告”导出数据或生成周期报告。
+8. 在“主题 / 标签分析”和“生命周期分析”中生成 AI 研报。
+9. 进入“任务与告警”处理失败任务和系统告警。
+10. 进入“导出报告”导出数据或生成周期报告。
 
 监控任务依赖后端服务持续运行。关闭后端后，到期快照和定时发现不会继续执行。
 
@@ -339,6 +384,7 @@ database/sqlite_tables.db
 | `douyin_monitor_jobs` | 发现、快照和选题任务队列 |
 | `douyin_topic_profiles` | 周期选题分析结果 |
 | `monitor_alerts` | 系统告警、严重级别和处理状态 |
+| `ai_analysis_results` | AI 主题和生命周期分析结果及缓存 |
 
 数据库初始化由后端启动流程自动完成。升级已有数据时，项目会执行必要的表结构迁移。
 
@@ -355,6 +401,33 @@ database/sqlite_tables.db
 | `browser_data/` | 项目专用浏览器用户数据 |
 
 上述运行目录中的日志、数据库备份、导出文件和浏览器数据通常不会提交到 Git。
+
+## AI 分析配置
+
+AI 分析配置位于项目根目录 `.env`，由后端启动时自动加载。前端不会直接接触 API Key。
+
+推荐配置：
+
+```env
+AI_ENABLED=true
+AI_PROVIDER=openai_compatible
+AI_BASE_URL=http://192.168.101.244:4000/v1
+AI_API_KEY=
+AI_MODEL=Qwen3.8-27B-FP8
+AI_TIMEOUT_SECONDS=300
+AI_MAX_TOKENS=8192
+AI_TEMPERATURE=0.2
+AI_MAX_RETRIES=2
+AI_ANALYSIS_CACHE_TTL_HOURS=24
+```
+
+当前 WebUI 默认使用：
+
+- 主题分析：最多 10 篇文章作为模型分析样本。
+- 生命周期分析：最多 6 篇带生命周期快照的作品。
+- 后端仍保留更大的分析上限，但为了避免模型上下文超限和长时间等待，界面默认使用较小样本。
+
+AI 研报的互动数字和生命周期类型由后端重新计算，模型只负责聚类、总结、诊断和建议。
 
 ## 常用配置
 
@@ -400,6 +473,12 @@ SAVE_DATA_OPTION = "jsonl"
 | GET | `/api/monitor/alerts` | 查询告警 |
 | GET | `/api/monitor/health` | 查询系统健康状态 |
 | GET | `/api/monitor/analytics` | 查询分析数据 |
+| GET | `/api/monitor/ai/status` | 查询模型配置和连接状态 |
+| POST | `/api/monitor/ai/analyze/topics` | 生成或刷新主题 AI 研报 |
+| POST | `/api/monitor/ai/analyze/lifecycle` | 生成或刷新生命周期 AI 研报 |
+| GET | `/api/monitor/ai/results` | 查询 AI 分析历史 |
+| GET | `/api/monitor/ai/results/{result_id}` | 查询单条 AI 分析结果 |
+| DELETE | `/api/monitor/ai/results/{result_id}` | 删除 AI 分析结果 |
 | GET | `/api/monitor/export/posts` | 导出作品列表 |
 | GET | `/api/monitor/export/snapshots` | 导出快照历史 |
 | POST | `/api/monitor/reports/generate` | 生成周期报告 |
@@ -447,6 +526,15 @@ npm.cmd run build
 
 当前监控模块测试覆盖账号隔离、作品去重、快照任务、错过窗口、失败重试、导出报告、分析指标和自动维护等主要流程。
 
+运行 AI 模型、路由、缓存和分析编排测试：
+
+```powershell
+$env:PYTHONDONTWRITEBYTECODE='1'
+.\.venv\Scripts\python.exe -m pytest tests\test_ai_model_service.py tests\test_ai_analysis_repository.py tests\test_ai_analysis_service.py tests\test_ai_router.py -q -p no:cacheprovider --basetemp=output\pytest-ai
+```
+
+当前 AI 测试覆盖模型列表、JSON 输出解析、缓存读写、主题指标重算、生命周期兜底、API 路由和错误映射。
+
 ## 目录结构
 
 ```text
@@ -474,7 +562,10 @@ npm.cmd run build
 - 账号登录失效后需要重新登录，程序不会绕过验证码或平台安全机制。
 - 大幅修改数据库结构或清理 `browser_data/` 前，应先备份数据库和登录状态。
 - 日报、周报和月报是本地 Markdown 报告，不是在线协作文档。
-- 数据分析和主题分类依赖已有作品文本，数据量不足时部分图表可能为空。
+- 首次 AI 分析依赖模型推理速度，通常需要 30 到 120 秒；相同数据再次打开优先读取缓存。
+- AI 主题和生命周期结果受样本数量及快照完整度影响，数据不足时会显示边界提示。
+- AI 分析仅支持单个账号，不能直接对“全部账号”执行。
+- 模型接口必须兼容 OpenAI Chat Completions，并支持 JSON 输出。
 
 ## 安全与合规
 
@@ -498,7 +589,7 @@ npm.cmd run build
 - [NanmiCoder/MediaCrawler](https://github.com/NanmiCoder/MediaCrawler)
 - 上游文档：[https://nanmicoder.github.io/MediaCrawler/](https://nanmicoder.github.io/MediaCrawler/)
 
-本仓库是在上游代码基础上进行的二次修改，主要新增和调整了抖音多账号监控、互动快照、任务队列、告警、系统健康、分析可视化和报告导出等功能。
+本仓库是在上游代码基础上进行的二次修改，主要新增和调整了抖音多账号监控、互动快照、任务队列、告警、系统健康、Qwen AI 研报、分析可视化和报告导出等功能。
 
 感谢 MediaCrawler 原作者 NanmiCoder 及所有贡献者提供基础的浏览器自动化和平台采集实现。
 

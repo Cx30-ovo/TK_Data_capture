@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Activity, BarChart3, Flame, Gauge, Heart, MessageSquare, Share2 } from 'lucide-react'
+import { Activity, BarChart3, CalendarDays, Flame, Gauge, Heart, MessageSquare, Share2 } from 'lucide-react'
 import type { MonitorDashboardPost } from '@/lib/api'
 import { classifyTheme, firstSeenDelayHours, latestSnapshot, mean, median, postInteraction, THEME_COLORS } from '@/lib/monitorMetrics'
-import { Button } from '@/components/ui/button'
 
 
 function formatNumber(value: number): string {
@@ -25,15 +24,43 @@ function logTicks(maxValue: number): number[] {
 
 function formatCompactNumber(value: number): string {
   if (value >= 100000000) return `${(value / 100000000).toFixed(1)}亿`
-  if (value >= 10000) return `${(value / 10000).toFixed(1)}万`
+  if (value >= 100000) return `${(value / 10000).toFixed(1)}万`
   if (value >= 1000) return `${(value / 1000).toFixed(1)}k`
   return String(Math.round(value))
 }
 
 
+type RankingMetric = 'liked_count' | 'share_count' | 'comment_count'
+
+const RANKING_BOARDS = [
+  { metric: 'liked_count', icon: Heart, iconClass: 'text-cyber-neon-cyan', fillClass: 'bg-cyber-neon-cyan/10', accentClass: 'bg-cyber-neon-cyan', badgeClass: 'bg-cyber-neon-cyan text-cyber-bg-primary' },
+  { metric: 'share_count', icon: Share2, iconClass: 'text-cyber-neon-orange', fillClass: 'bg-cyber-neon-orange/10', accentClass: 'bg-cyber-neon-orange', badgeClass: 'bg-cyber-neon-orange text-cyber-bg-primary' },
+  { metric: 'comment_count', icon: MessageSquare, iconClass: 'text-cyber-neon-pink', fillClass: 'bg-cyber-neon-pink/10', accentClass: 'bg-cyber-neon-pink', badgeClass: 'bg-cyber-neon-pink text-cyber-bg-primary' },
+] as const satisfies ReadonlyArray<{ metric: RankingMetric; icon: typeof Heart; iconClass: string; fillClass: string; accentClass: string; badgeClass: string }>
+
+
+function rankingValue(post: MonitorDashboardPost, metric: RankingMetric): number {
+  return latestSnapshot(post)?.[metric] || 0
+}
+
+
+function formatPublishedAt(value: number): string {
+  const date = new Date(value * 1000)
+  if (Number.isNaN(date.getTime())) return '-'
+  return new Intl.DateTimeFormat(undefined, {
+    year: '2-digit',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date)
+}
+
+
 export function MonitorPerformanceOverview({ posts }: { posts: MonitorDashboardPost[] }) {
   const { t } = useTranslation('config')
-  const [rankingMetric, setRankingMetric] = useState<'liked_count' | 'share_count' | 'comment_count'>('liked_count')
+  const [activeStructureMetric, setActiveStructureMetric] = useState<'liked' | 'collected' | 'comment' | 'share' | null>(null)
   const interactions = posts.map(postInteraction)
   const average = mean(interactions)
   const middle = median(interactions)
@@ -55,8 +82,25 @@ export function MonitorPerformanceOverview({ posts }: { posts: MonitorDashboardP
     comment: structureTotal ? structure.comment / structureTotal * 100 : 0,
     share: structureTotal ? structure.share / structureTotal * 100 : 0,
   }
-  const ranking = [...posts].sort((left, right) => (latestSnapshot(right)?.[rankingMetric] || 0) - (latestSnapshot(left)?.[rankingMetric] || 0)).slice(0, 10)
-  const maxRankingValue = Math.max(...ranking.map((post) => latestSnapshot(post)?.[rankingMetric] || 0), 1)
+  const structureItems = [
+    { key: 'liked' as const, label: t('monitorDashboard.metricLikes'), value: structure.liked, percent: structureShares.liked, barClass: 'bg-cyber-neon-cyan', borderClass: 'border-cyber-neon-cyan' },
+    { key: 'collected' as const, label: t('monitorDashboard.metricCollections'), value: structure.collected, percent: structureShares.collected, barClass: 'bg-cyber-neon-purple', borderClass: 'border-cyber-neon-purple' },
+    { key: 'comment' as const, label: t('monitorDashboard.metricComments'), value: structure.comment, percent: structureShares.comment, barClass: 'bg-cyber-neon-pink', borderClass: 'border-cyber-neon-pink' },
+    { key: 'share' as const, label: t('monitorDashboard.metricShares'), value: structure.share, percent: structureShares.share, barClass: 'bg-cyber-neon-orange', borderClass: 'border-cyber-neon-orange' },
+  ]
+  const dominantStructure = structureItems.reduce((best, item) => item.value > best.value ? item : best, structureItems[0])
+  const rankingBoards = useMemo(() => RANKING_BOARDS.map((board) => {
+    const ranking = [...posts]
+      .sort((left, right) => rankingValue(right, board.metric) - rankingValue(left, board.metric)
+        || postInteraction(right) - postInteraction(left)
+        || right.create_time - left.create_time)
+      .slice(0, 10)
+    return {
+      ...board,
+      ranking,
+      maxValue: Math.max(...ranking.map((post) => rankingValue(post, board.metric)), 1),
+    }
+  }), [posts])
   const meanMedianRatio = middle > 0 ? average / middle : 0
   const topTenInteraction = [...posts].sort((left, right) => postInteraction(right) - postInteraction(left)).slice(0, 10).reduce((sum, post) => sum + postInteraction(post), 0)
   const totalInteraction = interactions.reduce((sum, value) => sum + value, 0)
@@ -121,55 +165,87 @@ export function MonitorPerformanceOverview({ posts }: { posts: MonitorDashboardP
         ))}
       </div>
 
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-12">
-        <section className="rounded-lg border border-cyber-border-subtle bg-cyber-bg-panel p-4 shadow-sm xl:col-span-4">
-          <div className="text-xs font-semibold text-cyber-text-primary">{t('performance.structure')}</div>
-          <div className="mt-6">
-            <div className="flex h-7 overflow-hidden rounded-md bg-cyber-bg-tertiary">
-              <div className="h-full bg-cyber-neon-cyan" style={{ width: `${structureShares.liked}%` }} />
-              <div className="h-full bg-cyber-neon-purple" style={{ width: `${structureShares.collected}%` }} />
-              <div className="h-full bg-cyber-neon-pink" style={{ width: `${structureShares.comment}%` }} />
-              <div className="h-full bg-cyber-neon-orange" style={{ width: `${structureShares.share}%` }} />
+      <div className="space-y-3">
+        <section className="rounded-lg border border-cyber-border-subtle bg-cyber-bg-panel p-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-semibold text-cyber-text-primary">{t('performance.structure')}</div>
+              <div className="mt-1 text-[9px] text-cyber-text-muted">{t('performance.structureHint')}</div>
             </div>
-            <div className="mt-4 space-y-3 text-[10px]">
-              {[
-                { label: t('monitorDashboard.metricLikes'), value: structure.liked, percent: structureShares.liked, icon: Heart, color: 'bg-cyber-neon-cyan' },
-                { label: t('monitorDashboard.metricCollections'), value: structure.collected, percent: structureShares.collected, icon: BarChart3, color: 'bg-cyber-neon-purple' },
-                { label: t('monitorDashboard.metricComments'), value: structure.comment, percent: structureShares.comment, icon: MessageSquare, color: 'bg-cyber-neon-pink' },
-                { label: t('monitorDashboard.metricShares'), value: structure.share, percent: structureShares.share, icon: Share2, color: 'bg-cyber-neon-orange' },
-              ].map((item) => <div key={item.label} className="flex items-center gap-2"><span className={`h-2.5 w-2.5 rounded-sm ${item.color}`} /><item.icon className="h-3 w-3 text-cyber-text-muted" /><span className="text-cyber-text-muted">{item.label}</span><span className="ml-auto numeric-value text-cyber-text-primary">{formatNumber(item.value)}</span><span className="w-12 text-right font-semibold numeric-value text-cyber-text-secondary">{item.percent.toFixed(1)}%</span></div>)}
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-[10px] text-cyber-text-secondary">
+              <span>{t('performance.totalInteraction')}: <b className="numeric-value text-cyber-text-primary">{formatNumber(structureTotal)}</b></span>
+              {structureTotal > 0 ? <span>{t('performance.structureDominant', { metric: dominantStructure.label, percent: dominantStructure.percent.toFixed(1) })}</span> : null}
             </div>
+          </div>
+
+          <div className="mt-4 flex h-7 overflow-hidden rounded-md bg-cyber-bg-tertiary" onMouseLeave={() => setActiveStructureMetric(null)}>
+            {structureItems.map((item) => (
+              <div
+                key={item.key}
+                className={`relative flex min-w-0 items-center justify-center transition-opacity ${item.barClass} ${activeStructureMetric && activeStructureMetric !== item.key ? 'opacity-40' : 'opacity-100'}`}
+                style={{ width: `${item.percent}%` }}
+                title={`${item.label}: ${formatNumber(item.value)} (${item.percent.toFixed(1)}%)`}
+                onMouseEnter={() => setActiveStructureMetric(item.key)}
+              >
+                {item.percent >= 10 ? <span className="truncate px-2 text-[9px] font-semibold text-cyber-bg-primary">{item.label} {item.percent.toFixed(1)}%</span> : null}
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 lg:grid-cols-4">
+            {structureItems.map((item) => (
+              <div
+                key={item.key}
+                className={`border-t-2 px-1 pt-2 transition-all ${item.borderClass} ${activeStructureMetric && activeStructureMetric !== item.key ? 'opacity-40' : 'opacity-100'} ${activeStructureMetric === item.key ? 'bg-cyber-bg-tertiary/25' : ''}`}
+                onMouseEnter={() => setActiveStructureMetric(item.key)}
+                onMouseLeave={() => setActiveStructureMetric(null)}
+              >
+                <div className="text-[10px] text-cyber-text-muted">{item.label}</div>
+                <div className="mt-1 text-sm font-semibold numeric-value text-cyber-text-primary">{formatNumber(item.value)}</div>
+                <div className="mt-0.5 text-[10px] font-medium numeric-value text-cyber-text-secondary">{item.percent.toFixed(1)}%</div>
+              </div>
+            ))}
           </div>
         </section>
 
-        <section className="rounded-lg border border-cyber-border-subtle bg-cyber-bg-panel p-4 shadow-sm xl:col-span-8">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="text-xs font-semibold text-cyber-text-primary">{t('performance.ranking')}</div>
-            <div className="flex items-center gap-1 rounded-md border border-cyber-border-subtle bg-cyber-bg-tertiary/30 p-1">
-              {([
-                { key: 'liked_count', icon: Heart },
-                { key: 'share_count', icon: Share2 },
-                { key: 'comment_count', icon: MessageSquare },
-              ] as const).map((metric) => (
-                <Button key={metric.key} type="button" variant={rankingMetric === metric.key ? 'default' : 'outline'} size="sm" onClick={() => setRankingMetric(metric.key)} className="h-8 px-3 text-[10px]">
-                  <metric.icon className="h-3.5 w-3.5" />
-                  {t(`performance.rankingMetrics.${metric.key}`)}
-                </Button>
-              ))}
+        <section className="rounded-lg border border-cyber-border-subtle bg-cyber-bg-panel p-4 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-xs font-semibold text-cyber-text-primary">{t('performance.ranking')}</div>
+              <div className="mt-1 text-[9px] text-cyber-text-muted">{t('performance.rankingHint')}</div>
             </div>
           </div>
-          <div className="mt-4 space-y-3">
-            {ranking.map((post, index) => {
-              const value = latestSnapshot(post)?.[rankingMetric] || 0
-              const width = Math.max(value > 0 ? 0.75 : 0, value / maxRankingValue * 100)
-              return (
-                <div key={post.aweme_id} className="grid grid-cols-[24px_minmax(0,1fr)_90px] items-center gap-3">
-                  <span className={`text-center text-[11px] font-bold ${index < 3 ? 'text-cyber-neon-orange' : 'text-cyber-text-muted'}`}>{index + 1}</span>
-                  <div className="min-w-0"><div title={post.title || post.aweme_id} className="line-clamp-1 text-[11px] text-cyber-text-primary">{post.title || post.aweme_id}</div><div className="mt-1.5 h-1.5 overflow-hidden rounded-sm bg-cyber-bg-tertiary"><div className={`h-full rounded-sm ${index === 0 ? 'bg-cyber-neon-pink' : index === 1 ? 'bg-cyber-neon-orange' : 'bg-cyber-neon-cyan'}`} style={{ width: `${width}%` }} /></div></div>
-                  <span className="text-right text-[11px] font-semibold numeric-value text-cyber-text-primary">{formatNumber(value)}</span>
+          <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-3">
+            {rankingBoards.map((board) => (
+              <div key={board.metric} className="min-w-0 rounded-md border border-cyber-border-subtle bg-cyber-bg-tertiary/10 p-2.5">
+                <div className="flex items-center gap-2 border-b border-cyber-border-subtle/60 pb-1.5">
+                  <board.icon className={`h-3.5 w-3.5 ${board.iconClass}`} />
+                  <span className="text-[11px] font-semibold text-cyber-text-primary">{t(`performance.rankingMetrics.${board.metric}`)}</span>
+                  <span className="ml-auto rounded border border-cyber-border-subtle px-1.5 py-0.5 text-[8px] font-medium text-cyber-text-muted">TOP10</span>
                 </div>
-              )
-            })}
+                <div className="mt-2 space-y-0.5">
+                  {board.ranking.length > 0 ? board.ranking.map((post, index) => {
+                    const value = rankingValue(post, board.metric)
+                    const width = Math.max(value > 0 ? 0.75 : 0, value / board.maxValue * 100)
+                    return (
+                      <div key={`${board.metric}-${post.aweme_id}`} className="relative grid h-[34px] grid-cols-[22px_minmax(0,1fr)_82px] items-center gap-1.5 overflow-hidden rounded-sm border border-cyber-border-subtle/30 bg-cyber-bg-panel/45 px-1.5">
+                        <div className={`absolute inset-y-0 left-0 ${board.fillClass}`} style={{ width: `${width}%` }} />
+                        <div className={`absolute inset-y-0 left-0 w-0.5 ${board.accentClass}`} />
+                        <span className={`relative flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-bold ${index < 3 ? board.badgeClass : 'text-cyber-text-muted'}`}>{index + 1}</span>
+                        <div className="relative flex min-w-0 items-center gap-2">
+                          <span title={post.title || post.aweme_id} className="min-w-0 flex-1 truncate text-[10px] text-cyber-text-primary">{post.title || post.aweme_id}</span>
+                          <span className="flex shrink-0 items-center gap-1 text-[8px] text-cyber-text-muted" title={new Date(post.create_time * 1000).toLocaleString()}>
+                            <CalendarDays className="h-2.5 w-2.5" />
+                            {formatPublishedAt(post.create_time)}
+                          </span>
+                        </div>
+                        <span className="relative text-right text-[10px] font-semibold numeric-value text-cyber-text-primary" title={formatNumber(value)}>{formatCompactNumber(value)}</span>
+                      </div>
+                    )
+                  }) : <div className="py-6 text-center text-[10px] text-cyber-text-muted">{t('performance.rankingEmpty')}</div>}
+                </div>
+              </div>
+            ))}
           </div>
         </section>
       </div>

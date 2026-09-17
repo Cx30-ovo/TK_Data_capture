@@ -352,6 +352,98 @@ export interface MonitorAnalytics {
   anomalies: AnalyticsGrowthRate[]
 }
 
+export type AIAnalysisType = 'topic' | 'lifecycle'
+export type AIAnalysisStatus = 'done' | 'insufficient_data' | 'failed' | 'running' | 'pending'
+
+export interface AIAnalysisRequest {
+  account_id: number
+  time_range: '24h' | '7d' | '30d' | 'all'
+  post_limit?: number
+  force?: boolean
+}
+
+export interface AIAnalysisProviderStatus {
+  enabled: boolean
+  configured: boolean
+  provider: string
+  base_url: string
+  model: string
+  api_key_configured: boolean
+  timeout_seconds: number
+  max_tokens: number
+  temperature: number
+}
+
+export interface AITopicCluster {
+  name: string
+  description: string
+  keywords: string[]
+  representative_insight: string
+  confidence: number
+  posts: number
+  total_interaction: number
+  average_interaction: number
+  median_interaction: number
+  burst_rate: number
+  representative_posts: Array<{
+    aweme_id: string
+    title: string
+    interaction_total: number
+    create_time: number
+  }>
+}
+
+export interface AITopicAnalysisResult {
+  summary: string
+  clusters: AITopicCluster[]
+  tag_groups: Array<{ name: string; tags: string[]; summary: string }>
+  recommendations: string[]
+  data_limits: string[]
+  source_post_count: number
+}
+
+export interface AILifecyclePostInsight {
+  aweme_id: string
+  title: string
+  lifecycle_type: string
+  metrics: Record<string, number | null>
+  pattern: string
+  evidence: string[]
+  possible_factors: string[]
+  confidence: number
+  source: 'model' | 'deterministic'
+}
+
+export interface AILifecycleAnalysisResult {
+  overall_summary: string
+  stage_observation: string
+  post_insights: AILifecyclePostInsight[]
+  content_patterns: string[]
+  anomaly_notes: string[]
+  recommendations: string[]
+  caveats: string[]
+  type_distribution: Record<string, number>
+  stage_summary: Array<{ stage: string; sample_count: number; average_interaction: number | null }>
+  source_post_count: number
+}
+
+export interface AIAnalysisResponse<T = Record<string, unknown>> {
+  id: number | null
+  analysis_type: AIAnalysisType
+  status: AIAnalysisStatus
+  cache_hit: boolean
+  scope: Record<string, unknown>
+  provider?: string
+  model?: string
+  prompt_version?: string
+  result: T
+  usage?: Record<string, number>
+  created_at?: number
+  updated_at?: number
+  expires_at?: number | null
+  refresh_error?: string
+}
+
 // API functions
 export const crawlerApi = {
   start: (config: CrawlerConfig) => api.post('/crawler/start', config),
@@ -443,6 +535,17 @@ export const monitorApi = {
   reportDownloadUrl: (name: string) => `/api/monitor/reports/download?name=${encodeURIComponent(name)}`,
   deleteReport: (name: string) => api.delete('/monitor/reports', { params: { name } }),
   getAnalytics: (limit = 100) => api.get<MonitorAnalytics>('/monitor/analytics', { params: { limit, ...accountParams() } }),
+  getAIStatus: () => api.get<AIAnalysisProviderStatus>('/monitor/ai/status'),
+  analyzeTopics: (payload: AIAnalysisRequest) =>
+    api.post<AIAnalysisResponse<AITopicAnalysisResult>>('/monitor/ai/analyze/topics', payload, { timeout: 300000 }),
+  analyzeLifecycle: (payload: AIAnalysisRequest) =>
+    api.post<AIAnalysisResponse<AILifecycleAnalysisResult>>('/monitor/ai/analyze/lifecycle', payload, { timeout: 300000 }),
+  getAIResults: (accountId?: number, analysisType?: AIAnalysisType, status?: AIAnalysisStatus, limit = 20) =>
+    api.get<{ results: AIAnalysisResponse[] }>('/monitor/ai/results', {
+      params: { account_id: accountId, analysis_type: analysisType, status, limit },
+    }),
+  getAIResult: (resultId: number) => api.get<AIAnalysisResponse>(`/monitor/ai/results/${resultId}`),
+  deleteAIResult: (resultId: number) => api.delete(`/monitor/ai/results/${resultId}`),
 }
 
 export default api

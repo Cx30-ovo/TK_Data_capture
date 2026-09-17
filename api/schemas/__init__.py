@@ -28,6 +28,7 @@ from .crawler import (
     LogEntry,
 )
 from .monitor import MonitorAccountConfigRequest, MonitorAccountUpdateRequest, MonitorAlertStatusRequest
+from .ai import AIAnalysisRequest
 
 __all__ = [
     "PlatformEnum",
@@ -42,4 +43,5 @@ __all__ = [
     "MonitorAccountConfigRequest",
     "MonitorAccountUpdateRequest",
     "MonitorAlertStatusRequest",
+    "AIAnalysisRequest",
 ]

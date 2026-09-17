@@ -18,5 +18,17 @@
 
 from .crawler_manager import CrawlerManager, crawler_manager
 from .scheduler import SchedulerService, scheduler_service
+from .ai_model_service import AIModelService, AIServiceError, ai_model_service
+from .ai_analysis_service import AIAnalysisService, ai_analysis_service
 
-__all__ = ["CrawlerManager", "crawler_manager", "SchedulerService", "scheduler_service"]
+__all__ = [
+    "CrawlerManager",
+    "crawler_manager",
+    "SchedulerService",
+    "scheduler_service",
+    "AIModelService",
+    "AIServiceError",
+    "ai_model_service",
+    "AIAnalysisService",
+    "ai_analysis_service",
+]

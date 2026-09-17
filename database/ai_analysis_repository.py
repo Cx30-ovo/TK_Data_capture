@@ -11,7 +11,7 @@ from .db_session import get_monitor_session
 from .models import AIAnalysisResult
 
 
-ANALYSIS_TYPES = {"topic", "lifecycle"}
+ANALYSIS_TYPES = {"topic", "lifecycle", "topic_ideas"}
 ANALYSIS_STATUSES = {"pending", "running", "done", "failed"}
 
 

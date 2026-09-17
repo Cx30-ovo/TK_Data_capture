@@ -579,3 +579,50 @@ time,
 .numeric-value {
   font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace !important;
 }
+
+@keyframes topic-tag-single-scroll {
+  from {
+    left: 100%;
+  }
+  to {
+    left: -35%;
+  }
+}
+
+.topic-tag-single {
+  position: absolute;
+  white-space: nowrap;
+  animation-name: topic-tag-single-scroll;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.topic-tag-single:hover {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topic-tag-single {
+    animation: none;
+    left: 0;
+    position: static;
+  }
+}
+
+.core-summary {
+  line-height: 1.75;
+  letter-spacing: 0.5px;
+}
+
+.highlight-num {
+  color: #ff7d00;
+  font-weight: 600;
+}
+
+.action-list li {
+  margin-bottom: 16px;
+}
+
+.action-list li:last-child {
+  margin-bottom: 0;
+}

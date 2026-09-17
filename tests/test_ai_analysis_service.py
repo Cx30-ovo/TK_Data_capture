@@ -205,3 +205,52 @@ def test_lifecycle_result_uses_deterministic_fallback_when_model_has_no_valid_id
     assert normalized["post_insights"][0]["aweme_id"] == "fallback-1"
     assert normalized["post_insights"][0]["source"] == "deterministic"
     assert normalized["post_insights"][0]["evidence"]
+
+
+@pytest.mark.asyncio
+async def test_topic_ideas_are_generated_from_selected_topic_report(isolated_ai_analysis_db):
+    await db_session.create_tables("sqlite")
+    topic_report = await ai_analysis_repository.upsert_result(
+        sec_user_id="sec_ai_service",
+        analysis_type="topic",
+        scope_key="topic:30d:limit=10",
+        input_hash="d" * 64,
+        provider="openai_compatible",
+        model_name="Qwen3.8-27B-FP8",
+        prompt_version="topic-v1",
+        result={
+            "summary": "地铁主题表现最好",
+            "clusters": [{"name": "厦门地铁", "description": "地铁建设", "keywords": ["地铁"], "representative_insight": "试乘内容表现突出"}],
+            "recommendations": ["围绕地铁通勤做系列内容"],
+            "data_limits": [],
+            "source_post_count": 10,
+        },
+    )
+    model = FakeModelService({
+        "summary": "优先做地铁系列",
+        "ideas": [
+            {
+                "title": "地铁新线试乘实测",
+                "angle": "从通勤时间变化切入",
+                "format": "实地探访",
+                "audience": "沿线通勤人群",
+                "why_now": "地铁主题互动表现最好",
+                "evidence": ["厦门地铁"],
+                "expected_performance": "high",
+                "difficulty": "medium",
+                "risk_notes": "需要提前确认拍摄许可",
+                "priority": 1,
+            }
+        ],
+        "avoid": ["低互动国际时事"],
+    })
+    service = AIAnalysisService(model_service=model, analysis_repository=ai_analysis_repository)
+
+    result = await service.analyze_topic_ideas(
+        sec_user_id="sec_ai_service",
+        topic_result_id=topic_report.id,
+    )
+    assert result["status"] == "done"
+    assert result["result"]["ideas"][0]["title"] == "地铁新线试乘实测"
+    assert result["result"]["ideas"][0]["expected_performance"] == "high"
+    assert model.calls == 1

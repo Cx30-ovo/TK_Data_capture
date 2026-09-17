@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Query
 from database.ai_analysis_repository import ai_analysis_repository
 from database.monitor_repository import monitor_repository
 
-from ..schemas import AIAnalysisRequest
+from ..schemas import AIAnalysisRequest, AITopicIdeasRequest
 from ..services.ai_analysis_service import ai_analysis_service
 from ..services.ai_model_service import AIServiceError, ai_model_service
 
@@ -76,10 +76,23 @@ async def analyze_lifecycle(request: AIAnalysisRequest):
         _raise_ai_error(exc)
 
 
+@router.post("/analyze/topic-ideas")
+async def analyze_topic_ideas(request: AITopicIdeasRequest):
+    sec_user_id = await _resolve_account_sec_user_id(request.account_id)
+    try:
+        return await ai_analysis_service.analyze_topic_ideas(
+            sec_user_id=sec_user_id,
+            topic_result_id=request.topic_result_id,
+            force=request.force,
+        )
+    except AIServiceError as exc:
+        _raise_ai_error(exc)
+
+
 @router.get("/results")
 async def list_ai_results(
     account_id: Optional[int] = None,
-    analysis_type: Optional[Literal["topic", "lifecycle"]] = None,
+    analysis_type: Optional[Literal["topic", "lifecycle", "topic_ideas"]] = None,
     result_status: Optional[Literal["pending", "running", "done", "failed"]] = Query(None, alias="status"),
     limit: int = Query(50, ge=1, le=500),
 ):

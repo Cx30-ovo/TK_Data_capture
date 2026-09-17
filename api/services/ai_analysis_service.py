@@ -17,8 +17,9 @@ from database.monitor_repository import monitor_repository
 from .ai_model_service import AIServiceError, ai_model_service
 
 
-TOPIC_PROMPT_VERSION = "topic-v1"
+TOPIC_PROMPT_VERSION = "topic-v6"
 LIFECYCLE_PROMPT_VERSION = "lifecycle-v2"
+TOPIC_IDEAS_PROMPT_VERSION = "topic-ideas-v2"
 TIME_RANGE_SECONDS = {
     "24h": 24 * 60 * 60,
     "7d": 7 * 24 * 60 * 60,
@@ -32,13 +33,13 @@ TOPIC_SYSTEM_PROMPT = """
 
 任务要求：
 1. 将作品归纳为 3 到 6 个主题聚类，描述保持简洁。
-2. 每个聚类必须返回主题名称、简短说明、作品 ID 列表、关键词和 0 到 1 之间的置信度。
+2. 每个聚类必须返回主题名称、简短说明、作品 ID 列表、4 到 10 个关键词和 0 到 1 之间的置信度。
 3. 不允许编造作品 ID、互动数字或发布时间。
 4. 不允许把相关性表述为确定因果。
 5. 信息不足时写入 data_limits，不要猜测。
 6. summary 必须比较表现最好和较低的主题。
 7. recommendations 只输出行动建议，不要直接罗列互动数字。
-8. representative_insight 用一句话总结代表作的内容特征，不要列作品标题或数字。
+8. representative_insight 只补充 description 中没有出现的具体爆点规律；如果无法提供额外信息，返回空字符串，禁止重复 description。
 
 输出 JSON 结构：
 {
@@ -49,14 +50,14 @@ TOPIC_SYSTEM_PROMPT = """
       "description": "主题内容说明",
       "post_ids": ["作品ID"],
       "keywords": ["关键词"],
-      "representative_insight": "代表作特征总结",
+      "representative_insight": "仅当有额外代表作规律时填写，否则为空字符串",
       "confidence": 0.9
     }
   ],
   "tag_groups": [
     {"name": "标签组名称", "tags": ["标签"], "summary": "标签共同表达的内容"}
   ],
-  "recommendations": ["基于输入数据的建议"],
+  "recommendations": [],
   "data_limits": ["数据限制"]
 }
 """.strip()
@@ -90,6 +91,45 @@ LIFECYCLE_SYSTEM_PROMPT = """
   "anomaly_notes": ["异常增长说明"],
   "recommendations": ["运营建议"],
   "caveats": ["数据缺失或不确定性说明"]
+}
+""".strip()
+
+
+TOPIC_IDEAS_SYSTEM_PROMPT = """
+你是抖音内容策划编辑。你会收到一份已经生成的主题分析报告，只能基于报告中的主题表现、标签、代表作特征和行动建议提出选题方案。
+
+任务要求：
+1. 生成 3 到 6 个具体、可执行、彼此有差异的选题方案。
+2. 选题必须能够直接指导拍摄或制作，不能只写抽象主题。
+3. 优先选择互动表现好、内容供给有差异、可持续跟踪的选题。
+4. 不允许编造报告中没有的数据、事件或作品。
+5. 不希望直接重复报告里的行动建议，必须转成具体内容方案。
+6. 每个方案说明推荐理由、内容角度、适合形式、目标受众、预期表现和风险。
+7. strategy_points 必须明确区分数据依据、排除范围和生成原则。
+
+输出 JSON 结构：
+{
+  "summary": "一句话说明本次选题策略",
+  "strategy_points": {
+    "data_basis": ["基于数据得出的结论"],
+    "exclusions": ["暂不优先投入的方向及原因"],
+    "principles": ["生成方案时遵循的原则"]
+  },
+  "ideas": [
+    {
+      "title": "具体选题名称",
+      "angle": "内容切入角度",
+      "format": "短视频系列 / 实地探访 / 对比盘点等",
+      "audience": "目标受众",
+      "why_now": "基于主题报告的数据依据和推荐原因",
+      "evidence": ["引用的主题名称或代表作特征"],
+      "expected_performance": "high / medium / low",
+      "difficulty": "low / medium / high",
+      "risk_notes": "执行风险或注意事项",
+      "priority": 1
+    }
+  ],
+  "avoid": ["不建议近期投入的方向"]
 }
 """.strip()
 
@@ -199,6 +239,39 @@ class AIAnalysisService:
             max_tokens=int(config.AI_MAX_TOKENS),
             force=force,
             normalizer=lambda result: self._normalize_lifecycle_result(result, lifecycle_posts),
+        )
+
+    async def analyze_topic_ideas(
+        self,
+        *,
+        sec_user_id: str,
+        topic_result_id: int,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        source = await self._repository.get_result(topic_result_id)
+        if source is None or source.sec_user_id != sec_user_id or source.analysis_type != "topic" or source.status != "done":
+            raise AIServiceError("A completed topic report is required before generating ideas.", code="source_not_found")
+        try:
+            topic_report = json.loads(source.result_json or "{}")
+        except json.JSONDecodeError as exc:
+            raise AIServiceError("The source topic report is invalid.", code="source_not_found") from exc
+
+        source_data = {
+            "topic_report": topic_report,
+            "source_result_id": topic_result_id,
+            "generated_at": source.updated_at,
+        }
+        scope = {"source_result_id": topic_result_id}
+        return await self._run_cached_analysis(
+            sec_user_id=sec_user_id,
+            analysis_type="topic_ideas",
+            scope=scope,
+            source_data=source_data,
+            prompt_version=TOPIC_IDEAS_PROMPT_VERSION,
+            system_prompt=TOPIC_IDEAS_SYSTEM_PROMPT,
+            max_tokens=int(config.AI_MAX_TOKENS),
+            force=force,
+            normalizer=self._normalize_topic_ideas_result,
         )
 
     @staticmethod
@@ -358,6 +431,8 @@ class AIAnalysisService:
 
     @staticmethod
     def _scope_key(analysis_type: str, scope: Mapping[str, Any]) -> str:
+        if "source_result_id" in scope:
+            return f"{analysis_type}:source={scope['source_result_id']}"
         return f"{analysis_type}:{scope['time_range']}:limit={scope['post_limit']}"
 
     async def _run_cached_analysis(
@@ -483,7 +558,7 @@ class AIAnalysisService:
             clusters.append({
                 "name": _safe_text(row.get("name"), 100) or f"主题 {len(clusters) + 1}",
                 "description": _safe_text(row.get("description"), 500),
-                "keywords": _string_list(row.get("keywords"), 12),
+                "keywords": _string_list(row.get("keywords"), 20),
                 "representative_insight": _safe_text(row.get("representative_insight"), 500),
                 "confidence": self._confidence(row.get("confidence")),
                 **self._cluster_metrics(post_ids, posts_by_id),
@@ -603,6 +678,48 @@ class AIAnalysisService:
             if title:
                 result = result.replace(post_id, f"《{title}》")
         return result
+
+    def _normalize_topic_ideas_result(self, result: Any) -> dict[str, Any]:
+        if not isinstance(result, dict):
+            raise AIServiceError("AI topic ideas did not return a JSON object.", code="invalid_analysis")
+        ideas = []
+        rows = result.get("ideas") if isinstance(result.get("ideas"), list) else []
+        for index, row in enumerate(rows):
+            if not isinstance(row, dict):
+                continue
+            title = _safe_text(row.get("title"), 160)
+            if not title:
+                continue
+            expected = str(row.get("expected_performance") or "medium").lower()
+            difficulty = str(row.get("difficulty") or "medium").lower()
+            ideas.append({
+                "id": index + 1,
+                "title": title,
+                "angle": _safe_text(row.get("angle"), 700),
+                "format": _safe_text(row.get("format"), 200),
+                "audience": _safe_text(row.get("audience"), 300),
+                "why_now": _safe_text(row.get("why_now"), 700),
+                "evidence": _string_list(row.get("evidence"), 8),
+                "expected_performance": expected if expected in {"high", "medium", "low"} else "medium",
+                "difficulty": difficulty if difficulty in {"high", "medium", "low"} else "medium",
+                "risk_notes": _safe_text(row.get("risk_notes"), 500),
+                "priority": index + 1,
+            })
+            if len(ideas) >= 6:
+                break
+        if not ideas:
+            raise AIServiceError("AI topic ideas did not contain valid ideas.", code="invalid_analysis")
+        strategy = result.get("strategy_points") if isinstance(result.get("strategy_points"), dict) else {}
+        return {
+            "summary": _safe_text(result.get("summary"), 1500),
+            "strategy_points": {
+                "data_basis": _string_list(strategy.get("data_basis"), 8),
+                "exclusions": _string_list(strategy.get("exclusions"), 8),
+                "principles": _string_list(strategy.get("principles"), 8),
+            },
+            "ideas": ideas,
+            "avoid": _string_list(result.get("avoid"), 10),
+        }
 
     @staticmethod
     def _fallback_lifecycle_pattern(lifecycle_type: Any) -> str:

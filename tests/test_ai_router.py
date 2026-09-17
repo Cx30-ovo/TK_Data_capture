@@ -110,3 +110,24 @@ def test_ai_route_maps_disabled_provider_to_service_unavailable(monkeypatch):
     )
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "disabled"
+
+
+def test_ai_topic_ideas_route(monkeypatch):
+    async def resolve_account(account_id):
+        assert account_id == 7
+        return "sec_ai_router"
+
+    async def analyze_topic_ideas(**kwargs):
+        assert kwargs["topic_result_id"] == 22
+        assert kwargs["force"] is True
+        return {"id": 23, "analysis_type": "topic_ideas", "status": "done", "result": {"ideas": [{"title": "选题"}]}}
+
+    monkeypatch.setattr(ai_router_module, "_resolve_account_sec_user_id", resolve_account)
+    monkeypatch.setattr(ai_router_module.ai_analysis_service, "analyze_topic_ideas", analyze_topic_ideas)
+
+    response = make_client().post(
+        "/api/monitor/ai/analyze/topic-ideas",
+        json={"account_id": 7, "topic_result_id": 22, "force": True},
+    )
+    assert response.status_code == 200
+    assert response.json()["result"]["ideas"][0]["title"] == "选题"

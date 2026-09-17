@@ -11,3 +11,9 @@ class AIAnalysisRequest(BaseModel):
     time_range: Literal["24h", "7d", "30d", "all"] = "30d"
     post_limit: int = Field(default=20, ge=1, le=200)
     force: bool = False
+
+
+class AITopicIdeasRequest(BaseModel):
+    account_id: int = Field(gt=0)
+    topic_result_id: int = Field(gt=0)
+    force: bool = False

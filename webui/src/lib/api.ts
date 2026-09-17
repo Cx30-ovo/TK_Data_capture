@@ -352,7 +352,7 @@ export interface MonitorAnalytics {
   anomalies: AnalyticsGrowthRate[]
 }
 
-export type AIAnalysisType = 'topic' | 'lifecycle'
+export type AIAnalysisType = 'topic' | 'lifecycle' | 'topic_ideas'
 export type AIAnalysisStatus = 'done' | 'insufficient_data' | 'failed' | 'running' | 'pending'
 
 export interface AIAnalysisRequest {
@@ -379,6 +379,7 @@ export interface AITopicCluster {
   description: string
   keywords: string[]
   representative_insight: string
+  recommended_actions: string[]
   confidence: number
   posts: number
   total_interaction: number
@@ -425,6 +426,31 @@ export interface AILifecycleAnalysisResult {
   type_distribution: Record<string, number>
   stage_summary: Array<{ stage: string; sample_count: number; average_interaction: number | null }>
   source_post_count: number
+}
+
+export interface AITopicIdea {
+  id: number
+  title: string
+  angle: string
+  format: string
+  audience: string
+  why_now: string
+  evidence: string[]
+  expected_performance: 'high' | 'medium' | 'low'
+  difficulty: 'high' | 'medium' | 'low'
+  risk_notes: string
+  priority: number
+}
+
+export interface AITopicIdeasResult {
+  summary: string
+  strategy_points: {
+    data_basis: string[]
+    exclusions: string[]
+    principles: string[]
+  }
+  ideas: AITopicIdea[]
+  avoid: string[]
 }
 
 export interface AIAnalysisResponse<T = Record<string, unknown>> {
@@ -540,6 +566,8 @@ export const monitorApi = {
     api.post<AIAnalysisResponse<AITopicAnalysisResult>>('/monitor/ai/analyze/topics', payload, { timeout: 300000 }),
   analyzeLifecycle: (payload: AIAnalysisRequest) =>
     api.post<AIAnalysisResponse<AILifecycleAnalysisResult>>('/monitor/ai/analyze/lifecycle', payload, { timeout: 300000 }),
+  analyzeTopicIdeas: (payload: { account_id: number; topic_result_id: number; force?: boolean }) =>
+    api.post<AIAnalysisResponse<AITopicIdeasResult>>('/monitor/ai/analyze/topic-ideas', payload, { timeout: 300000 }),
   getAIResults: (accountId?: number, analysisType?: AIAnalysisType, status?: AIAnalysisStatus, limit = 20) =>
     api.get<{ results: AIAnalysisResponse[] }>('/monitor/ai/results', {
       params: { account_id: accountId, analysis_type: analysisType, status, limit },

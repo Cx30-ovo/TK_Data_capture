@@ -102,7 +102,7 @@ export function LifecycleAIReport({ accountId, timeRange, postLimit, posts }: Li
   const titleById = useMemo(() => new Map(posts.map((post) => [post.aweme_id, post.title || post.aweme_id])), [posts])
 
   return (
-    <div className="mx-auto w-full max-w-[1100px] space-y-5 pb-6">
+    <div className="w-full space-y-5 pb-6">
       <header className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-4">
         <div>
           <div className="flex items-center gap-2 text-xl font-semibold text-slate-900"><BrainCircuit className="h-5 w-5 text-[#722ED1]" />{t('lifecycleReport.title')}</div>

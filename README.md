@@ -6,6 +6,16 @@
 
 本项目不是 MediaCrawler 官方项目，也不代表原作者。原始项目的浏览器自动化、媒体平台采集和基础 WebUI 能力来自 MediaCrawler；本仓库主要围绕抖音账号持续监控、互动生命周期快照、任务告警、AI 研报、数据分析和报告导出进行了扩展。
 
+## 当前版本亮点
+
+- 监控数据、当前分析作品、作品总览和导出对象均直接使用数据库真实数据，不再固定截取前 100 篇作品。
+- 全新作品总览表格，支持搜索、筛选、排序、分页和移动端卡片视图。
+- 全新作品四象限，以点赞和评论中位数划分，并支持最近 24 小时、7 天、30 天和全部作品筛选。
+- 四象限支持主题聚焦、象限聚焦、气泡互动量编码和作品详情联动。
+- 任务与告警、导出报告、采集配置升级为统一的响应式工作台界面。
+- 导出页面展示数据库中的全部作品，并提供作品、快照、日报、周报和月报交付流程。
+- 中英文、浅色与深色主题、键盘操作和窄屏布局保持一致。
+
 ## 项目定位
 
 上游 MediaCrawler 更偏向一次性执行的关键词搜索、作品详情和创作者主页采集。本仓库在其基础上增加了持续监控能力，主要用于跟踪指定抖音账号的更新情况，并记录作品发布后的互动变化。
@@ -79,8 +89,10 @@
 WebUI 的“监控数据”页面包含以下分析模块：
 
 - 作品效果总览和核心指标。
+- 全量作品总览，支持标题、作品 ID、发布时间和指标排序。
 - 点赞榜、分享榜和评论榜同时展示的 TOP10 榜单。
-- 点赞与评论四象限图。
+- 点赞与评论四象限图，支持最近 24 小时、7 天、30 天和全部作品筛选。
+- 四象限支持主题筛选、交互气泡、象限占比和单作品指标详情。
 - AI 主题与标签研报。
 - AI 生命周期研报。
 - 生命周期节奏分布。
@@ -104,6 +116,7 @@ WebUI 的“监控数据”页面包含以下分析模块：
 ### 7. 导出与报告
 
 - 导出作品列表为 CSV 或 Excel。
+- 导出对象来自数据库全部作品，不使用固定 100 条上限。
 - 搜索并多选作品后导出完整快照历史。
 - 生成日报、周报和月报。
 - 查看报告生成时间、时间范围、文件大小和状态。
@@ -160,7 +173,7 @@ WebUI 的“监控数据”页面包含以下分析模块：
 
 ## 环境要求
 
-- Windows 10 或 Windows 11，推荐使用 Windows PowerShell。
+- Windows 10/11 或 macOS 13 及以上版本。
 - Python 3.11 或更高版本。
 - Node.js 18 或更高版本。
 - npm。
@@ -168,6 +181,13 @@ WebUI 的“监控数据”页面包含以下分析模块：
 - `uv`，推荐用于创建 Python 环境和同步依赖。
 
 如果 PowerShell 禁止运行 `npm.ps1`，请使用 `npm.cmd`，或通过 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` 调整当前用户的脚本策略。
+
+macOS 推荐使用 Homebrew 安装 Git、Node.js、`uv` 和 Google Chrome：
+
+```bash
+brew install git node uv
+brew install --cask google-chrome
+```
 
 ## 安装
 
@@ -208,6 +228,14 @@ npm.cmd install
 cd ..
 ```
 
+macOS 或 Linux：
+
+```bash
+cd webui
+npm ci
+cd ..
+```
+
 ### 4. 构建生产版 WebUI
 
 ```powershell
@@ -239,6 +267,7 @@ AI_MAX_TOKENS=8192
 AI_TEMPERATURE=0.2
 AI_MAX_RETRIES=2
 AI_ANALYSIS_CACHE_TTL_HOURS=24
+AI_ENABLE_THINKING=false
 ```
 
 说明：
@@ -304,7 +333,58 @@ http://127.0.0.1:8080/docs
 http://127.0.0.1:8080/daily.html
 ```
 
-### 方式三：Windows 一键启动
+macOS 生产启动命令：
+
+```bash
+uv run uvicorn api.main:app --host 0.0.0.0 --port 8080
+```
+
+前端生产构建会输出到 `api/webui/`，因此生产环境只需要运行 FastAPI，无需同时运行 Vite。局域网设备可通过 `http://Mac主机IP:8080/` 访问。不要将 8080 端口直接暴露到公网。
+
+### 方式三：部署到 Mac mini
+
+首次部署：
+
+```bash
+mkdir -p ~/apps
+cd ~/apps
+git clone https://github.com/Cx30-ovo/TK_Data_capture.git
+cd TK_Data_capture
+
+uv python install 3.11
+uv sync
+uv run playwright install chromium
+
+cd webui
+npm ci
+npm run build
+cd ..
+
+cp .env.example .env
+chmod 600 .env
+uv run uvicorn api.main:app --host 0.0.0.0 --port 8080
+```
+
+更新已经部署的版本：
+
+```bash
+cd ~/apps/TK_Data_capture
+git pull --ff-only origin main
+uv sync
+cd webui
+npm ci
+npm run build
+cd ..
+```
+
+部署说明：
+
+- `database/*.db`、`.env`、`output/` 和浏览器登录状态不会上传到 GitHub，需要单独备份或迁移。
+- 首次运行应在 Mac mini 的已登录桌面会话中完成抖音登录和浏览器授权。
+- 如果需要长期自动运行，建议使用当前用户的 macOS `LaunchAgent`，不要使用无法访问桌面浏览器的系统级 `LaunchDaemon`。
+- 建议使用 SSH 密钥登录 Mac mini，不要在脚本、README 或命令历史中保存 SSH 密码。
+
+### 方式四：Windows 一键启动
 
 项目根目录提供：
 
@@ -419,6 +499,7 @@ AI_MAX_TOKENS=8192
 AI_TEMPERATURE=0.2
 AI_MAX_RETRIES=2
 AI_ANALYSIS_CACHE_TTL_HOURS=24
+AI_ENABLE_THINKING=false
 ```
 
 当前 WebUI 默认使用：
@@ -542,6 +623,7 @@ $env:PYTHONDONTWRITEBYTECODE='1'
 |-- api/                    FastAPI 服务、路由、服务和模型
 |-- config/                 爬虫和系统配置
 |-- database/               SQLAlchemy 模型、会话和仓储
+|-- design-system/          WebUI 设计规范与页面规则
 |-- docs/                   项目文档
 |-- media_platform/         各平台采集实现
 |-- output/                 日志、导出、报告和数据库备份
@@ -549,6 +631,8 @@ $env:PYTHONDONTWRITEBYTECODE='1'
 |-- tests/                  Python 测试
 |-- tools/                  CDP 浏览器和通用工具
 |-- webui/                  React WebUI 源码
+|   |-- tokens/             可维护的设计令牌源文件
+|   `-- src/styles/         生成后的主题变量
 |-- main.py                 上游命令行采集入口
 `-- start_mediacrawler.bat  Windows 一键启动入口
 ```

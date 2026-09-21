@@ -352,7 +352,7 @@ export interface MonitorAnalytics {
   anomalies: AnalyticsGrowthRate[]
 }
 
-export type AIAnalysisType = 'topic' | 'lifecycle' | 'topic_ideas'
+export type AIAnalysisType = 'topic' | 'lifecycle' | 'topic_ideas' | 'title_strategy'
 export type AIAnalysisStatus = 'done' | 'insufficient_data' | 'failed' | 'running' | 'pending'
 
 export interface AIAnalysisRequest {
@@ -426,6 +426,93 @@ export interface AILifecycleAnalysisResult {
   type_distribution: Record<string, number>
   stage_summary: Array<{ stage: string; sample_count: number; average_interaction: number | null }>
   source_post_count: number
+}
+
+export interface AITitleStrategyKeyword {
+  keyword: string
+  count: number
+  ratio: number
+  avg_interaction: number
+  hit_rate: number
+  lift: number
+  conclusion: string
+}
+
+export interface AITitleLengthGroup {
+  len_group: string
+  count: number
+  ratio: number
+  avg_interaction: number
+  median_interaction: number
+  avg_likes: number
+  avg_comments: number
+  avg_collects: number
+  avg_shares: number
+  hit_count: number
+  hit_rate: number
+}
+
+export interface AITitleStrategyHitWork {
+  aweme_id: string
+  title: string
+  title_clean: string
+  publish_time: string
+  title_len: number
+  interaction: number
+  likes: number
+  comments: number
+  collects: number
+  shares: number
+  hook_type: string
+  why_viral: string
+  title_formula: string
+  interaction_structure: string
+}
+
+export interface AITitleStrategyResult {
+  overview: {
+    total_works: number
+    hit_count: number
+    overall_hit_rate: number
+    hit_threshold: number
+    interaction_mean: number
+    interaction_p90: number
+    interaction_stddev: number
+    core_finding: string
+    title_length_advice: string
+    keyword_advice: string
+    content_advice: string
+  }
+  top_keywords: AITitleStrategyKeyword[]
+  title_length_analysis: {
+    groups: AITitleLengthGroup[]
+    long_vs_short: {
+      short: { group: string; count: number; avg_interaction: number; median_interaction: number; hit_rate: number; avg_shares: number }
+      long: { group: string; count: number; avg_interaction: number; median_interaction: number; hit_rate: number; avg_shares: number }
+      long_vs_short_lift_percent: number | null
+    }
+    best_range: string
+    trend: string
+    winner: string
+    comparison_explanation: string
+    recommendation: string
+  }
+  hit_works: AITitleStrategyHitWork[]
+  hit_vs_normal: { key_differences: string[]; common_patterns: string }
+  reusable_formulas: Array<{ formula: string; example: string; why_effective: string }>
+  next_titles: Array<{ title: string; formula: string; expected_length: number; target_audience: string; hook_type: string }>
+  risk_notes: string[]
+  title_templates: Array<{ template: string; count: number; ratio: number }>
+  meta: {
+    account: string
+    period: string
+    total_works: number
+    hit_threshold: number
+    data_limit: string
+    interaction_formula: string
+    source_post_ids: string[]
+    reused_hit_analyses: number
+  }
 }
 
 export interface AITopicIdea {
@@ -570,6 +657,8 @@ export const monitorApi = {
     api.post<AIAnalysisResponse<AITopicAnalysisResult>>('/monitor/ai/analyze/topics', payload, { timeout: 300000 }),
   analyzeLifecycle: (payload: AIAnalysisRequest) =>
     api.post<AIAnalysisResponse<AILifecycleAnalysisResult>>('/monitor/ai/analyze/lifecycle', payload, { timeout: 300000 }),
+  analyzeTitleStrategy: (payload: AIAnalysisRequest) =>
+    api.post<AIAnalysisResponse<AITitleStrategyResult>>('/monitor/ai/analyze/title-strategy', payload, { timeout: 300000 }),
   analyzeTopicIdeas: (payload: { account_id: number; topic_result_id: number; force?: boolean }) =>
     api.post<AIAnalysisResponse<AITopicIdeasResult>>('/monitor/ai/analyze/topic-ideas', payload, { timeout: 300000 }),
   getAIResults: (accountId?: number, analysisType?: AIAnalysisType, status?: AIAnalysisStatus, limit = 20) =>

@@ -54,6 +54,9 @@ class FakeMonitorRepository:
     async def list_snapshots(self, sec_user_id=None, limit=100000):
         return self.snapshots[:limit]
 
+    async def get_monitored_account(self, sec_user_id):
+        return SimpleNamespace(display_name="测试账号")
+
 
 class FakeModelService:
     def __init__(self, response):
@@ -69,6 +72,17 @@ class FakeModelService:
     async def generate_json(self, **kwargs):
         self.calls += 1
         return self.response
+
+
+class SequenceModelService(FakeModelService):
+    def __init__(self, responses):
+        super().__init__({})
+        self.responses = list(responses)
+
+    async def generate_json(self, **kwargs):
+        response = self.responses[self.calls]
+        self.calls += 1
+        return response
 
 
 @pytest.mark.asyncio
@@ -184,6 +198,53 @@ async def test_analysis_returns_insufficient_data_without_calling_model(isolated
     result = await service.analyze_topics(sec_user_id="sec_ai_service", scope={"time_range": "all"})
     assert result["status"] == "insufficient_data"
     assert model.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_title_strategy_runs_three_model_phases_and_uses_cache(isolated_ai_analysis_db):
+    await db_session.create_tables("sqlite")
+    now = int(time.time())
+    posts = [
+        make_post(f"strategy-{index}", f"厦门地铁新进展第{index}期", now - index * 100, now - index * 90)
+        for index in range(1, 7)
+    ]
+    snapshots = [
+        make_snapshot(f"strategy-{index}", "24h", 86400, liked_count=1000 if index == 1 else index * 10)
+        for index in range(1, 7)
+    ]
+    model = SequenceModelService([
+        {
+            "top_keywords": [{"keyword": "厦门", "conclusion": "与较高互动表现相关"}],
+            "title_length_analysis": {"best_range": "≤20字", "trend": "短标题表现更集中", "long_vs_short": {"winner": "短标题", "explanation": "样本中表现更高"}, "recommendation": "优先测试短标题"},
+            "overall_insight": "本批作品以本地交通内容为主",
+        },
+        {
+            "hit_works": [{"aweme_id": "strategy-1", "title": "厦门地铁新进展第1期", "hook_type": "热点借势", "why_viral": "本地热点可能带来讨论", "title_formula": "城市+事件+进展", "interaction_structure": "点赞为主"}],
+            "hit_vs_normal": {"key_differences": ["爆款更聚焦具体进展"], "common_patterns": "本地身份标签"},
+            "reusable_formulas": [{"formula": "城市+事件+进展", "example": "厦门地铁新进展", "why_effective": "信息明确"}],
+        },
+        {
+            "strategy_summary": {"core_finding": "具体进展更值得测试", "title_length_advice": "保持精炼", "keyword_advice": "保留城市词", "content_advice": "持续跟踪"},
+            "next_titles": [{"title": "厦门地铁又有新进展", "formula": "城市+事件+进展", "expected_length": 99, "target_audience": "本地通勤者", "hook_type": "热点借势"}],
+            "risk_notes": ["样本量有限"],
+        },
+    ])
+    service = AIAnalysisService(
+        model_service=model,
+        analysis_repository=ai_analysis_repository,
+        monitor_repository_instance=FakeMonitorRepository(posts, snapshots),
+    )
+
+    first = await service.analyze_title_strategy(sec_user_id="sec_ai_service", scope={"time_range": "all", "post_limit": 100})
+    assert first["status"] == "done"
+    assert first["analysis_type"] == "title_strategy"
+    assert first["result"]["meta"]["total_works"] == 6
+    assert first["result"]["next_titles"][0]["expected_length"] == len("厦门地铁又有新进展")
+    assert model.calls == 3
+
+    second = await service.analyze_title_strategy(sec_user_id="sec_ai_service", scope={"time_range": "all", "post_limit": 100})
+    assert second["cache_hit"] is True
+    assert model.calls == 3
 
 
 def test_lifecycle_result_uses_deterministic_fallback_when_model_has_no_valid_ids():

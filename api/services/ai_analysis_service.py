@@ -15,11 +15,14 @@ from database.ai_analysis_repository import ai_analysis_repository
 from database.monitor_repository import monitor_repository
 
 from .ai_model_service import AIServiceError, ai_model_service
+from .title_strategy_metrics import DATA_LIMIT, clean_title, compute_title_strategy
+from .title_strategy_prompts import HIT_SYSTEM_PROMPT, PATTERN_SYSTEM_PROMPT, STRATEGY_SYSTEM_PROMPT
 
 
 TOPIC_PROMPT_VERSION = "topic-v8"
 LIFECYCLE_PROMPT_VERSION = "lifecycle-v2"
 TOPIC_IDEAS_PROMPT_VERSION = "topic-ideas-v4"
+TITLE_STRATEGY_PROMPT_VERSION = "title-strategy-v1"
 TIME_RANGE_SECONDS = {
     "24h": 24 * 60 * 60,
     "7d": 7 * 24 * 60 * 60,
@@ -252,6 +255,48 @@ class AIAnalysisService:
             normalizer=lambda result: self._normalize_lifecycle_result(result, lifecycle_posts),
         )
 
+    async def analyze_title_strategy(
+        self,
+        *,
+        sec_user_id: str,
+        scope: Optional[Mapping[str, Any]] = None,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """Run deterministic statistics followed by three compact semantic model calls."""
+        values = dict(scope or {})
+        time_range = str(values.get("time_range") or "30d")
+        if time_range not in {*TIME_RANGE_SECONDS.keys(), "all"}:
+            time_range = "30d"
+        try:
+            post_limit = int(values.get("post_limit") or 1000)
+        except (TypeError, ValueError):
+            post_limit = 1000
+        normalized_scope = {"time_range": time_range, "post_limit": max(3, min(post_limit, 10000))}
+        posts, snapshots_by_post = await self._load_source(sec_user_id, normalized_scope)
+        if len(posts) < 3:
+            return self._insufficient_data(
+                analysis_type="title_strategy",
+                scope=normalized_scope,
+                message="标题策略分析至少需要 3 篇作品数据。",
+            )
+
+        metrics = compute_title_strategy(posts, snapshots_by_post)
+        account = await self._monitor_repository.get_monitored_account(sec_user_id)
+        account_name = _safe_text(getattr(account, "display_name", ""), 100) or sec_user_id
+        period = self._analysis_period(posts, time_range)
+        source_data = {
+            "account": account_name,
+            "period": period,
+            "scope": normalized_scope,
+            "metrics": metrics,
+        }
+        return await self._run_cached_title_strategy(
+            sec_user_id=sec_user_id,
+            scope=normalized_scope,
+            source_data=source_data,
+            force=force,
+        )
+
     async def analyze_topic_ideas(
         self,
         *,
@@ -284,6 +329,293 @@ class AIAnalysisService:
             force=force,
             normalizer=self._normalize_topic_ideas_result,
         )
+
+    @staticmethod
+    def _analysis_period(posts: list, time_range: str) -> str:
+        timestamps = [int(post.create_time or 0) for post in posts if int(post.create_time or 0) > 0]
+        if not timestamps:
+            return time_range
+        start = datetime.fromtimestamp(min(timestamps)).date().isoformat()
+        end = datetime.fromtimestamp(max(timestamps)).date().isoformat()
+        return start if start == end else f"{start} 至 {end}"
+
+    async def _run_cached_title_strategy(
+        self,
+        *,
+        sec_user_id: str,
+        scope: Mapping[str, Any],
+        source_data: Mapping[str, Any],
+        force: bool,
+    ) -> dict[str, Any]:
+        status = self._model_service.get_status()
+        provider = str(status.get("provider") or "")
+        model_name = str(status.get("model") or "")
+        scope_key = self._scope_key("title_strategy", scope)
+        input_hash = self._hash_input(source_data)
+        cache_key = {
+            "sec_user_id": sec_user_id,
+            "analysis_type": "title_strategy",
+            "scope_key": scope_key,
+            "input_hash": input_hash,
+            "provider": provider,
+            "model_name": model_name,
+            "prompt_version": TITLE_STRATEGY_PROMPT_VERSION,
+        }
+
+        async with self._lock:
+            cached = await self._repository.get_cached_result(**cache_key)
+            if not force and cached is not None:
+                return self._serialize_cache_item(cached, cache_hit=True)
+
+            previous_item = await self._repository.get_latest_result(
+                sec_user_id=sec_user_id,
+                analysis_type="title_strategy",
+                status="done",
+            )
+            previous_result: dict[str, Any] = {}
+            if previous_item and previous_item.result_json:
+                try:
+                    previous_result = json.loads(previous_item.result_json)
+                except json.JSONDecodeError:
+                    previous_result = {}
+
+            metrics = dict(source_data.get("metrics") or {})
+            overview = dict(metrics.get("overview") or {})
+            compact_context = {
+                "account_positioning": source_data.get("account"),
+                "period": source_data.get("period"),
+                "total_works": overview.get("total_works"),
+                "interaction_formula": "点赞 + 2×评论 + 2×收藏 + 3×转发",
+                "hit_definition": "互动分 >= max(P90, 均值 + 2×标准差)",
+                "data_limit": DATA_LIMIT,
+            }
+            phase_one_payload = {
+                **compact_context,
+                "top_keywords": metrics.get("top_keywords") or [],
+                "title_length_groups": metrics.get("title_length_groups") or [],
+                "long_vs_short": metrics.get("long_vs_short") or {},
+            }
+
+            previous_hits = {
+                str(row.get("aweme_id")): row
+                for row in previous_result.get("hit_works", [])
+                if isinstance(row, dict) and row.get("aweme_id")
+            }
+            current_hits = [row for row in metrics.get("hit_samples", []) if isinstance(row, dict)]
+            new_hits = [row for row in current_hits if str(row.get("aweme_id")) not in previous_hits]
+            retained_hits = [
+                {
+                    "aweme_id": row.get("aweme_id"),
+                    "title": row.get("title"),
+                    "hook_type": row.get("hook_type"),
+                    "why_viral": row.get("why_viral"),
+                    "title_formula": row.get("title_formula"),
+                }
+                for row in previous_result.get("hit_works", [])
+                if isinstance(row, dict) and str(row.get("aweme_id")) in {str(item.get("aweme_id")) for item in current_hits}
+            ]
+            phase_two_payload = {
+                **compact_context,
+                "hit_samples_to_analyze": new_hits or current_hits,
+                "reused_hit_analyses": retained_hits if new_hits else [],
+                "normal_samples": metrics.get("normal_samples") or [],
+            }
+
+            try:
+                max_tokens = max(4096, int(config.AI_MAX_TOKENS))
+                phase_one = await self._model_service.generate_json(
+                    system_prompt=PATTERN_SYSTEM_PROMPT,
+                    user_prompt=json.dumps(phase_one_payload, ensure_ascii=False, separators=(",", ":")),
+                    max_tokens=max_tokens,
+                )
+                phase_two = await self._model_service.generate_json(
+                    system_prompt=HIT_SYSTEM_PROMPT,
+                    user_prompt=json.dumps(phase_two_payload, ensure_ascii=False, separators=(",", ":")),
+                    max_tokens=max_tokens,
+                )
+                phase_three = await self._model_service.generate_json(
+                    system_prompt=STRATEGY_SYSTEM_PROMPT,
+                    user_prompt=json.dumps({
+                        **compact_context,
+                        "phase_one_result": phase_one,
+                        "phase_two_result": phase_two,
+                    }, ensure_ascii=False, separators=(",", ":")),
+                    max_tokens=max_tokens,
+                )
+                normalized = self._normalize_title_strategy_result(
+                    source_data=source_data,
+                    phase_one=phase_one,
+                    phase_two=phase_two,
+                    phase_three=phase_three,
+                    previous_result=previous_result,
+                )
+                item = await self._repository.upsert_result(
+                    **cache_key,
+                    status="done",
+                    result=normalized,
+                    scope={**dict(scope), "total_works": overview.get("total_works", 0)},
+                    # The input hash already invalidates the cache when posts or snapshots change.
+                    # Keeping the exact-input result avoids repeating three model calls after a TTL.
+                    expires_at=None,
+                )
+                return self._serialize_cache_item(item, cache_hit=False)
+            except Exception as exc:
+                if cached is not None:
+                    fallback = self._serialize_cache_item(cached, cache_hit=True)
+                    fallback["refresh_error"] = str(exc)[:1000]
+                    return fallback
+                try:
+                    await self._repository.mark_failed(**cache_key, error=str(exc)[:1000])
+                except Exception:
+                    pass
+                raise
+
+    @staticmethod
+    def _strategy_text(value: Any, limit: int = 1200, fallback: str = "数据不足") -> str:
+        text = _safe_text(value, limit)
+        forbidden = ("互动率", "完播率", "点击率", "曝光转化率")
+        return fallback if not text or any(term in text for term in forbidden) else text
+
+    def _strategy_list(self, value: Any, limit: int = 10) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        result = []
+        for item in value:
+            text = self._strategy_text(item, 600, "")
+            if text and text not in result:
+                result.append(text)
+            if len(result) >= limit:
+                break
+        return result
+
+    def _normalize_title_strategy_result(
+        self,
+        *,
+        source_data: Mapping[str, Any],
+        phase_one: Any,
+        phase_two: Any,
+        phase_three: Any,
+        previous_result: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        if not all(isinstance(value, dict) for value in (phase_one, phase_two, phase_three)):
+            raise AIServiceError("Title strategy analysis did not return JSON objects.", code="invalid_analysis")
+        metrics = dict(source_data.get("metrics") or {})
+        overview = dict(metrics.get("overview") or {})
+
+        keyword_conclusions = {
+            str(row.get("keyword")): self._strategy_text(row.get("conclusion"), 500)
+            for row in phase_one.get("top_keywords", [])
+            if isinstance(row, dict) and row.get("keyword")
+        }
+        top_keywords = [
+            {**row, "conclusion": keyword_conclusions.get(str(row.get("keyword")), "数据不足")}
+            for row in metrics.get("top_keywords", [])
+            if isinstance(row, dict)
+        ]
+
+        length_ai = phase_one.get("title_length_analysis") if isinstance(phase_one.get("title_length_analysis"), dict) else {}
+        long_short_ai = length_ai.get("long_vs_short") if isinstance(length_ai.get("long_vs_short"), dict) else {}
+        title_length_analysis = {
+            "groups": metrics.get("title_length_groups") or [],
+            "long_vs_short": metrics.get("long_vs_short") or {},
+            "best_range": self._strategy_text(length_ai.get("best_range"), 80),
+            "trend": self._strategy_text(length_ai.get("trend"), 800),
+            "winner": self._strategy_text(long_short_ai.get("winner"), 80),
+            "comparison_explanation": self._strategy_text(long_short_ai.get("explanation"), 800),
+            "recommendation": self._strategy_text(length_ai.get("recommendation"), 1000),
+        }
+
+        previous_hits = {
+            str(row.get("aweme_id")): row
+            for row in previous_result.get("hit_works", [])
+            if isinstance(row, dict) and row.get("aweme_id")
+        }
+        model_hits = {
+            str(row.get("aweme_id")): row
+            for row in phase_two.get("hit_works", [])
+            if isinstance(row, dict) and row.get("aweme_id")
+        }
+        hit_works = []
+        reused_count = 0
+        for sample in metrics.get("hit_samples", []):
+            if not isinstance(sample, dict):
+                continue
+            post_id = str(sample.get("aweme_id") or "")
+            semantic = model_hits.get(post_id) or previous_hits.get(post_id) or {}
+            if post_id in previous_hits and post_id not in model_hits:
+                reused_count += 1
+            hit_works.append({
+                **sample,
+                "hook_type": self._strategy_text(semantic.get("hook_type"), 100),
+                "why_viral": self._strategy_text(semantic.get("why_viral"), 1000),
+                "title_formula": self._strategy_text(semantic.get("title_formula"), 500),
+                "interaction_structure": self._strategy_text(semantic.get("interaction_structure"), 800),
+            })
+
+        comparison = phase_two.get("hit_vs_normal") if isinstance(phase_two.get("hit_vs_normal"), dict) else {}
+        reusable_formulas = []
+        for row in phase_two.get("reusable_formulas", []):
+            if not isinstance(row, dict):
+                continue
+            reusable_formulas.append({
+                "formula": self._strategy_text(row.get("formula"), 300),
+                "example": self._strategy_text(row.get("example"), 300),
+                "why_effective": self._strategy_text(row.get("why_effective"), 800),
+            })
+            if len(reusable_formulas) >= 10:
+                break
+
+        strategy = phase_three.get("strategy_summary") if isinstance(phase_three.get("strategy_summary"), dict) else {}
+        next_titles = []
+        for row in phase_three.get("next_titles", []):
+            if not isinstance(row, dict):
+                continue
+            title = self._strategy_text(row.get("title"), 180, "")
+            if not title:
+                continue
+            next_titles.append({
+                "title": title,
+                "formula": self._strategy_text(row.get("formula"), 300),
+                "expected_length": len(clean_title(title)),
+                "target_audience": self._strategy_text(row.get("target_audience"), 300),
+                "hook_type": self._strategy_text(row.get("hook_type"), 100),
+            })
+            if len(next_titles) >= 10:
+                break
+
+        risk_notes = self._strategy_list(phase_three.get("risk_notes"), 10)
+        if DATA_LIMIT not in risk_notes:
+            risk_notes.insert(0, DATA_LIMIT)
+        return {
+            "overview": {
+                **overview,
+                "core_finding": self._strategy_text(strategy.get("core_finding") or phase_one.get("overall_insight"), 1500),
+                "title_length_advice": self._strategy_text(strategy.get("title_length_advice"), 1000),
+                "keyword_advice": self._strategy_text(strategy.get("keyword_advice"), 1000),
+                "content_advice": self._strategy_text(strategy.get("content_advice"), 1000),
+            },
+            "top_keywords": top_keywords,
+            "title_length_analysis": title_length_analysis,
+            "hit_works": hit_works,
+            "hit_vs_normal": {
+                "key_differences": self._strategy_list(comparison.get("key_differences"), 10),
+                "common_patterns": self._strategy_text(comparison.get("common_patterns"), 1200),
+            },
+            "reusable_formulas": reusable_formulas,
+            "next_titles": next_titles,
+            "risk_notes": risk_notes,
+            "title_templates": metrics.get("title_templates") or [],
+            "meta": {
+                "account": source_data.get("account"),
+                "period": source_data.get("period"),
+                "total_works": overview.get("total_works", 0),
+                "hit_threshold": overview.get("hit_threshold", 0),
+                "data_limit": DATA_LIMIT,
+                "interaction_formula": "点赞 + 2×评论 + 2×收藏 + 3×转发",
+                "source_post_ids": metrics.get("source_post_ids") or [],
+                "reused_hit_analyses": reused_count,
+            },
+        }
 
     @staticmethod
     def _normalize_scope(scope: Optional[Mapping[str, Any]], default_limit: int) -> dict[str, Any]:
@@ -827,4 +1159,10 @@ class AIAnalysisService:
 ai_analysis_service = AIAnalysisService()
 
 
-__all__ = ["AIAnalysisService", "ai_analysis_service", "TOPIC_PROMPT_VERSION", "LIFECYCLE_PROMPT_VERSION"]
+__all__ = [
+    "AIAnalysisService",
+    "ai_analysis_service",
+    "TOPIC_PROMPT_VERSION",
+    "LIFECYCLE_PROMPT_VERSION",
+    "TITLE_STRATEGY_PROMPT_VERSION",
+]

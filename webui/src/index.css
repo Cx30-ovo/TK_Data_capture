@@ -1982,8 +1982,13 @@ time,
   }
 
   .report-theme .bg-blue-50,
+  .report-theme .bg-blue-100,
   .report-theme .bg-emerald-50 {
     background-color: rgb(var(--cyber-status-info) / 0.14) !important;
+  }
+
+  .report-theme .bg-rose-50 {
+    background-color: rgb(var(--cyber-status-danger) / 0.12) !important;
   }
 
   .report-theme .bg-purple-50 {
@@ -1995,6 +2000,7 @@ time,
     background-color: rgb(var(--cyber-status-warning) / 0.14) !important;
   }
 
+  .report-theme .text-slate-950,
   .report-theme .text-slate-900,
   .report-theme .text-slate-800 {
     color: rgb(var(--cyber-report-fg)) !important;
@@ -2013,6 +2019,24 @@ time,
   .report-theme .border-slate-200,
   .report-theme .border-slate-100 {
     border-color: rgb(var(--cyber-report-border)) !important;
+  }
+
+  .report-theme .border-blue-100,
+  .report-theme .border-blue-200,
+  .report-theme .border-emerald-100,
+  .report-theme .border-emerald-200,
+  .report-theme .border-amber-100,
+  .report-theme .border-amber-200,
+  .report-theme .border-rose-100,
+  .report-theme .border-rose-200 {
+    border-color: rgb(var(--cyber-report-border)) !important;
+  }
+
+  .report-theme .text-amber-950,
+  .report-theme .text-amber-900,
+  .report-theme .text-blue-800,
+  .report-theme .text-emerald-800 {
+    color: rgb(var(--cyber-report-fg)) !important;
   }
 
   .report-theme [class~="text-[#165DFF]"] {

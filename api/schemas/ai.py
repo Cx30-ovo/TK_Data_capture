@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 class AIAnalysisRequest(BaseModel):
     account_id: int = Field(gt=0)
     time_range: Literal["24h", "7d", "30d", "all"] = "30d"
-    post_limit: int = Field(default=20, ge=1, le=200)
+    post_limit: int = Field(default=20, ge=1, le=10000)
     force: bool = False
 
 

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""API routes for AI topic and lifecycle analysis."""
+"""API routes for cached AI content analysis."""
 
 from typing import Literal, Optional
 
@@ -76,6 +76,19 @@ async def analyze_lifecycle(request: AIAnalysisRequest):
         _raise_ai_error(exc)
 
 
+@router.post("/analyze/title-strategy")
+async def analyze_title_strategy(request: AIAnalysisRequest):
+    sec_user_id = await _resolve_account_sec_user_id(request.account_id)
+    try:
+        return await ai_analysis_service.analyze_title_strategy(
+            sec_user_id=sec_user_id,
+            scope=_analysis_scope(request),
+            force=request.force,
+        )
+    except AIServiceError as exc:
+        _raise_ai_error(exc)
+
+
 @router.post("/analyze/topic-ideas")
 async def analyze_topic_ideas(request: AITopicIdeasRequest):
     sec_user_id = await _resolve_account_sec_user_id(request.account_id)
@@ -92,7 +105,7 @@ async def analyze_topic_ideas(request: AITopicIdeasRequest):
 @router.get("/results")
 async def list_ai_results(
     account_id: Optional[int] = None,
-    analysis_type: Optional[Literal["topic", "lifecycle", "topic_ideas"]] = None,
+    analysis_type: Optional[Literal["topic", "lifecycle", "topic_ideas", "title_strategy"]] = None,
     result_status: Optional[Literal["pending", "running", "done", "failed"]] = Query(None, alias="status"),
     limit: int = Query(50, ge=1, le=500),
 ):

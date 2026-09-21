@@ -11,7 +11,7 @@ from .db_session import get_monitor_session
 from .models import AIAnalysisResult
 
 
-ANALYSIS_TYPES = {"topic", "lifecycle", "topic_ideas"}
+ANALYSIS_TYPES = {"topic", "lifecycle", "topic_ideas", "title_strategy"}
 ANALYSIS_STATUSES = {"pending", "running", "done", "failed"}
 
 
@@ -24,7 +24,7 @@ def _json_dumps(value: Any) -> str:
 
 
 class AIAnalysisRepository:
-    """CRUD helpers for cached topic and lifecycle analysis results."""
+    """CRUD helpers for cached AI analysis results."""
 
     async def get_result(self, result_id: int) -> Optional[AIAnalysisResult]:
         async with get_monitor_session() as session:

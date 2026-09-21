@@ -55,6 +55,27 @@ def test_ai_topic_analysis_route(monkeypatch):
     assert response.json()["status"] == "done"
 
 
+def test_ai_title_strategy_route(monkeypatch):
+    async def resolve_account(account_id):
+        assert account_id == 7
+        return "sec_ai_router"
+
+    async def analyze_title_strategy(**kwargs):
+        assert kwargs["sec_user_id"] == "sec_ai_router"
+        assert kwargs["scope"] == {"time_range": "30d", "post_limit": 500}
+        return {"id": 2, "analysis_type": "title_strategy", "status": "done", "result": {"overview": {}}}
+
+    monkeypatch.setattr(ai_router_module, "_resolve_account_sec_user_id", resolve_account)
+    monkeypatch.setattr(ai_router_module.ai_analysis_service, "analyze_title_strategy", analyze_title_strategy)
+
+    response = make_client().post(
+        "/api/monitor/ai/analyze/title-strategy",
+        json={"account_id": 7, "time_range": "30d", "post_limit": 500},
+    )
+    assert response.status_code == 200
+    assert response.json()["analysis_type"] == "title_strategy"
+
+
 def test_ai_result_list_detail_and_delete_routes(monkeypatch):
     item = SimpleNamespace(id=9, analysis_type="topic", status="done")
     serialized = {"id": 9, "analysis_type": "topic", "status": "done", "result": {"summary": "ok"}}

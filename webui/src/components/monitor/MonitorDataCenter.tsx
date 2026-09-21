@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, BarChart3, Clock3, Database, Filter, Flame, RefreshCw, RotateCcw, Tags } from 'lucide-react'
+import { AlertTriangle, BarChart3, BrainCircuit, Clock3, Database, Filter, RefreshCw, RotateCcw, Tags } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -10,11 +10,11 @@ import { monitorApi, type MonitorDashboardPost, type MonitorJob } from '@/lib/ap
 
 const MonitorPerformanceOverview = lazy(() => import('@/components/monitor/MonitorPerformanceOverview').then((module) => ({ default: module.MonitorPerformanceOverview })))
 const MonitorTopicAnalytics = lazy(() => import('@/components/monitor/MonitorTopicAnalytics').then((module) => ({ default: module.MonitorTopicAnalytics })))
-const MonitorLifecycleAnalytics = lazy(() => import('@/components/monitor/MonitorLifecycleAnalytics').then((module) => ({ default: module.MonitorLifecycleAnalytics })))
+const MonitorTitleStrategyAnalytics = lazy(() => import('@/components/monitor/MonitorTitleStrategyAnalytics').then((module) => ({ default: module.MonitorTitleStrategyAnalytics })))
 
 
 type TimeRange = '24h' | '7d' | '30d' | 'all'
-type DataModule = 'overview' | 'topics' | 'lifecycle'
+type DataModule = 'overview' | 'topics' | 'strategy'
 type PostStatus = 'all' | 'normal' | 'insufficient' | 'missed' | 'abnormal'
 
 const TIME_RANGE_SECONDS: Record<Exclude<TimeRange, 'all'>, number> = {
@@ -44,6 +44,13 @@ function formatGeneratedAt(value?: string): string {
 }
 
 
+function parseDataModule(value: string | null): DataModule {
+  if (value === 'topics') return 'topics'
+  if (value === 'strategy' || value === 'lifecycle') return 'strategy'
+  return 'overview'
+}
+
+
 export function MonitorDataCenter({ focusAwemeId, focusToken }: { focusAwemeId?: string; focusToken?: number }) {
   const { t } = useTranslation('config')
   const queryClient = useQueryClient()
@@ -51,7 +58,7 @@ export function MonitorDataCenter({ focusAwemeId, focusToken }: { focusAwemeId?:
   const [statusFilter, setStatusFilter] = useState<PostStatus>('all')
   const [activeModule, setActiveModule] = useState<DataModule>(() => {
     const value = new URLSearchParams(window.location.search).get('module')
-    return value === 'topics' || value === 'lifecycle' ? value : 'overview'
+    return parseDataModule(value)
   })
   const { data: dashboard, isLoading, isFetching, error } = useQuery({
     queryKey: ['monitorDashboard', 'all'],
@@ -97,7 +104,7 @@ export function MonitorDataCenter({ focusAwemeId, focusToken }: { focusAwemeId?:
   useEffect(() => {
     const handlePopState = () => {
       const value = new URLSearchParams(window.location.search).get('module')
-      setActiveModule(value === 'topics' || value === 'lifecycle' ? value : 'overview')
+      setActiveModule(parseDataModule(value))
     }
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
@@ -180,7 +187,7 @@ export function MonitorDataCenter({ focusAwemeId, focusToken }: { focusAwemeId?:
         {([
           { key: 'overview', icon: BarChart3, label: t('dataCenter.modules.overview') },
           { key: 'topics', icon: Tags, label: t('dataCenter.modules.topics') },
-          { key: 'lifecycle', icon: Flame, label: t('dataCenter.modules.lifecycle') },
+          { key: 'strategy', icon: BrainCircuit, label: t('dataCenter.modules.strategy') },
         ] as const).map((module) => (
           <button key={module.key} type="button" aria-current={activeModule === module.key ? 'page' : undefined} data-active={activeModule === module.key ? 'true' : 'false'} onClick={() => changeModule(module.key)} className="data-center-module-tab"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-cyber-bg-tertiary"><module.icon aria-hidden="true" className="h-4 w-4" /></span><span className="truncate">{module.label}</span>{module.key === 'overview' && scopedSummary.attention > 0 ? <AlertTriangle aria-label={t('dataCenter.attentionPosts')} className="ml-auto h-3.5 w-3.5 text-status-warning" /> : null}</button>
         ))}
@@ -189,7 +196,7 @@ export function MonitorDataCenter({ focusAwemeId, focusToken }: { focusAwemeId?:
       <Suspense fallback={<StatePanel variant="loading" title={t('dataCenter.loading')} />}>
         {activeModule === 'overview' ? <MonitorPerformanceOverview posts={scopedPosts} focusAwemeId={focusAwemeId} focusToken={focusToken} /> : null}
         {activeModule === 'topics' ? <MonitorTopicAnalytics posts={scopedPosts} timeRange={timeRange} /> : null}
-        {activeModule === 'lifecycle' ? <MonitorLifecycleAnalytics posts={scopedPosts} timeRange={timeRange} /> : null}
+        {activeModule === 'strategy' ? <MonitorTitleStrategyAnalytics posts={scopedPosts} timeRange={timeRange} /> : null}
       </Suspense>
     </div>
   )

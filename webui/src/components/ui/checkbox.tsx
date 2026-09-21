@@ -10,7 +10,7 @@ export interface CheckboxProps
 const Checkbox = React.forwardRef<HTMLInputElement, CheckboxProps>(
   ({ className, checked, onCheckedChange, ...props }, ref) => {
     return (
-      <label className="inline-flex items-center cursor-pointer">
+      <label className="inline-flex min-h-6 min-w-6 cursor-pointer items-center justify-center">
         <input
           type="checkbox"
           className="sr-only peer"
@@ -21,11 +21,11 @@ const Checkbox = React.forwardRef<HTMLInputElement, CheckboxProps>(
         />
         <div
           className={cn(
-            'h-4 w-4 shrink-0 rounded-sm border border-cyber-border-DEFAULT bg-cyber-bg-tertiary ring-offset-background focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyber-neon-cyan disabled:cursor-not-allowed disabled:opacity-50 peer-checked:bg-cyber-neon-cyan/20 peer-checked:border-cyber-neon-cyan peer-checked:shadow-glow-cyan-sm flex items-center justify-center transition-all',
+            'flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border border-cyber-border-default bg-cyber-bg-panel ring-offset-background transition-all peer-checked:border-primary peer-checked:bg-primary peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-primary peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-cyber-bg-panel peer-disabled:cursor-not-allowed peer-disabled:opacity-50',
             className
           )}
         >
-          <Check className={cn('h-3 w-3 text-cyber-neon-cyan transition-opacity', checked ? 'opacity-100' : 'opacity-0')} />
+          <Check className={cn('h-3 w-3 text-primary-foreground transition-opacity', checked ? 'opacity-100' : 'opacity-0')} />
         </div>
       </label>
     )

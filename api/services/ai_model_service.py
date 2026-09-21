@@ -76,6 +76,7 @@ class AIModelService:
             "timeout_seconds": float(self._config.get("timeout_seconds") or 120.0),
             "max_tokens": int(self._config.get("max_tokens") or 2048),
             "temperature": float(self._config.get("temperature") or 0.2),
+            "enable_thinking": bool(self._config.get("enable_thinking", False)),
         }
 
     def _is_configured(self) -> bool:
@@ -197,6 +198,8 @@ class AIModelService:
         }
         if response_format is not None:
             payload["response_format"] = response_format
+        if self._config.get("enable_thinking") is False:
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
 
         started_at = time.monotonic()
         data = await self._request("POST", "/chat/completions", json_body=payload)
@@ -243,6 +246,8 @@ class AIModelService:
             max_tokens=max_tokens,
             response_format=response_format if response_format is not None else {"type": "json_object"},
         )
+        if response.get("finish_reason") == "length":
+            raise AIServiceError("AI output was truncated by max_tokens before the JSON was complete.", code="output_truncated")
         try:
             return parse_json_response(response["content"])
         except ValueError as exc:

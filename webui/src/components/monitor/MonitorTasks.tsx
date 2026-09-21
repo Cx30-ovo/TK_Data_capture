@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { ChevronLeft, ChevronRight, ExternalLink, Eye, ListChecks, RefreshCw, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -35,7 +36,7 @@ function formatDateTime(timestamp: number | null): string {
 
 function ErrorCategoryTag({ category, label }: { category: string; label: string }) {
   return (
-    <span className={`inline-flex rounded border px-2 py-0.5 text-[10px] font-mono ${CATEGORY_CLASSES[category] || CATEGORY_CLASSES.unknown}`}>
+    <span className={`status-chip ${CATEGORY_CLASSES[category] || CATEGORY_CLASSES.unknown}`}>
       {label}
     </span>
   )
@@ -61,8 +62,8 @@ export function MonitorTasks({ statusFilter, onStatusFilterChange, focusJobId, f
   const handledFocusToken = useRef<number | undefined>()
 
   const { data, isLoading } = useQuery({
-    queryKey: ['monitorJobs'],
-    queryFn: async () => (await monitorApi.getJobs()).data,
+    queryKey: ['monitorJobs', 300],
+    queryFn: async () => (await monitorApi.getJobs(undefined, 300)).data,
     refetchInterval: 30000,
   })
 
@@ -164,13 +165,13 @@ export function MonitorTasks({ statusFilter, onStatusFilterChange, focusJobId, f
   const statusLabel = (job: MonitorJob) => t(`tasks.status.${job.status}`, {
     defaultValue: job.status,
   })
-  const statusClass = (status: string) => status === 'failed'
-    ? 'text-cyber-neon-pink'
-    : status === 'missed'
-      ? 'text-cyber-neon-orange'
-      : status === 'done'
-        ? 'text-cyber-neon-green'
-        : 'text-cyber-neon-cyan'
+  const statusVariant = (status: string): 'destructive' | 'warning' | 'success' | 'running' | 'idle' => {
+    if (status === 'failed') return 'destructive'
+    if (status === 'missed') return 'warning'
+    if (status === 'done') return 'success'
+    if (status === 'running') return 'running'
+    return 'idle'
+  }
 
   const renderActions = (job: MonitorJob) => (
     <div className="flex items-center justify-end gap-1">
@@ -235,6 +236,7 @@ export function MonitorTasks({ statusFilter, onStatusFilterChange, focusJobId, f
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-cyber-text-muted" />
               <Input
+                aria-label={t('tasks.searchPlaceholder')}
                 value={searchText}
                 onChange={(event) => {
                   setSearchText(event.target.value)
@@ -291,23 +293,23 @@ export function MonitorTasks({ statusFilter, onStatusFilterChange, focusJobId, f
             ) : null}
           </div>
 
-          <div className="hidden max-h-[58vh] overflow-auto rounded-md border border-cyber-border-subtle/60 md:block">
-            <table className="w-full min-w-[900px] text-xs font-mono">
+          <div className="data-table-frame hidden max-h-[58vh] md:block">
+            <table className="data-table w-full min-w-[900px] text-xs font-mono">
               <thead className="sticky top-0 z-10 bg-cyber-bg-tertiary">
                 <tr className="text-left text-cyber-text-muted border-b border-cyber-border-subtle">
-                  <th className="py-2 pr-3 w-8" />
-                  <th className="py-2 pr-4">{t('tasks.statusColumn')}</th>
-                  <th className="py-2 pr-4">{t('tasks.stage')}</th>
-                  <th className="py-2 pr-4">{t('tasks.post')}</th>
-                  <th data-numeric="true" className="py-2 pr-4 text-right">{t('tasks.dueAt')}</th>
-                  <th data-numeric="true" className="py-2 pr-4 text-right">{t('tasks.attempts')}</th>
-                  <th className="py-2 pr-4">{t('tasks.reason')}</th>
-                  <th className="py-2 text-right">{t('tasks.action')}</th>
+                  <th scope="col" className="py-2 pr-3 w-8"><span className="sr-only">{t('tasks.selectJob')}</span></th>
+                  <th scope="col" className="py-2 pr-4">{t('tasks.statusColumn')}</th>
+                  <th scope="col" className="py-2 pr-4">{t('tasks.stage')}</th>
+                  <th scope="col" className="py-2 pr-4">{t('tasks.post')}</th>
+                  <th scope="col" data-numeric="true" className="py-2 pr-4 text-right">{t('tasks.dueAt')}</th>
+                  <th scope="col" data-numeric="true" className="py-2 pr-4 text-right">{t('tasks.attempts')}</th>
+                  <th scope="col" className="py-2 pr-4">{t('tasks.reason')}</th>
+                  <th scope="col" className="py-2 text-right">{t('tasks.action')}</th>
                 </tr>
               </thead>
               <tbody>
                 {pagedJobs.map((job) => (
-                  <tr key={job.id} className={`border-b border-cyber-border-subtle/40 text-cyber-text-secondary ${detailJob?.id === job.id ? 'bg-cyber-neon-cyan/5' : ''}`}>
+                  <tr key={job.id} data-selected={detailJob?.id === job.id ? 'true' : undefined}>
                     <td className="py-2 pr-3">
                       <Checkbox
                         checked={selectedJobIds.includes(job.id)}
@@ -316,8 +318,14 @@ export function MonitorTasks({ statusFilter, onStatusFilterChange, focusJobId, f
                         aria-label={t('tasks.selectJob')}
                       />
                     </td>
-                    <td className={`py-2 pr-4 ${statusClass(job.status)}`}>{statusLabel(job)}</td>
-                    <td className="py-2 pr-4">{job.stage}</td>
+                    <td className="py-2 pr-4">
+                      <Badge variant={statusVariant(job.status)} className="font-mono">
+                        {statusLabel(job)}
+                      </Badge>
+                    </td>
+                    <td className="py-2 pr-4">
+                      <Badge variant="outline" className="font-mono font-medium">{job.stage}</Badge>
+                    </td>
                     <td className="py-2 pr-4 max-w-[420px]">
                       <div className="truncate">{job.title || job.aweme_id}</div>
                       <div className="text-[10px] text-cyber-text-muted">{job.aweme_id}</div>
@@ -341,7 +349,7 @@ export function MonitorTasks({ statusFilter, onStatusFilterChange, focusJobId, f
 
           <div className="max-h-[58vh] space-y-2 overflow-y-auto md:hidden">
             {pagedJobs.map((job) => (
-              <div key={job.id} className="rounded-md border border-cyber-border-subtle bg-cyber-bg-tertiary/20 p-3 font-mono">
+              <div key={job.id} className="metric-surface-card p-3 font-mono">
                 <div className="flex items-start gap-2">
                   <Checkbox
                     checked={selectedJobIds.includes(job.id)}
@@ -353,7 +361,9 @@ export function MonitorTasks({ statusFilter, onStatusFilterChange, focusJobId, f
                     <div className="truncate text-xs text-cyber-text-primary">{job.title || job.aweme_id}</div>
                     <div className="mt-0.5 truncate text-[9px] text-cyber-text-muted">{job.aweme_id}</div>
                   </div>
-                  <span className={`text-[10px] ${statusClass(job.status)}`}>{statusLabel(job)}</span>
+                  <Badge variant={statusVariant(job.status)} className="font-mono">
+                    {statusLabel(job)}
+                  </Badge>
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-[10px]">
                   <div><span className="text-cyber-text-muted">{t('tasks.stage')}: </span>{job.stage}</div>
@@ -432,8 +442,8 @@ export function MonitorTasks({ statusFilter, onStatusFilterChange, focusJobId, f
               ) : null}
               <div className="rounded-md border border-cyber-border-subtle bg-cyber-bg-tertiary/20 p-3">
                 <div className="grid grid-cols-2 gap-3">
-                  <div><div className="text-[10px] text-cyber-text-muted">{t('tasks.statusColumn')}</div><div className={`mt-1 ${statusClass(detailJob.status)}`}>{statusLabel(detailJob)}</div></div>
-                  <div><div className="text-[10px] text-cyber-text-muted">{t('tasks.stage')}</div><div className="mt-1 text-cyber-text-primary">{detailJob.stage}</div></div>
+                  <div><div className="text-[10px] text-cyber-text-muted">{t('tasks.statusColumn')}</div><Badge variant={statusVariant(detailJob.status)} className="mt-1 font-mono">{statusLabel(detailJob)}</Badge></div>
+                  <div><div className="text-[10px] text-cyber-text-muted">{t('tasks.stage')}</div><Badge variant="outline" className="mt-1 font-mono font-medium">{detailJob.stage}</Badge></div>
                   <div><div className="text-[10px] text-cyber-text-muted">{t('tasks.publishTime')}</div><div className="mt-1 text-cyber-text-primary">{formatDateTime(detailJob.create_time)}</div></div>
                   <div><div className="text-[10px] text-cyber-text-muted">{t('tasks.dueAt')}</div><div className="mt-1 text-cyber-text-primary">{formatDateTime(detailJob.due_at)}</div></div>
                   <div><div className="text-[10px] text-cyber-text-muted">{t('tasks.attempts')}</div><div className="mt-1 text-cyber-text-primary">{detailJob.attempts}</div></div>

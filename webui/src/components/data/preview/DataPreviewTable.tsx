@@ -43,7 +43,7 @@ export function DataPreviewTable({ data, columns: propColumns }: DataPreviewTabl
       {/* 搜索栏 */}
       <div className="flex-shrink-0 mb-3">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-cyber-text-muted" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-cyber-text-muted" aria-hidden="true" />
           <Input
             placeholder={t('preview.searchPlaceholder')}
             value={searchTerm}
@@ -54,10 +54,10 @@ export function DataPreviewTable({ data, columns: propColumns }: DataPreviewTabl
       </div>
 
       {/* 表格 */}
-      <ScrollArea className="flex-1 border border-cyber-border-DEFAULT rounded-lg">
+      <ScrollArea className="data-table-frame flex-1">
         <div className="min-w-full">
-          <table className="w-full text-xs font-mono">
-            <thead className="sticky top-0 bg-cyber-bg-tertiary border-b border-cyber-border-DEFAULT">
+          <table className="data-table w-full text-xs font-mono">
+            <thead className="sticky top-0 z-10">
               <tr>
                 <th className="px-3 py-2 text-left text-cyber-text-muted w-12">#</th>
                 {columns.map((col) => (
@@ -74,7 +74,7 @@ export function DataPreviewTable({ data, columns: propColumns }: DataPreviewTabl
               {filteredData.map((row, idx) => (
                 <tr
                   key={idx}
-                  className="border-b border-cyber-border-subtle hover:bg-cyber-bg-elevated/50 transition-colors"
+                  className="transition-colors"
                 >
                   <td className="px-3 py-2 text-cyber-text-muted">{idx + 1}</td>
                   {columns.map((col) => (

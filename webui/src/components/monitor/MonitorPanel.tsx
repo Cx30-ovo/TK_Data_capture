@@ -202,11 +202,11 @@ export function MonitorPanel({ embedded = false, onDirtyChange, onValidChange, s
 
         <div className="space-y-3 rounded-md border border-cyber-border-subtle p-3">
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            <div className="space-y-1.5"><Label className="text-xs text-cyber-text-secondary">{t('monitor.displayName')}</Label><Input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder={t('monitor.displayNamePlaceholder')} disabled={formDisabled} className="h-9 text-xs" /></div>
-            <div className="space-y-1.5"><Label className="text-xs text-cyber-text-secondary">{t('monitor.account')}</Label><Input value={accountInput} onChange={(event) => setAccountInput(event.target.value)} placeholder="https://www.douyin.com/user/..." disabled={formDisabled} className="h-9 text-xs" /></div>
+            <div className="space-y-1.5"><Label className="text-xs text-cyber-text-secondary">{t('monitor.displayName')}</Label><Input aria-label={t('monitor.displayName')} value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder={t('monitor.displayNamePlaceholder')} disabled={formDisabled} className="h-9 text-xs" /></div>
+            <div className="space-y-1.5"><Label className="text-xs text-cyber-text-secondary">{t('monitor.account')}</Label><Input aria-label={t('monitor.account')} value={accountInput} onChange={(event) => setAccountInput(event.target.value)} placeholder="https://www.douyin.com/user/..." disabled={formDisabled} className="h-9 text-xs" /></div>
           </div>
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-            <div className="space-y-1.5"><Label className="text-xs text-cyber-text-secondary">{t('monitor.interval')}</Label><Select value={String(intervalMinutes)} onValueChange={(value) => setIntervalMinutes(Number(value))} disabled={formDisabled}><SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger><SelectContent>{[30, 60, 120, 240, 360].map((value) => <SelectItem key={value} value={String(value)}>{value} min</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-1.5"><Label className="text-xs text-cyber-text-secondary">{t('monitor.interval')}</Label><Select value={String(intervalMinutes)} onValueChange={(value) => setIntervalMinutes(Number(value))} disabled={formDisabled}><SelectTrigger aria-label={t('monitor.interval')} className="h-9 text-xs"><SelectValue /></SelectTrigger><SelectContent>{[30, 60, 120, 240, 360].map((value) => <SelectItem key={value} value={String(value)}>{value} min</SelectItem>)}</SelectContent></Select></div>
             <label className="flex items-center gap-2 pt-6 text-xs text-cyber-text-primary"><Checkbox checked={enabled} onCheckedChange={(checked) => setEnabled(checked === true)} disabled={formDisabled} />{t('monitor.enable')}</label>
           </div>
           <div className="flex flex-wrap items-center gap-2">

@@ -14,6 +14,7 @@
     "ops": "任务与告警",
     "export": "导出报告"
   },
+  "skipToContent": "跳到主要内容",
   "consoleDrawer": {
     "title": "系统控制台",
     "entries": "{{count}} 条日志"
@@ -33,6 +34,8 @@
   "sidebar": {
     "title": "MediaCrawler",
     "subtitle": "抖音单账号监控",
+    "createMonitorTask": "新建监控任务",
+    "primaryNavigation": "主导航",
     "repository": "查看项目仓库",
     "api": "API",
     "local": "本地",

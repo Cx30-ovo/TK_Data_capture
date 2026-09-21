@@ -194,13 +194,15 @@ class MonitorRepository:
         self,
         platform: str = "dy",
         sec_user_id: Optional[str] = None,
-        limit: int = 100,
+        limit: Optional[int] = 100,
     ) -> list[DouyinPost]:
         async with get_monitor_session() as session:
             stmt = select(DouyinPost).where(DouyinPost.platform == platform)
             if sec_user_id:
                 stmt = stmt.where(DouyinPost.sec_user_id == sec_user_id)
-            stmt = stmt.order_by(DouyinPost.create_time.desc()).limit(limit)
+            stmt = stmt.order_by(DouyinPost.create_time.desc())
+            if limit is not None:
+                stmt = stmt.limit(limit)
             return list((await session.execute(stmt)).scalars().all())
 
     async def get_post(self, aweme_id: str, platform: str = "dy") -> Optional[DouyinPost]:
@@ -222,6 +224,18 @@ class MonitorRepository:
                 DouyinPost.platform == platform,
                 DouyinPost.first_seen_at >= since,
             )
+            if sec_user_id:
+                stmt = stmt.where(DouyinPost.sec_user_id == sec_user_id)
+            return int((await session.execute(stmt)).scalar() or 0)
+
+    async def count_posts(
+        self,
+        platform: str = "dy",
+        sec_user_id: Optional[str] = None,
+    ) -> int:
+        """Return the complete number of collected posts for the selected scope."""
+        async with get_monitor_session() as session:
+            stmt = select(func.count(DouyinPost.id)).where(DouyinPost.platform == platform)
             if sec_user_id:
                 stmt = stmt.where(DouyinPost.sec_user_id == sec_user_id)
             return int((await session.execute(stmt)).scalar() or 0)
@@ -288,7 +302,7 @@ class MonitorRepository:
         status: Optional[str] = None,
         platform: str = "dy",
         sec_user_id: Optional[str] = None,
-        limit: int = 300,
+        limit: Optional[int] = 300,
     ) -> list[dict]:
         async with get_monitor_session() as session:
             stmt = (
@@ -304,7 +318,9 @@ class MonitorRepository:
                 stmt = stmt.where(DouyinMonitorJob.status == status)
             if sec_user_id:
                 stmt = stmt.where(DouyinMonitorJob.sec_user_id == sec_user_id)
-            stmt = stmt.order_by(DouyinMonitorJob.due_at.asc()).limit(limit)
+            stmt = stmt.order_by(DouyinMonitorJob.due_at.asc())
+            if limit is not None:
+                stmt = stmt.limit(limit)
             return [
                 {
                     "id": job.id,
@@ -790,9 +806,10 @@ class MonitorRepository:
     async def list_snapshots(
         self,
         aweme_id: Optional[str] = None,
+        aweme_ids: Optional[Sequence[str]] = None,
         platform: str = "dy",
         sec_user_id: Optional[str] = None,
-        limit: int = 100,
+        limit: Optional[int] = 100,
     ) -> list[DouyinPostSnapshot]:
         async with get_monitor_session() as session:
             stmt = select(DouyinPostSnapshot).where(DouyinPostSnapshot.platform == platform)
@@ -804,7 +821,13 @@ class MonitorRepository:
                 ).where(DouyinPost.sec_user_id == sec_user_id)
             if aweme_id:
                 stmt = stmt.where(DouyinPostSnapshot.aweme_id == aweme_id)
-            stmt = stmt.order_by(DouyinPostSnapshot.captured_at.desc()).limit(limit)
+            if aweme_ids is not None:
+                if not aweme_ids:
+                    return []
+                stmt = stmt.where(DouyinPostSnapshot.aweme_id.in_(aweme_ids))
+            stmt = stmt.order_by(DouyinPostSnapshot.captured_at.desc())
+            if limit is not None:
+                stmt = stmt.limit(limit)
             return list((await session.execute(stmt)).scalars().all())
 
 

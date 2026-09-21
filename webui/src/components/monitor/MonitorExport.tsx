@@ -2,9 +2,11 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { CalendarDays, CheckCircle2, Download, FileSpreadsheet, FileText, History, ListChecks, Search, Trash2, XCircle } from 'lucide-react'
+import { Archive, CalendarDays, CheckCircle2, Database, Download, FileSpreadsheet, FileText, History, ListChecks, Search, Trash2, XCircle } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { monitorApi, type MonitorReport } from '@/lib/api'
 import { StatePanel } from '@/components/ui/state-panel'
@@ -55,9 +57,10 @@ export function MonitorExport() {
   const [exportMode, setExportMode] = useState<ExportMode>('posts')
   const [selectedAwemeIds, setSelectedAwemeIds] = useState<string[]>([])
   const [searchText, setSearchText] = useState('')
+  const [reportToDelete, setReportToDelete] = useState<string>()
   const { data: dashboard } = useQuery({
-    queryKey: ['monitorDashboard'],
-    queryFn: async () => (await monitorApi.getDashboard(100)).data,
+    queryKey: ['monitorDashboard', 'all'],
+    queryFn: async () => (await monitorApi.getDashboard()).data,
     refetchInterval: 30000,
   })
   const { data: reports } = useQuery({
@@ -77,6 +80,7 @@ export function MonitorExport() {
     mutationFn: (name: string) => monitorApi.deleteReport(name),
     onSuccess: (_response, name) => {
       toast.success(t('export.reportDeleted'))
+      setReportToDelete(undefined)
       if (generateReport.data?.data.filename === name) generateReport.reset()
       queryClient.invalidateQueries({ queryKey: ['monitorReports'] })
     },
@@ -111,64 +115,74 @@ export function MonitorExport() {
   const previewPosts = selectedPosts.length > 0 ? selectedPosts : posts.slice(0, 5)
 
   return (
-    <div className="space-y-3 animate-slide-up">
-      <section className="sticky top-12 z-10 rounded-lg border border-cyber-border-subtle bg-cyber-bg-panel/95 p-2 shadow-[0_4px_16px_rgba(15,23,42,0.08)] backdrop-blur">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="mr-1 flex items-center gap-2 px-1 text-[10px] font-mono text-cyber-text-muted">
-            <Download className="h-3.5 w-3.5 text-cyber-neon-cyan" />
-            {t('export.quickActions')}
+    <div className="workspace-page space-y-3 animate-slide-up">
+      <section className="workspace-hero p-4 sm:p-5">
+        <div className="workspace-hero-grid" aria-hidden="true" />
+        <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="workspace-hero-icon"><Archive aria-hidden="true" className="h-5 w-5" /></span>
+            <div className="min-w-0"><Badge variant="secondary" className="mb-2">{t('export.workspaceLabel')}</Badge><h1 className="workspace-title">{t('export.title')}</h1><p className="workspace-description">{t('export.description')}</p></div>
           </div>
+          <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-3 sm:min-w-[390px]">
+            <div className="workspace-stat-card"><span>{t('export.totalPosts')}</span><b>{posts.length}</b></div>
+            <div className="workspace-stat-card"><span>{t('export.selectedShort')}</span><b>{selectedAwemeIds.length}</b></div>
+            <div className="workspace-stat-card"><span>{t('export.generatedReports')}</span><b>{reportItems.length}</b></div>
+          </div>
+        </div>
+      </section>
+
+      <section className="workspace-toolbar z-10 p-3 lg:sticky lg:top-12">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+          <div className="flex min-w-0 items-center gap-2 text-xs font-semibold text-cyber-text-primary"><span className="workspace-toolbar-icon"><Download aria-hidden="true" className="h-4 w-4" /></span><div><div>{t('export.quickActions')}</div><div className="text-[10px] font-normal text-cyber-text-muted">{t('export.quickActionsHint')}</div></div></div>
+          <div className="flex flex-wrap items-center gap-2 xl:ml-auto">
           <a href={monitorApi.exportPostsUrl('csv')} download>
-            <Button type="button" variant="outline" size="sm" className="h-8 font-mono text-[10px]"><FileText className="h-3.5 w-3.5" />{t('export.postsCsv')}</Button>
+            <Button type="button" variant="outline" size="sm" className="min-h-9 text-xs"><FileText aria-hidden="true" className="h-3.5 w-3.5" />{t('export.postsCsv')}</Button>
           </a>
           <a href={monitorApi.exportPostsUrl('xlsx')} download>
-            <Button type="button" variant="outline" size="sm" className="h-8 font-mono text-[10px]"><FileSpreadsheet className="h-3.5 w-3.5" />{t('export.postsExcel')}</Button>
+            <Button type="button" variant="outline" size="sm" className="min-h-9 text-xs"><FileSpreadsheet aria-hidden="true" className="h-3.5 w-3.5" />{t('export.postsExcel')}</Button>
           </a>
           <a href={selectedAwemeIds.length > 0 ? monitorApi.exportSnapshotsUrl(selectedAwemeIds, 'csv') : undefined} download>
-            <Button type="button" variant="outline" size="sm" disabled={selectedAwemeIds.length === 0} className="h-8 font-mono text-[10px]"><History className="h-3.5 w-3.5" />{t('export.snapshotsCsv')}</Button>
+            <Button type="button" variant="outline" size="sm" disabled={selectedAwemeIds.length === 0} className="min-h-9 text-xs"><History aria-hidden="true" className="h-3.5 w-3.5" />{t('export.snapshotsCsv')}</Button>
           </a>
           <a href={selectedAwemeIds.length > 0 ? monitorApi.exportSnapshotsUrl(selectedAwemeIds, 'xlsx') : undefined} download>
-            <Button type="button" variant="outline" size="sm" disabled={selectedAwemeIds.length === 0} className="h-8 font-mono text-[10px]"><FileSpreadsheet className="h-3.5 w-3.5" />{t('export.snapshotsExcel')}</Button>
+            <Button type="button" variant="outline" size="sm" disabled={selectedAwemeIds.length === 0} className="min-h-9 text-xs"><FileSpreadsheet aria-hidden="true" className="h-3.5 w-3.5" />{t('export.snapshotsExcel')}</Button>
           </a>
           <div className="hidden h-5 w-px bg-cyber-border-subtle sm:block" />
           {(['daily', 'weekly', 'monthly'] as const).map((period) => (
-            <Button key={period} type="button" size="sm" onClick={() => generateReport.mutate(period)} disabled={generateReport.isPending} className="h-8 font-mono text-[10px]">
-              <CalendarDays className="h-3.5 w-3.5" />
+            <Button key={period} type="button" variant="outline" size="sm" aria-busy={generateReport.isPending} onClick={() => generateReport.mutate(period)} disabled={generateReport.isPending} className="min-h-9 text-xs">
+              <CalendarDays aria-hidden="true" className={`h-3.5 w-3.5 ${generateReport.isPending ? 'animate-pulse' : ''}`} />
               {t(`export.generate.${period}`)}
             </Button>
           ))}
+          </div>
         </div>
       </section>
 
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-12">
-        <section className="rounded-lg glass-panel float-panel overflow-hidden xl:col-span-4">
-          <header className="border-b border-cyber-border-subtle/50 bg-cyber-bg-tertiary/30 px-4 py-3">
-            <div className="text-xs font-mono font-semibold text-cyber-text-primary">{t('export.selectObject')}</div>
-            <div className="mt-0.5 text-[10px] font-mono text-cyber-text-muted">{t('export.selectObjectHint')}</div>
-          </header>
+        <section className="workspace-panel overflow-hidden xl:col-span-4">
+          <header className="workspace-panel-header"><span className="workspace-panel-icon"><ListChecks aria-hidden="true" className="h-4 w-4" /></span><div><div className="workspace-panel-title">{t('export.selectObject')}</div><div className="workspace-panel-description">{t('export.selectObjectHint')}</div></div></header>
           <div className="space-y-3 p-3">
             <div className="grid grid-cols-2 gap-1 rounded-md border border-cyber-border-subtle bg-cyber-bg-tertiary/20 p-1">
               {(['posts', 'snapshots'] as const).map((mode) => (
-                <button key={mode} type="button" onClick={() => setExportMode(mode)} className={`rounded px-3 py-2 text-[10px] font-mono transition-colors ${exportMode === mode ? 'bg-cyber-neon-cyan/15 text-cyber-neon-cyan' : 'text-cyber-text-muted hover:bg-cyber-bg-tertiary hover:text-cyber-text-primary'}`}>
+                <button key={mode} type="button" aria-pressed={exportMode === mode} data-active={exportMode === mode ? 'true' : 'false'} onClick={() => setExportMode(mode)} className="export-mode-button">
                   {t(`export.objectType.${mode}`)}
                 </button>
               ))}
             </div>
 
             {exportMode === 'posts' ? (
-              <div className="border-l-2 border-cyber-neon-cyan/60 px-3 py-2">
-                <div className="text-2xl font-mono text-cyber-text-primary">{posts.length}</div>
-                <div className="mt-1 text-[10px] font-mono text-cyber-text-muted">{t('export.postObjectHint')}</div>
+              <div className="export-object-summary">
+                <span className="workspace-panel-icon"><Database aria-hidden="true" className="h-4 w-4" /></span><div><div className="text-2xl font-semibold numeric-value text-cyber-text-primary">{posts.length}</div><div className="mt-1 text-[10px] text-cyber-text-muted">{t('export.postObjectHint')}</div></div>
               </div>
             ) : (
               <>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-cyber-text-muted" />
-                  <Input value={searchText} onChange={(event) => setSearchText(event.target.value)} placeholder={t('export.searchPlaceholder')} className="h-8 pl-9 text-xs" />
+                  <Input aria-label={t('export.searchPlaceholder')} value={searchText} onChange={(event) => setSearchText(event.target.value)} placeholder={t('export.searchPlaceholder')} className="h-8 pl-9 text-xs" />
                 </div>
                 <div className="max-h-[340px] overflow-y-auto rounded-md border border-cyber-border-subtle bg-cyber-bg-tertiary/20">
                   {filteredPosts.map((post) => (
-                    <label key={post.aweme_id} className="flex cursor-pointer items-start gap-3 border-b border-cyber-border-subtle/40 px-3 py-2 last:border-b-0 hover:bg-cyber-bg-tertiary/40">
+                    <label key={post.aweme_id} className="export-select-row">
                       <Checkbox checked={selectedAwemeIds.includes(post.aweme_id)} onCheckedChange={() => togglePost(post.aweme_id)} className="mt-0.5" />
                       <div className="min-w-0 flex-1">
                         <div title={post.title || post.aweme_id} className="truncate text-xs text-cyber-text-primary">{post.title || post.aweme_id}</div>
@@ -196,11 +210,8 @@ export function MonitorExport() {
           </div>
         </section>
 
-        <section className="rounded-lg glass-panel float-panel overflow-hidden xl:col-span-8">
-          <header className="border-b border-cyber-border-subtle/50 bg-cyber-bg-tertiary/30 px-4 py-3">
-            <div className="text-xs font-mono font-semibold text-cyber-text-primary">{t('export.preview')}</div>
-            <div className="mt-0.5 text-[10px] font-mono text-cyber-text-muted">{t('export.previewHint')}</div>
-          </header>
+        <section className="workspace-panel overflow-hidden xl:col-span-8">
+          <header className="workspace-panel-header"><span className="workspace-panel-icon"><FileText aria-hidden="true" className="h-4 w-4" /></span><div><div className="workspace-panel-title">{t('export.preview')}</div><div className="workspace-panel-description">{t('export.previewHint')}</div></div></header>
           <div className="space-y-3 p-3">
             {generateReport.data ? (
               <div className="rounded-md border border-cyber-border-subtle bg-cyber-bg-tertiary/20">
@@ -237,17 +248,17 @@ export function MonitorExport() {
         </section>
       </div>
 
-      <section className="rounded-lg glass-panel float-panel overflow-hidden">
-        <header className="flex items-center gap-3 border-b border-cyber-border-subtle/50 bg-cyber-bg-tertiary/30 px-4 py-3">
-          <History className="h-4 w-4 text-cyber-neon-cyan" />
-          <div><div className="text-xs font-mono font-semibold text-cyber-text-primary">{t('export.recentReports')}</div><div className="mt-0.5 text-[10px] font-mono text-cyber-text-muted">{t('export.reportListHint')}</div></div>
-          <span className="ml-auto text-[10px] font-mono text-cyber-text-muted">{reportItems.length}</span>
+      <section className="workspace-panel overflow-hidden">
+        <header className="workspace-panel-header">
+          <span className="workspace-panel-icon"><History aria-hidden="true" className="h-4 w-4" /></span>
+          <div><div className="workspace-panel-title">{t('export.recentReports')}</div><div className="workspace-panel-description">{t('export.reportListHint')}</div></div>
+          <Badge variant="secondary" className="ml-auto numeric-value">{reportItems.length}</Badge>
         </header>
         <div className="max-h-[380px] overflow-y-auto">
           {reportItems.length > 0 ? reportItems.map((report) => {
             const metadata = reportMetadata(report)
             return (
-              <div key={report.name} className="flex flex-wrap items-center gap-3 border-b border-cyber-border-subtle/40 px-3 py-2.5 last:border-b-0 hover:bg-cyber-bg-tertiary/20">
+              <div key={report.name} className="export-report-row">
                 <FileText className="h-4 w-4 flex-shrink-0 text-cyber-neon-cyan" />
                 <div className="min-w-[220px] flex-1">
                   <div className="truncate text-xs font-mono text-cyber-text-primary">{report.name}</div>
@@ -259,13 +270,20 @@ export function MonitorExport() {
                 <span className="inline-flex items-center gap-1 text-[9px] font-mono text-cyber-neon-green"><CheckCircle2 className="h-3 w-3" />{t('export.status.ready')}</span>
                 <div className="ml-auto flex items-center gap-1">
                   <a href={monitorApi.reportDownloadUrl(report.name)} download><Button type="button" variant="ghost" size="sm" className="h-7 px-2 font-mono text-[10px]"><Download className="h-3 w-3" />{t('export.download')}</Button></a>
-                  <Button type="button" variant="ghost" size="sm" title={t('export.delete')} aria-label={t('export.delete')} disabled={deleteReport.isPending} onClick={() => { if (window.confirm(t('export.confirmDelete', { name: report.name }))) deleteReport.mutate(report.name) }} className="h-7 w-7 p-0 text-cyber-text-muted hover:bg-cyber-neon-pink/10 hover:text-cyber-neon-pink"><Trash2 className="h-3.5 w-3.5" /></Button>
+                  <Button type="button" variant="ghost" size="sm" title={t('export.delete')} aria-label={t('export.delete')} disabled={deleteReport.isPending} onClick={() => setReportToDelete(report.name)} className="h-8 w-8 p-0 text-cyber-text-muted hover:bg-cyber-neon-pink/10 hover:text-cyber-neon-pink"><Trash2 aria-hidden="true" className="h-3.5 w-3.5" /></Button>
                 </div>
               </div>
             )
           }) : <StatePanel variant="empty" title={t('export.noReports')} />}
         </div>
       </section>
+
+      <Dialog open={Boolean(reportToDelete)} onOpenChange={(open) => { if (!open) setReportToDelete(undefined) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>{t('export.deleteDialogTitle')}</DialogTitle><DialogDescription>{t('export.confirmDelete', { name: reportToDelete || '' })}</DialogDescription></DialogHeader>
+          <DialogFooter><Button type="button" variant="outline" onClick={() => setReportToDelete(undefined)}>{t('export.cancel')}</Button><Button type="button" variant="destructive" disabled={!reportToDelete || deleteReport.isPending} onClick={() => reportToDelete && deleteReport.mutate(reportToDelete)}><Trash2 aria-hidden="true" className="h-4 w-4" />{t('export.confirmDeleteAction')}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

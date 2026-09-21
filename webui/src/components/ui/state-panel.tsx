@@ -18,9 +18,9 @@ export function StatePanel({
 }) {
   const Icon = variant === 'loading' ? Loader2 : variant === 'error' ? AlertTriangle : Inbox
   const color = variant === 'error'
-    ? 'text-cyber-neon-pink'
+    ? 'text-status-danger'
     : variant === 'loading'
-      ? 'text-cyber-neon-cyan'
+      ? 'text-status-info'
       : 'text-cyber-text-muted'
 
   return (

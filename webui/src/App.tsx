@@ -1,24 +1,38 @@
-import { useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Toaster } from 'sonner'
 import { Activity, BarChart3, Download, LayoutDashboard, Settings2 } from 'lucide-react'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { ConsoleDrawer } from '@/components/layout/ConsoleDrawer'
 import { GlobalStatusBar } from '@/components/layout/GlobalStatusBar'
-import { CrawlerConfigPanel } from '@/components/config/CrawlerConfigPanel'
-import { MonitorOverview } from '@/components/monitor/MonitorOverview'
-import { MonitorDataCenter } from '@/components/monitor/MonitorDataCenter'
-import { MonitorOpsCenter, type MonitorOpsTarget } from '@/components/monitor/MonitorOpsCenter'
-import { MonitorExport } from '@/components/monitor/MonitorExport'
+import type { MonitorOpsTarget } from '@/components/monitor/MonitorOpsCenter'
 import { EnvironmentCheck, isEnvChecked } from '@/components/env/EnvironmentCheck'
 import { LicenseDisclaimer, isLicenseAccepted } from '@/components/license/LicenseDisclaimer'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { StatePanel } from '@/components/ui/state-panel'
+
+const CrawlerConfigPanel = lazy(() => import('@/components/config/CrawlerConfigPanel').then((module) => ({ default: module.CrawlerConfigPanel })))
+const MonitorOverview = lazy(() => import('@/components/monitor/MonitorOverview').then((module) => ({ default: module.MonitorOverview })))
+const MonitorDataCenter = lazy(() => import('@/components/monitor/MonitorDataCenter').then((module) => ({ default: module.MonitorDataCenter })))
+const MonitorOpsCenter = lazy(() => import('@/components/monitor/MonitorOpsCenter').then((module) => ({ default: module.MonitorOpsCenter })))
+const MonitorExport = lazy(() => import('@/components/monitor/MonitorExport').then((module) => ({ default: module.MonitorExport })))
+
+type AppTab = 'overview' | 'data' | 'ops' | 'export' | 'config'
+const NAV_TRIGGER_CLASS = 'app-nav-item min-w-0 cursor-pointer flex-col gap-0.5 px-1 py-1.5 text-[11px] sm:flex-row sm:gap-2 sm:px-2 sm:py-2 sm:text-xs lg:gap-3 lg:px-3 lg:py-2.5 lg:text-sm'
+
+function getInitialTab(): AppTab {
+  const params = new URLSearchParams(window.location.search)
+  const value = params.get('tab')
+  const module = params.get('module')
+  if (!value && (module === 'topics' || module === 'lifecycle')) return 'data'
+  return value === 'data' || value === 'ops' || value === 'export' || value === 'config' ? value : 'overview'
+}
 
 function App() {
   const { t } = useTranslation('common')
-  const [activeTab, setActiveTab] = useState('overview')
+  const [activeTab, setActiveTab] = useState<AppTab>(getInitialTab)
   const [opsTarget, setOpsTarget] = useState<MonitorOpsTarget>({ section: 'tasks', taskStatus: 'pending', token: 0 })
-  const [dataFocusAwemeId, setDataFocusAwemeId] = useState<string>()
+  const [dataFocus, setDataFocus] = useState<{ awemeId?: string; token: number }>({ token: 0 })
   // Initialize by checking localStorage if license has been accepted
   const [licenseAccepted, setLicenseAccepted] = useState(() => isLicenseAccepted())
   // Initialize by checking localStorage if env check has passed
@@ -32,6 +46,21 @@ function App() {
     setLicenseAccepted(true)
   }
 
+  const navigateTab = (tab: AppTab, moduleValue?: 'overview' | 'topics' | 'lifecycle') => {
+    setActiveTab(tab)
+    const url = new URL(window.location.href)
+    url.searchParams.set('tab', tab)
+    if (tab !== 'data') url.searchParams.delete('module')
+    else if (moduleValue) url.searchParams.set('module', moduleValue)
+    window.history.pushState(null, '', url.toString())
+  }
+
+  useEffect(() => {
+    const handlePopState = () => setActiveTab(getInitialTab())
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
 
   const openTasks = (status = 'pending', jobId?: number) => {
     setOpsTarget((current) => ({
@@ -40,7 +69,7 @@ function App() {
       jobId,
       token: current.token + 1,
     }))
-    setActiveTab('ops')
+    navigateTab('ops')
   }
 
   const openAlerts = (alertId?: number) => {
@@ -50,21 +79,21 @@ function App() {
       alertId,
       token: current.token + 1,
     }))
-    setActiveTab('ops')
+    navigateTab('ops')
   }
 
   const openData = (awemeId?: string) => {
-    setDataFocusAwemeId(awemeId)
-    setActiveTab('data')
+    setDataFocus((current) => ({ awemeId, token: current.token + 1 }))
+    navigateTab('data', 'overview')
   }
 
   const openHealth = () => {
     setOpsTarget((current) => ({ section: 'health', token: current.token + 1 }))
-    setActiveTab('ops')
+    navigateTab('ops')
   }
 
   return (
-    <div className="flex flex-col min-h-screen cyber-grid relative">
+    <div className="cyber-grid relative min-h-screen">
       {/* License Disclaimer Modal - Shows first or when triggered */}
       {!licenseAccepted && (
         <LicenseDisclaimer onAccept={handleLicenseAccept} />
@@ -75,58 +104,85 @@ function App() {
         <EnvironmentCheck onCheckComplete={handleEnvCheckComplete} />
       )}
 
-      {/* Header Bar */}
-      <Sidebar />
-      <GlobalStatusBar
-        onOpenOverview={() => setActiveTab('overview')}
-        onOpenHealth={openHealth}
-        onOpenPending={() => openTasks('pending')}
-        onOpenAlerts={() => openAlerts()}
-        onOpenSnapshot={() => openTasks('pending')}
-      />
+      <a
+        href="#webui-main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[200] focus:rounded-md focus:bg-cyber-bg-panel focus:px-4 focus:py-2 focus:text-sm focus:text-cyber-text-primary focus:ring-2 focus:ring-cyber-neon-cyan"
+      >
+        {t('skipToContent')}
+      </a>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-1 flex-col gap-3 p-2 pb-14 sm:p-3 min-h-0">
-        <TabsList className="h-auto w-full max-w-full justify-start overflow-x-auto p-1 sm:w-fit">
-          <TabsTrigger value="overview" className="shrink-0 gap-2">
-            <LayoutDashboard className="w-4 h-4" />
-            {t('tabs.overview')}
-          </TabsTrigger>
-          <TabsTrigger value="data" className="shrink-0 gap-2">
-            <BarChart3 className="w-4 h-4" />
-            {t('tabs.monitorData')}
-          </TabsTrigger>
-          <TabsTrigger value="ops" className="shrink-0 gap-2">
-            <Activity className="w-4 h-4" />
-            {t('tabs.ops')}
-          </TabsTrigger>
-          <TabsTrigger value="export" className="shrink-0 gap-2">
-            <Download className="w-4 h-4" />
-            {t('tabs.export')}
-          </TabsTrigger>
-          <TabsTrigger value="config" className="shrink-0 gap-2">
-            <Settings2 className="w-4 h-4" />
-            {t('tabs.config')}
-          </TabsTrigger>
-        </TabsList>
+      <Tabs
+        orientation="vertical"
+        value={activeTab}
+        onValueChange={(value) => navigateTab(value as AppTab)}
+        className="app-shell"
+      >
+        <Sidebar
+          onCreateMonitor={() => navigateTab('config')}
+          navigation={(
+            <TabsList className="app-navigation-list h-auto w-full justify-start border-0 bg-transparent p-0">
+              <TabsTrigger value="overview" className={NAV_TRIGGER_CLASS}>
+                <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
+                {t('tabs.overview')}
+              </TabsTrigger>
+              <TabsTrigger value="data" className={NAV_TRIGGER_CLASS}>
+                <BarChart3 className="h-4 w-4" aria-hidden="true" />
+                {t('tabs.monitorData')}
+              </TabsTrigger>
+              <TabsTrigger value="ops" className={NAV_TRIGGER_CLASS}>
+                <Activity className="h-4 w-4" aria-hidden="true" />
+                {t('tabs.ops')}
+              </TabsTrigger>
+              <TabsTrigger value="export" className={NAV_TRIGGER_CLASS}>
+                <Download className="h-4 w-4" aria-hidden="true" />
+                {t('tabs.export')}
+              </TabsTrigger>
+              <TabsTrigger value="config" className={NAV_TRIGGER_CLASS}>
+                <Settings2 className="h-4 w-4" aria-hidden="true" />
+                {t('tabs.config')}
+              </TabsTrigger>
+            </TabsList>
+          )}
+        />
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-12">
-          {activeTab === 'overview' && (
-            <div className="md:col-span-2 xl:col-span-12">
-              <MonitorOverview onOpenTasks={openTasks} onOpenAlerts={openAlerts} onOpenData={openData} />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <GlobalStatusBar
+            onOpenOverview={() => navigateTab('overview')}
+            onOpenHealth={openHealth}
+            onOpenPending={() => openTasks('pending')}
+            onOpenAlerts={() => openAlerts()}
+            onOpenSnapshot={() => openTasks('pending')}
+          />
+
+          <main id="webui-main-content" tabIndex={-1} className="min-h-0 flex-1 pb-14 focus:outline-none">
+            <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2 xl:grid-cols-12">
+              <TabsContent value="overview" className="mt-0 md:col-span-2 xl:col-span-12">
+                <Suspense fallback={<StatePanel variant="loading" title={t('action.loading')} />}>
+                  <MonitorOverview onOpenTasks={openTasks} onOpenAlerts={openAlerts} onOpenData={openData} onOpenConfig={() => navigateTab('config')} />
+                </Suspense>
+              </TabsContent>
+              <TabsContent value="data" className="mt-0 md:col-span-2 xl:col-span-12">
+                <Suspense fallback={<StatePanel variant="loading" title={t('action.loading')} />}>
+                  <MonitorDataCenter focusAwemeId={dataFocus.awemeId} focusToken={dataFocus.token} />
+                </Suspense>
+              </TabsContent>
+              <TabsContent value="ops" className="mt-0 md:col-span-2 xl:col-span-12">
+                <Suspense fallback={<StatePanel variant="loading" title={t('action.loading')} />}>
+                  <MonitorOpsCenter target={opsTarget} />
+                </Suspense>
+              </TabsContent>
+              <TabsContent value="export" className="mt-0 md:col-span-2 xl:col-span-12">
+                <Suspense fallback={<StatePanel variant="loading" title={t('action.loading')} />}>
+                  <MonitorExport />
+                </Suspense>
+              </TabsContent>
+              <TabsContent value="config" className="mt-0 md:col-span-2 xl:col-span-12">
+                <Suspense fallback={<StatePanel variant="loading" title={t('action.loading')} />}>
+                  <CrawlerConfigPanel />
+                </Suspense>
+              </TabsContent>
             </div>
-          )}
-          {activeTab === 'config' && (
-            <div className="md:col-span-2 xl:col-span-12"><CrawlerConfigPanel /></div>
-          )}
-          {activeTab === 'data' && (
-            <div className="md:col-span-2 xl:col-span-12"><MonitorDataCenter focusAwemeId={dataFocusAwemeId} /></div>
-          )}
-          {activeTab === 'ops' && (
-            <div className="md:col-span-2 xl:col-span-12"><MonitorOpsCenter target={opsTarget} /></div>
-          )}
-          {activeTab === 'export' && (
-            <div className="md:col-span-2 xl:col-span-12"><MonitorExport /></div>
-          )}
+          </main>
         </div>
       </Tabs>
 

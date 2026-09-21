@@ -32,8 +32,8 @@ export function MonitorAccountSelector() {
   }, [accounts, activeAccountId, setActiveAccountId])
 
   return (
-    <div className="flex items-center gap-1.5 rounded-md border border-cyber-border-subtle bg-cyber-bg-tertiary px-2 py-1">
-      <UserRound className="h-3.5 w-3.5 text-cyber-text-muted" />
+    <div className="flex min-h-11 min-w-0 flex-1 items-center gap-1.5 rounded-md border border-cyber-border-subtle bg-cyber-bg-tertiary px-2 py-1 lg:min-h-0">
+      <UserRound className="h-3.5 w-3.5 text-cyber-text-muted" aria-hidden="true" />
       <Select
         value={activeAccountId ? String(activeAccountId) : ''}
         onValueChange={(value) => {
@@ -43,7 +43,7 @@ export function MonitorAccountSelector() {
           })
         }}
       >
-        <SelectTrigger className="h-7 min-w-[150px] border-0 bg-transparent px-1 text-[10px] shadow-none">
+        <SelectTrigger className="h-9 min-w-0 flex-1 border-0 bg-transparent px-1 text-[10px] shadow-none lg:h-7">
           <SelectValue placeholder="选择监控账号" />
         </SelectTrigger>
         <SelectContent>

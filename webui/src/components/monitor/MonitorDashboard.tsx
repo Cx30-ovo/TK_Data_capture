@@ -231,7 +231,7 @@ export function MonitorDashboard({ posts, selectedPost, selectedJobs, stageFilte
             <details className="mt-3 rounded-md border border-cyber-border-subtle bg-cyber-bg-tertiary/20">
               <summary className="cursor-pointer px-3 py-2 text-[10px] font-mono text-cyber-text-muted">{t('monitorDashboard.expandTable')}</summary>
               <div className="overflow-x-auto border-t border-cyber-border-subtle">
-                <table className="w-full text-xs font-mono">
+                <table className="data-table data-table-compact w-full text-xs font-mono">
                   <thead>
                     <tr className="text-left text-cyber-text-muted border-b border-cyber-border-subtle">
                       <th className="py-2 pl-3 pr-4">{t('monitorDashboard.stage')}</th>

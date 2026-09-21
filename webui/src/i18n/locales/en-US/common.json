@@ -14,6 +14,7 @@
     "ops": "Tasks & Alerts",
     "export": "Export & Reports"
   },
+  "skipToContent": "Skip to main content",
   "consoleDrawer": {
     "title": "System Console",
     "entries": "{{count}} logs"
@@ -33,6 +34,8 @@
   "sidebar": {
     "title": "MediaCrawler",
     "subtitle": "Douyin account monitor",
+    "createMonitorTask": "New monitor task",
+    "primaryNavigation": "Primary navigation",
     "repository": "View repository",
     "api": "API",
     "local": "LOCAL",

@@ -72,7 +72,7 @@ function classifyTag(tag: string) {
 }
 
 
-function TagBarrage({ tags, onCopyTag }: { tags: string[]; onCopyTag: (tag: string) => void }) {
+function TagBarrage({ tags, paused, onCopyTag }: { tags: string[]; paused: boolean; onCopyTag: (tag: string) => void }) {
   const { t } = useTranslation('config')
   if (tags.length === 0) return <div className="py-16 text-center text-sm text-slate-400">暂无核心标签</div>
   const categoryCounts = tags.reduce<Record<string, number>>((result, tag) => {
@@ -89,7 +89,7 @@ function TagBarrage({ tags, onCopyTag }: { tags: string[]; onCopyTag: (tag: stri
         const lane = index % 10
         const duration = 22 + (index % 7) * 3
         const delay = -((index * 2.9) % duration)
-        return <button key={tag} type="button" onClick={() => onCopyTag(tag)} className={`topic-tag-single rounded-full border px-4 py-1.5 text-sm font-semibold shadow-sm transition-transform hover:scale-105 ${category.style}`} style={{ top: `${8 + lane * 44}px`, animationDuration: `${duration}s`, animationDelay: `${delay}s` }}>#{tag}</button>
+        return <button key={tag} type="button" onClick={() => onCopyTag(tag)} className={`topic-tag-single rounded-full border px-4 py-1.5 text-sm font-semibold shadow-sm transition-transform hover:scale-105 ${paused ? 'topic-tag-paused' : ''} ${category.style}`} style={{ top: `${8 + lane * 44}px`, animationDuration: `${duration}s`, animationDelay: `${delay}s` }}>#{tag}</button>
       })}
       </div>
     </div>
@@ -102,6 +102,7 @@ export function TopicAIReport({ accountId, timeRange, postLimit }: TopicAIReport
   const queryClient = useQueryClient()
   const currentAccountRef = useRef(accountId)
   const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [tagMotionPaused, setTagMotionPaused] = useState(false)
   const historyKey = ['aiTopicHistory', accountId]
   const statusQuery = useQuery({
     queryKey: ['aiAnalysisStatus'],
@@ -158,7 +159,7 @@ export function TopicAIReport({ accountId, timeRange, postLimit }: TopicAIReport
   }
 
   return (
-    <div className="w-full space-y-5 pb-6">
+    <div className="report-theme w-full space-y-5 pb-6">
       <header className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-4">
         <div>
           <div className="flex items-center gap-2 text-xl font-semibold tracking-normal text-slate-900">
@@ -198,7 +199,7 @@ export function TopicAIReport({ accountId, timeRange, postLimit }: TopicAIReport
 
       {typeof accountId !== 'number' ? <ReportNotice tone="warning" text={t('topicReport.singleAccountRequired')} /> : null}
       {typeof accountId === 'number' && !configured && !statusQuery.isLoading ? <ReportNotice tone="warning" text={t('topicReport.notConfigured')} /> : null}
-      {mutation.isPending || historyQuery.isLoading ? <TopicReportSkeleton /> : current ? <TopicReportContent current={current} accountId={accountId} tagCloud={tagCloud} onCopyTag={copyTag} /> : typeof accountId === 'number' && configured ? <EmptyReport onAnalyze={() => mutation.mutate({ force: false, accountId, timeRange, postLimit })} /> : null}
+      {mutation.isPending || historyQuery.isLoading ? <TopicReportSkeleton /> : current ? <TopicReportContent current={current} accountId={accountId} tagCloud={tagCloud} tagMotionPaused={tagMotionPaused} onToggleTagMotion={() => setTagMotionPaused((value) => !value)} onCopyTag={copyTag} /> : typeof accountId === 'number' && configured ? <EmptyReport onAnalyze={() => mutation.mutate({ force: false, accountId, timeRange, postLimit })} /> : null}
     </div>
   )
 }
@@ -220,7 +221,7 @@ function ReportNotice({ text, tone }: { text: string; tone: 'warning' | 'info' }
 }
 
 
-function TopicReportContent({ current, accountId, tagCloud, onCopyTag }: { current: AIAnalysisResponse<AITopicAnalysisResult>; accountId: number | null; tagCloud: string[]; onCopyTag: (tag: string) => void }) {
+function TopicReportContent({ current, accountId, tagCloud, tagMotionPaused, onToggleTagMotion, onCopyTag }: { current: AIAnalysisResponse<AITopicAnalysisResult>; accountId: number | null; tagCloud: string[]; tagMotionPaused: boolean; onToggleTagMotion: () => void; onCopyTag: (tag: string) => void }) {
   const { t } = useTranslation('config')
   const [selectedTheme, setSelectedTheme] = useState<string | null>(null)
   const result = current.result
@@ -235,7 +236,7 @@ function TopicReportContent({ current, accountId, tagCloud, onCopyTag }: { curre
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(300px,0.9fr)_minmax(420px,1.2fr)_minmax(320px,1fr)]">
-        <aside className="flex h-[480px] flex-col rounded-lg border border-slate-200 bg-white">
+        <aside className="flex h-[clamp(420px,calc(100vh-300px),640px)] flex-col rounded-lg border border-slate-200 bg-white">
           <div className="shrink-0 border-b border-slate-200 px-5 py-4"><div className="text-sm font-semibold text-slate-900">{t('topicReport.insightsTitle')}</div><p className="mt-1 text-[11px] leading-5 text-slate-500">{t('topicReport.insightsDescription')}</p></div>
           <div className="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto">
             {rankedClusters.map((cluster, index) => {
@@ -259,9 +260,9 @@ function TopicReportContent({ current, accountId, tagCloud, onCopyTag }: { curre
           </div>
         </aside>
 
-        <section className="flex h-[480px] flex-col overflow-hidden rounded-lg border border-slate-200 bg-gradient-to-b from-white via-blue-50/60 to-white px-4 py-5">
-          <div className="mb-4 shrink-0 text-center"><div className="text-xs font-semibold tracking-[0.12em] text-slate-400">{t('topicReport.topTags')}</div>{activeCluster ? <div className="mt-1 text-[11px] text-[#165DFF]">{activeCluster.name}</div> : null}</div>
-          <TagBarrage tags={activeTags} onCopyTag={onCopyTag} />
+        <section className="flex h-[clamp(420px,calc(100vh-300px),640px)] flex-col overflow-hidden rounded-lg border border-slate-200 bg-gradient-to-b from-white via-blue-50/60 to-white px-4 py-5">
+          <div className="mb-4 shrink-0 text-center"><div className="text-xs font-semibold tracking-[0.12em] text-slate-400">{t('topicReport.topTags')}</div>{activeCluster ? <div className="mt-1 text-[11px] text-[#165DFF]">{activeCluster.name}</div> : null}<button type="button" onClick={onToggleTagMotion} className="mt-2 inline-flex min-h-6 items-center rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-600 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#165DFF]">{tagMotionPaused ? t('topicReport.resumeTags') : t('topicReport.pauseTags')}</button></div>
+          <TagBarrage tags={activeTags} paused={tagMotionPaused} onCopyTag={onCopyTag} />
         </section>
 
         {typeof current.id === 'number' ? <TopicIdeasSection accountId={accountId} topicResultId={current.id} activeTheme={activeCluster?.name || ''} /> : null}

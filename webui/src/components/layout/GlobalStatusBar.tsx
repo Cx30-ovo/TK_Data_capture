@@ -9,11 +9,11 @@ type StatusTone = 'neutral' | 'ok' | 'warning' | 'error' | 'info'
 
 
 const TONE_CLASSES: Record<StatusTone, string> = {
-  neutral: 'border-cyber-border-subtle bg-cyber-bg-tertiary/20 text-cyber-text-secondary',
-  ok: 'border-cyber-neon-green/25 bg-cyber-neon-green/5 text-cyber-neon-green',
-  warning: 'border-cyber-neon-orange/30 bg-cyber-neon-orange/5 text-cyber-neon-orange',
-  error: 'border-cyber-neon-pink/30 bg-cyber-neon-pink/5 text-cyber-neon-pink',
-  info: 'border-cyber-neon-cyan/25 bg-cyber-neon-cyan/5 text-cyber-neon-cyan',
+  neutral: 'border-l-cyber-border-default text-status-neutral',
+  ok: 'border-l-status-success text-status-success',
+  warning: 'border-l-status-warning text-status-warning',
+  error: 'border-l-status-danger text-status-danger',
+  info: 'border-l-status-info text-status-info',
 }
 
 
@@ -55,17 +55,17 @@ function StatusItem({
       type="button"
       onClick={onClick}
       disabled={!onClick}
-      className={`group flex min-w-[150px] flex-1 items-center gap-2 rounded-md border px-2.5 py-1 text-left transition-colors lg:min-w-0 ${TONE_CLASSES[tone]} ${onClick ? 'hover:border-cyber-border-default hover:bg-cyber-bg-tertiary/50' : 'cursor-default'}`}
+      className={`group flex min-w-[154px] flex-1 items-center gap-2.5 rounded-md border border-l-2 border-cyber-border-subtle bg-cyber-bg-panel/80 px-2.5 py-0.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-info lg:min-w-0 ${TONE_CLASSES[tone]} ${onClick ? 'cursor-pointer hover:bg-cyber-bg-tertiary/40 hover:shadow-sm' : 'cursor-default'}`}
     >
       <Icon className="h-3.5 w-3.5 flex-shrink-0" />
       <div className="min-w-0 flex-1">
-        <div className="text-[8px] leading-3 uppercase tracking-wide opacity-70">{label}</div>
+        <div className="text-[10px] leading-3 uppercase tracking-wide text-cyber-text-muted">{label}</div>
         <div className="flex min-w-0 items-baseline gap-1.5">
-          <span className={`truncate text-[11px] font-semibold leading-4 ${valueMono ? 'numeric-value' : 'font-sans'}`}>{value}</span>
-          {detail ? <span className="min-w-0 truncate text-[8px] leading-3 text-cyber-text-muted">{detail}</span> : null}
+          <span className={`truncate text-xs font-semibold leading-4 ${valueMono ? 'numeric-value' : 'font-sans'}`}>{value}</span>
+          {detail ? <span className="min-w-0 truncate text-[10px] leading-3 text-cyber-text-muted">{detail}</span> : null}
         </div>
       </div>
-      {onClick ? <ChevronRight className="h-3 w-3 flex-shrink-0 opacity-20 transition-opacity group-hover:opacity-70" /> : null}
+      {onClick ? <ChevronRight className="h-3 w-3 flex-shrink-0 text-cyber-text-muted opacity-35 transition-opacity group-hover:opacity-75" /> : null}
     </button>
   )
 }
@@ -109,8 +109,8 @@ export function GlobalStatusBar({
   const nextSnapshot = overview?.next_snapshot
 
   return (
-    <section className="sticky top-0 z-20 h-12 flex-shrink-0 border-b border-cyber-border-subtle bg-cyber-bg-panel/95 backdrop-blur">
-      <div className="flex h-full gap-1.5 overflow-x-auto px-2 py-1 lg:grid lg:grid-cols-5 lg:overflow-visible">
+    <section className="app-statusbar sticky top-0 z-20 h-12 flex-shrink-0 overflow-hidden border-b border-cyber-border-subtle bg-cyber-bg-secondary/90 backdrop-blur">
+      <div className="flex h-full gap-2 overflow-x-auto px-2 py-1 lg:grid lg:grid-cols-5 lg:overflow-visible">
         <StatusItem
           icon={Activity}
           label={t('statusbar.collection')}

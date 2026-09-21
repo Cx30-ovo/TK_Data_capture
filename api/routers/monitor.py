@@ -136,7 +136,7 @@ async def run_due_snapshots(limit: int = 50):
 
 
 @router.get("/dashboard")
-async def get_monitor_dashboard(limit: int = 100, account_id: Optional[int] = None, all_accounts: bool = False):
+async def get_monitor_dashboard(limit: Optional[int] = Query(None, ge=1, le=100000), account_id: Optional[int] = None, all_accounts: bool = False):
     return await monitor_service.get_dashboard_data(limit=limit, account_id=account_id, all_accounts=all_accounts)
 
 
@@ -146,7 +146,7 @@ async def get_monitor_overview(account_id: Optional[int] = None, all_accounts: b
 
 
 @router.get("/jobs")
-async def list_monitor_jobs(status: Optional[str] = None, limit: int = 300, account_id: Optional[int] = None, all_accounts: bool = False):
+async def list_monitor_jobs(status: Optional[str] = None, limit: Optional[int] = Query(None, ge=1, le=100000), account_id: Optional[int] = None, all_accounts: bool = False):
     return await monitor_service.list_jobs(status=status, limit=limit, account_id=account_id, all_accounts=all_accounts)
 
 

@@ -1,6 +1,8 @@
+import { useId, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ShieldAlert, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useFocusTrap } from '@/hooks/useFocusTrap'
 
 const LICENSE_KEY = 'mediacrawler_license_accepted'
 
@@ -20,6 +22,10 @@ interface LicenseDisclaimerProps {
 
 export function LicenseDisclaimer({ onAccept }: LicenseDisclaimerProps) {
   const { t } = useTranslation('license')
+  const titleId = useId()
+  const descriptionId = useId()
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(dialogRef)
 
   const handleConfirm = () => {
     localStorage.setItem(LICENSE_KEY, 'true')
@@ -55,7 +61,7 @@ export function LicenseDisclaimer({ onAccept }: LicenseDisclaimerProps) {
           text-align: center;
           padding: 20px;
         ">
-          <div style="font-size: 48px; margin-bottom: 20px;">⛔</div>
+          <div style="font-size: 14px; margin-bottom: 20px; letter-spacing: 0.18em;">ACCESS DENIED</div>
           <div style="font-size: 24px; font-weight: bold; margin-bottom: 10px;">访问已拒绝</div>
           <div style="font-size: 14px; color: #8b949e;">您未同意使用条款，请关闭此标签页</div>
         </div>
@@ -64,79 +70,61 @@ export function LicenseDisclaimer({ onAccept }: LicenseDisclaimerProps) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/95 backdrop-blur-sm flex items-center justify-center z-[100] overflow-y-auto py-8">
-      <div className="bg-cyber-bg-panel border-2 border-cyber-neon-pink rounded-lg shadow-cyber-card p-6 max-w-2xl w-full mx-4 relative">
-        {/* Corner decorations - Pink/Red theme for seriousness */}
-        <div className="absolute top-0 left-0 w-6 h-6 border-t-2 border-l-2 border-cyber-neon-pink" />
-        <div className="absolute top-0 right-0 w-6 h-6 border-t-2 border-r-2 border-cyber-neon-pink" />
-        <div className="absolute bottom-0 left-0 w-6 h-6 border-b-2 border-l-2 border-cyber-neon-pink" />
-        <div className="absolute bottom-0 right-0 w-6 h-6 border-b-2 border-r-2 border-cyber-neon-pink" />
+    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-950/55 px-4 py-6 backdrop-blur-sm">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={descriptionId}
+        tabIndex={-1}
+        className="relative w-full max-w-xl overflow-hidden rounded-xl border border-cyber-border-subtle bg-cyber-bg-panel shadow-[var(--primitive-shadow-lg)] focus:outline-none"
+      >
+        <div className="h-1 bg-brand-red" aria-hidden="true" />
+        <div className="p-5 sm:p-6">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 flex-none items-center justify-center rounded-lg border border-status-danger/20 bg-status-danger/10 text-status-danger">
+              <ShieldAlert className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h2 id={titleId} className="text-lg font-semibold text-cyber-text-primary">
+                {t('title')}
+              </h2>
+              <p id={descriptionId} className="mt-1 text-sm leading-6 text-cyber-text-secondary">
+                {t('warning')}
+              </p>
+            </div>
+          </div>
 
-        {/* Header with warning icon */}
-        <div className="flex items-center justify-center gap-3 mb-4">
-          <ShieldAlert className="w-8 h-8 text-cyber-neon-pink animate-pulse" />
-          <h2 className="text-xl font-mono font-bold text-cyber-neon-pink">
-            {t('title')}
-          </h2>
-        </div>
+          <ol className="mt-5 space-y-2 rounded-lg border border-cyber-border-subtle bg-cyber-bg-tertiary/30 p-3 sm:p-4">
+            {(['line1', 'line2', 'line3', 'line4'] as const).map((line, index) => (
+              <li key={line} className="flex items-start gap-3 rounded-md px-1 py-1.5 text-sm leading-6 text-cyber-text-secondary">
+                <span className="mt-0.5 flex h-5 w-5 flex-none items-center justify-center rounded-full bg-cyber-bg-panel text-xs font-semibold numeric-value text-status-danger">
+                  {index + 1}
+                </span>
+                <span>{t(`content.${line}`)}</span>
+              </li>
+            ))}
+          </ol>
 
-        {/* Warning subtitle */}
-        <div className="text-center mb-4">
-          <span className="text-base font-mono text-cyber-neon-orange">
-            {t('warning')}
-          </span>
-        </div>
-
-        {/* Content box */}
-        <div className="bg-black/50 border border-cyber-neon-pink/30 rounded-lg p-4 mb-4">
-          <ul className="space-y-2 text-sm font-mono">
-            <li className="flex items-start gap-2">
-              <span className="text-cyber-neon-pink font-bold">1.</span>
-              <span className="text-cyber-text-primary">{t('content.line1')}</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-cyber-neon-pink font-bold">2.</span>
-              <span className="text-cyber-text-primary">{t('content.line2')}</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-cyber-neon-pink font-bold">3.</span>
-              <span className="text-cyber-text-primary">{t('content.line3')}</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-cyber-neon-pink font-bold">4.</span>
-              <span className="text-cyber-text-primary">{t('content.line4')}</span>
-            </li>
-          </ul>
-        </div>
-
-        {/* License Link */}
-        <div className="flex justify-center mb-6">
           <a
             href="https://github.com/NanmiCoder/MediaCrawler/blob/main/LICENSE"
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1.5 text-cyber-neon-cyan hover:underline text-sm font-mono"
+            className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-md px-2 text-sm font-medium text-primary transition-colors hover:bg-cyber-bg-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-cyber-bg-panel"
           >
-            <ExternalLink className="w-4 h-4" />
+            <ExternalLink className="h-4 w-4" aria-hidden="true" />
             {t('license')}
           </a>
-        </div>
 
-        {/* Action buttons */}
-        <div className="flex gap-4">
-          <Button
-            onClick={handleDecline}
-            variant="outline"
-            className="flex-1 font-mono border-cyber-neon-pink/50 text-cyber-neon-pink hover:bg-cyber-neon-pink/10"
-          >
-            {t('decline')}
-          </Button>
-          <Button
-            onClick={handleConfirm}
-            className="flex-1 font-mono bg-cyber-neon-green text-black font-bold hover:bg-cyber-neon-green/90"
-          >
-            {t('confirm')}
-          </Button>
+          <div className="mt-5 flex flex-col-reverse gap-3 border-t border-cyber-border-subtle pt-5 sm:flex-row sm:justify-end">
+            <Button onClick={handleDecline} variant="outline" className="sm:w-32">
+              {t('decline')}
+            </Button>
+            <Button onClick={handleConfirm} className="sm:w-64">
+              {t('confirm')}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

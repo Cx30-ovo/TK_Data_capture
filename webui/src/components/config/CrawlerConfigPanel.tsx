@@ -1,14 +1,16 @@
 import type { ComponentType, ReactNode, KeyboardEvent } from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Clock3, Database, Globe, HardDrive, KeyRound, Play, Save, ShieldAlert, Square, X } from 'lucide-react'
+import { Activity, Clock3, Database, Globe, HardDrive, KeyRound, Play, Save, Settings2, ShieldAlert, Square, X } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useCrawlerStore } from '@/store/crawlerStore'
 import { usePlatforms, useConfigOptions, useStartCrawler, useStopCrawler } from '@/hooks/useCrawler'
 import { monitorApi, schedulerApi } from '@/lib/api'
@@ -25,17 +27,15 @@ type SectionProps = {
 
 function Section({ title, description, icon: Icon, children }: SectionProps) {
   return (
-    <section className="rounded-lg glass-panel float-panel overflow-hidden">
-      <header className="flex items-center gap-3 border-b border-cyber-border-subtle/50 bg-cyber-bg-tertiary/30 px-4 py-3">
-        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md border border-cyber-border-subtle bg-cyber-bg-tertiary">
-          <Icon className="h-4 w-4 text-cyber-neon-cyan" />
-        </div>
+    <section className="workspace-panel config-section overflow-hidden">
+      <header className="workspace-panel-header">
+        <span className="workspace-panel-icon"><Icon aria-hidden="true" className="h-4 w-4" /></span>
         <div className="min-w-0">
-          <div className="text-xs font-mono font-semibold tracking-wide text-cyber-text-primary">{title}</div>
-          <div className="truncate text-[10px] leading-snug text-cyber-text-muted">{description}</div>
+          <h2 className="workspace-panel-title">{title}</h2>
+          <p className="workspace-panel-description">{description}</p>
         </div>
       </header>
-      <div className="space-y-4 p-4">{children}</div>
+      <div className="config-section-body space-y-4 p-4">{children}</div>
     </section>
   )
 }
@@ -43,7 +43,7 @@ function Section({ title, description, icon: Icon, children }: SectionProps) {
 function ValueHint({ current, recommended }: { current: string; recommended: string }) {
   const { t } = useTranslation('config')
   return (
-    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[9px] font-mono text-cyber-text-muted">
+    <div className="config-value-hint">
       <span>{t('configCenter.current')}: <span className="text-cyber-text-secondary">{current}</span></span>
       <span>{t('configCenter.recommended')}: <span className="text-cyber-neon-green">{recommended}</span></span>
     </div>
@@ -57,13 +57,17 @@ type FieldProps = {
 }
 
 function Field({ label, hint, children }: FieldProps) {
+  const labelId = useId()
+  const hintId = useId()
   return (
     <div className="space-y-2">
       <div className="space-y-0.5">
-        <Label className="text-xs font-mono text-cyber-text-secondary">{label}</Label>
-        {hint ? <p className="text-[10px] leading-snug text-cyber-text-muted">{hint}</p> : null}
+        <Label id={labelId} className="text-xs font-semibold text-cyber-text-secondary">{label}</Label>
+        {hint ? <p id={hintId} className="text-[10px] leading-snug text-cyber-text-muted">{hint}</p> : null}
       </div>
-      {children}
+      <div role="group" aria-labelledby={labelId} aria-describedby={hint ? hintId : undefined}>
+        {children}
+      </div>
     </div>
   )
 }
@@ -76,6 +80,7 @@ type KeywordInputProps = {
 }
 
 function KeywordInput({ value, onChange, placeholder, disabled }: KeywordInputProps) {
+  const { t } = useTranslation('config')
   const [inputValue, setInputValue] = useState('')
   const keywords = value ? value.split(',').map((keyword) => keyword.trim()).filter(Boolean) : []
 
@@ -91,13 +96,13 @@ function KeywordInput({ value, onChange, placeholder, disabled }: KeywordInputPr
 
   return (
     <div className="space-y-2">
-      <Input value={inputValue} onChange={(event) => setInputValue(event.target.value)} onKeyDown={handleKeyDown} placeholder={placeholder} disabled={disabled} className="h-9 text-xs" />
+      <Input aria-label={placeholder} value={inputValue} onChange={(event) => setInputValue(event.target.value)} onKeyDown={handleKeyDown} placeholder={placeholder} disabled={disabled} className="h-9 text-xs" />
       {keywords.length > 0 ? (
         <div className="flex flex-wrap gap-1.5">
           {keywords.map((keyword) => (
-            <span key={keyword} className="inline-flex items-center gap-1 rounded-md border border-cyber-neon-cyan/30 bg-cyber-neon-cyan/10 px-2 py-1 text-xs font-mono text-cyber-neon-cyan">
+            <span key={keyword} className="config-keyword-chip">
               {keyword}
-              {!disabled ? <button type="button" onClick={() => onChange(keywords.filter((item) => item !== keyword).join(','))}><X className="h-3 w-3" /></button> : null}
+              {!disabled ? <button type="button" aria-label={t('configCenter.removeKeyword', { keyword })} onClick={() => onChange(keywords.filter((item) => item !== keyword).join(','))}><X aria-hidden="true" className="h-3 w-3" /></button> : null}
             </span>
           ))}
         </div>
@@ -108,10 +113,10 @@ function KeywordInput({ value, onChange, placeholder, disabled }: KeywordInputPr
 
 function MaintenanceRow({ label, current, recommended }: { label: string; current: string; recommended: string }) {
   return (
-    <div className="grid grid-cols-[minmax(120px,1fr)_minmax(90px,1fr)_minmax(90px,1fr)] items-center gap-3 border-b border-cyber-border-subtle/40 px-3 py-2.5 last:border-b-0">
-      <div className="text-[11px] font-mono text-cyber-text-primary">{label}</div>
-      <div className="text-[10px] font-mono text-cyber-text-secondary">{current}</div>
-      <div className="text-[10px] font-mono text-cyber-neon-green">{recommended}</div>
+    <div className="config-maintenance-row">
+      <div className="text-[11px] font-medium text-cyber-text-primary">{label}</div>
+      <div className="text-[10px] numeric-value text-cyber-text-secondary">{current}</div>
+      <div className="text-[10px] numeric-value text-status-success">{recommended}</div>
     </div>
   )
 }
@@ -217,11 +222,27 @@ export function CrawlerConfigPanel() {
   }
 
   return (
-    <div className="space-y-3 animate-slide-up">
-      <section className="sticky top-12 z-10 rounded-lg border border-cyber-border-subtle bg-cyber-bg-panel/95 p-2 shadow-[0_4px_16px_rgba(15,23,42,0.08)] backdrop-blur">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="px-1 text-[10px] font-mono text-cyber-text-muted">{t('configCenter.title')}</div>
-          <span className={`rounded border px-2 py-1 text-[9px] font-mono ${anyDirty ? 'border-cyber-neon-orange/40 bg-cyber-neon-orange/5 text-cyber-neon-orange' : 'border-cyber-neon-green/30 bg-cyber-neon-green/5 text-cyber-neon-green'}`}>
+    <div className="workspace-page space-y-3 animate-slide-up">
+      <section className="workspace-hero p-4 sm:p-5">
+        <div className="workspace-hero-grid" aria-hidden="true" />
+        <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="workspace-hero-icon"><Settings2 aria-hidden="true" className="h-5 w-5" /></span>
+            <div className="min-w-0"><Badge variant="secondary" className="mb-2"><Activity aria-hidden="true" className="h-3 w-3" />{t('configCenter.workspaceLabel')}</Badge><h1 className="workspace-title">{t('configCenter.title')}</h1><p className="workspace-description">{t('configCenter.description')}</p></div>
+          </div>
+          <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-3 sm:min-w-[390px]">
+            <div className="workspace-stat-card"><span>{t('configCenter.saveStatus')}</span><b className={anyDirty ? 'text-status-warning' : 'text-status-success'}>{anyDirty ? t('configCenter.unsavedShort') : t('configCenter.savedShort')}</b></div>
+            <div className="workspace-stat-card"><span>{t('configCenter.crawlerStatus')}</span><b>{isRunning ? t('configCenter.running') : t('configCenter.idle')}</b></div>
+            <div className="workspace-stat-card"><span>{t('configCenter.scheduleStatus')}</span><b>{scheduleEnabled ? t('configCenter.on') : t('configCenter.off')}</b></div>
+          </div>
+        </div>
+      </section>
+
+      <section className="workspace-toolbar z-10 p-3 lg:sticky lg:top-12">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+          <div className="flex min-w-0 items-center gap-2"><span className="workspace-toolbar-icon"><Save aria-hidden="true" className="h-4 w-4" /></span><div><div className="text-xs font-semibold text-cyber-text-primary">{t('configCenter.actionTitle')}</div><div className="text-[10px] text-cyber-text-muted">{t('configCenter.saveHint')}</div></div></div>
+          <div className="flex flex-wrap items-center gap-2 xl:ml-auto">
+          <span className={`status-chip ${anyDirty ? 'border-status-warning/30 bg-status-warning/10 text-status-warning' : 'border-status-success/30 bg-status-success/10 text-status-success'}`}>
             {anyDirty ? t('configCenter.unsaved') : t('configCenter.saved')}
           </span>
           <Button
@@ -230,47 +251,48 @@ export function CrawlerConfigPanel() {
             size="sm"
             onClick={handleSaveAll}
             disabled={!anyDirty || scheduleInvalid || (monitorDirty && !monitorValid) || isBusy}
-            className="h-8 font-mono text-[10px]"
+            className="min-h-9 text-xs"
           >
-            <Save className="h-3.5 w-3.5" />
+            <Save aria-hidden="true" className="h-3.5 w-3.5" />
             {t('configCenter.saveAll')}
           </Button>
           <Button
             type="button"
+            variant="outline"
             size="sm"
             onClick={() => {
               setDangerAction(null)
               startCrawler(config)
             }}
             disabled={isBusy || isRunning || scheduleInvalid}
-            className="h-8 font-mono text-[10px]"
+            className="min-h-9 text-xs"
           >
-            <Play className="h-3.5 w-3.5" />
+            <Play aria-hidden="true" className="h-3.5 w-3.5" />
             {isStarting ? t('button.initiating') : t('button.initiateScan')}
           </Button>
           <Button
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => dangerAction === 'stop' ? runDangerAction() : setDangerAction('stop')}
+            onClick={() => setDangerAction('stop')}
             disabled={!isRunning || isStopping}
-            className="h-8 font-mono text-[10px] text-cyber-neon-pink"
+            className="min-h-9 text-xs text-status-danger"
           >
-            <Square className="h-3.5 w-3.5" />
-            {dangerAction === 'stop' ? t('configCenter.danger.confirmAgain') : t('button.terminate')}
+            <Square aria-hidden="true" className="h-3.5 w-3.5" />
+            {t('button.terminate')}
           </Button>
           <Button
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => dangerAction === 'disable-schedule' ? runDangerAction() : setDangerAction('disable-schedule')}
+            onClick={() => setDangerAction('disable-schedule')}
             disabled={!scheduleEnabled || disableSchedule.isPending}
-            className="h-8 font-mono text-[10px] text-cyber-neon-orange"
+            className="min-h-9 text-xs text-status-warning"
           >
-            <Clock3 className="h-3.5 w-3.5" />
-            {dangerAction === 'disable-schedule' ? t('configCenter.danger.confirmAgain') : t('configCenter.danger.disableSchedule')}
+            <Clock3 aria-hidden="true" className="h-3.5 w-3.5" />
+            {t('configCenter.danger.disableSchedule')}
           </Button>
-          <span className="ml-auto hidden text-[9px] font-mono text-cyber-text-muted xl:inline">{t('configCenter.saveHint')}</span>
+          </div>
         </div>
       </section>
 
@@ -302,15 +324,15 @@ export function CrawlerConfigPanel() {
             <ValueHint current={config.crawler_type} recommended="creator" />
           </Field>
           <Field label={t('field.startPage')}>
-            <Input type="number" min={1} value={config.start_page} onChange={(event) => updateConfig({ start_page: parseInt(event.target.value) || 1 })} disabled={isDisabled} className="h-9 text-xs" />
+            <Input aria-label={t('field.startPage')} type="number" min={1} value={config.start_page} onChange={(event) => updateConfig({ start_page: parseInt(event.target.value) || 1 })} disabled={isDisabled} className="h-9 text-xs" />
             <ValueHint current={String(config.start_page)} recommended="1" />
           </Field>
         </div>
 
         <Field label={t('field.timeRange')} hint={t('field.timeRangeHint')}>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Input type="date" value={config.start_time || ''} onChange={(event) => updateConfig({ start_time: event.target.value })} disabled={isDisabled} className="h-9 text-xs" />
-            <Input type="date" value={config.end_time || ''} onChange={(event) => updateConfig({ end_time: event.target.value })} disabled={isDisabled} className="h-9 text-xs" />
+            <Input aria-label={t('field.timeRange')} type="date" value={config.start_time || ''} onChange={(event) => updateConfig({ start_time: event.target.value })} disabled={isDisabled} className="h-9 text-xs" />
+            <Input aria-label={t('field.timeRange')} type="date" value={config.end_time || ''} onChange={(event) => updateConfig({ end_time: event.target.value })} disabled={isDisabled} className="h-9 text-xs" />
           </div>
           <ValueHint current={`${config.start_time || '-'} ~ ${config.end_time || '-'}`} recommended={t('configCenter.values.unlimited')} />
         </Field>
@@ -355,11 +377,11 @@ export function CrawlerConfigPanel() {
 
         <div className="grid grid-cols-1 gap-3 border-t border-cyber-border-subtle/50 pt-4 md:grid-cols-[220px_1fr]">
           <div className="flex items-center gap-3 rounded-md border border-cyber-border-subtle bg-cyber-bg-tertiary/20 p-3">
-            <Checkbox checked={scheduleEnabled} onCheckedChange={(checked) => setScheduleEnabled(checked === true)} disabled={isDisabled || saveSchedule.isPending} />
+            <Checkbox aria-label={t('schedule.enable')} checked={scheduleEnabled} onCheckedChange={(checked) => setScheduleEnabled(checked === true)} disabled={isDisabled || saveSchedule.isPending} />
             <div><div className="text-xs font-mono text-cyber-text-primary">{t('schedule.enable')}</div><div className="mt-0.5 text-[9px] font-mono text-cyber-text-muted">{schedulerStatus?.next_run_at ? new Date(schedulerStatus.next_run_at).toLocaleString() : t('schedule.never')}</div></div>
           </div>
           <Field label={t('schedule.times')} hint={t('schedule.timesHint')}>
-            <div className="flex items-center gap-2"><Clock3 className="h-4 w-4 text-cyber-text-muted" /><Input value={scheduleTimesText} onChange={(event) => setScheduleTimesText(event.target.value)} placeholder="14:00, 18:00" disabled={isDisabled || !scheduleEnabled} className="h-9 text-xs font-mono" /></div>
+            <div className="flex items-center gap-2"><Clock3 className="h-4 w-4 text-cyber-text-muted" /><Input aria-label={t('schedule.times')} value={scheduleTimesText} onChange={(event) => setScheduleTimesText(event.target.value)} placeholder="14:00, 18:00" disabled={isDisabled || !scheduleEnabled} className="h-9 text-xs font-mono" /></div>
             {invalidScheduleTimes.length > 0 ? <p className="text-[10px] font-mono text-cyber-neon-orange">{t('schedule.invalid')}: {invalidScheduleTimes.join(', ')}</p> : null}
             <ValueHint current={scheduleTimesText || '-'} recommended="14:00, 18:00" />
           </Field>
@@ -371,8 +393,8 @@ export function CrawlerConfigPanel() {
           <ShieldAlert className="mt-0.5 h-4 w-4 flex-shrink-0 text-cyber-neon-cyan" />
           {t('configCenter.maintenanceReadOnly')}
         </div>
-        <div className="overflow-hidden rounded-md border border-cyber-border-subtle">
-          <div className="grid grid-cols-[minmax(120px,1fr)_minmax(90px,1fr)_minmax(90px,1fr)] gap-3 bg-cyber-bg-tertiary/40 px-3 py-2 text-[9px] font-mono text-cyber-text-muted">
+        <div className="overflow-x-auto rounded-md border border-cyber-border-subtle">
+          <div className="grid min-w-[28rem] grid-cols-[minmax(120px,1fr)_minmax(90px,1fr)_minmax(90px,1fr)] gap-3 bg-cyber-bg-tertiary/40 px-3 py-2 text-[9px] font-medium text-cyber-text-muted">
             <span>{t('configCenter.parameter')}</span><span>{t('configCenter.current')}</span><span>{t('configCenter.recommended')}</span>
           </div>
           <MaintenanceRow label={t('configCenter.maintenance.autoBackup')} current={health?.system_config?.auto_backup ? t('configCenter.on') : t('configCenter.off')} recommended={t('configCenter.on')} />
@@ -384,6 +406,25 @@ export function CrawlerConfigPanel() {
         </div>
       </Section>
       </div>
+
+      <Dialog open={dangerAction !== null} onOpenChange={(open) => { if (!open) setDangerAction(null) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {dangerAction === 'stop' ? t('configCenter.danger.stopCrawler') : t('configCenter.danger.disableSchedule')}
+            </DialogTitle>
+            <DialogDescription>
+              {dangerAction === 'stop' ? t('configCenter.danger.stopHint') : t('configCenter.danger.disableScheduleHint')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setDangerAction(null)}>{t('configCenter.danger.cancel')}</Button>
+            <Button type="button" variant="destructive" disabled={isStopping || disableSchedule.isPending} onClick={runDangerAction}>
+              {t('configCenter.danger.confirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   )

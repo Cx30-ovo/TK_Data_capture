@@ -4,29 +4,29 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md font-sans text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-cyber-neon-cyan disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
+  'inline-flex cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-lg font-sans text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-cyber-bg-panel disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
   {
     variants: {
       variant: {
         default:
-          'border border-cyber-neon-cyan/50 bg-cyber-neon-cyan/15 text-cyber-neon-cyan hover:bg-cyber-neon-cyan/20 active:bg-cyber-neon-cyan/25',
+          'border border-primary bg-[var(--button-bg)] text-[var(--button-fg)] hover:bg-[var(--button-hover-bg)] active:bg-primary',
         destructive:
-          'border border-cyber-neon-pink/50 bg-cyber-neon-pink/15 text-cyber-neon-pink hover:bg-cyber-neon-pink/20 active:bg-cyber-neon-pink/25',
+          'border border-destructive bg-destructive text-white hover:bg-destructive/90 active:bg-destructive',
         outline:
-          'border border-cyber-border-DEFAULT bg-transparent hover:bg-cyber-bg-tertiary hover:border-cyber-border-default',
+          'border border-cyber-border-default bg-cyber-bg-panel text-cyber-text-secondary hover:bg-cyber-bg-tertiary hover:text-cyber-text-primary',
         secondary:
-          'border border-cyber-neon-green/50 bg-cyber-neon-green/15 text-cyber-neon-green hover:bg-cyber-neon-green/20',
+          'border border-status-info/20 bg-status-info/10 text-status-info hover:bg-status-info/15',
         ghost:
-          'hover:bg-cyber-bg-tertiary hover:text-cyber-text-primary',
+          'text-cyber-text-secondary hover:bg-cyber-bg-tertiary hover:text-cyber-text-primary',
         link:
-          'text-cyber-neon-cyan underline-offset-4 hover:underline',
+          'text-primary underline-offset-4 hover:underline',
         glow:
-          'border border-cyber-neon-cyan/50 bg-cyber-neon-cyan/15 text-cyber-neon-cyan hover:bg-cyber-neon-cyan/20',
+          'border border-primary bg-primary text-primary-foreground hover:bg-primary/90',
       },
       size: {
         default: 'h-10 px-4 py-2',
-        sm: 'h-9 rounded-md px-3',
-        lg: 'h-12 rounded-md px-8 text-base',
+        sm: 'h-9 rounded-lg px-3',
+        lg: 'h-12 rounded-lg px-8 text-base',
         icon: 'h-10 w-10',
       },
     },

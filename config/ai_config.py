@@ -34,6 +34,7 @@ AI_MAX_TOKENS = max(1, _as_int(os.getenv("AI_MAX_TOKENS"), 8192))
 AI_TEMPERATURE = max(0.0, min(2.0, _as_float(os.getenv("AI_TEMPERATURE"), 0.2)))
 AI_MAX_RETRIES = max(0, _as_int(os.getenv("AI_MAX_RETRIES"), 2))
 AI_ANALYSIS_CACHE_TTL_HOURS = max(1, _as_int(os.getenv("AI_ANALYSIS_CACHE_TTL_HOURS"), 24))
+AI_ENABLE_THINKING = _as_bool(os.getenv("AI_ENABLE_THINKING", "false"), default=False)
 
 
 ai_config = {
@@ -47,6 +48,7 @@ ai_config = {
     "temperature": AI_TEMPERATURE,
     "max_retries": AI_MAX_RETRIES,
     "cache_ttl_hours": AI_ANALYSIS_CACHE_TTL_HOURS,
+    "enable_thinking": AI_ENABLE_THINKING,
 }
 
 
@@ -61,5 +63,6 @@ __all__ = [
     "AI_TEMPERATURE",
     "AI_MAX_RETRIES",
     "AI_ANALYSIS_CACHE_TTL_HOURS",
+    "AI_ENABLE_THINKING",
     "ai_config",
 ]

@@ -20,25 +20,21 @@ const fileIcons: Record<string, typeof FileJson> = {
   xls: FileSpreadsheet,
 }
 
-const fileStyles: Record<string, { icon: string; border: string; badge: string }> = {
+const fileStyles: Record<string, { icon: string; badge: string }> = {
   json: {
     icon: 'text-cyber-neon-yellow',
-    border: 'hover:border-cyber-neon-yellow/50',
     badge: 'border-cyber-neon-yellow/30 bg-cyber-neon-yellow/10 text-cyber-neon-yellow'
   },
   csv: {
     icon: 'text-cyber-neon-green',
-    border: 'hover:border-cyber-neon-green/50',
     badge: 'border-cyber-neon-green/30 bg-cyber-neon-green/10 text-cyber-neon-green'
   },
   xlsx: {
     icon: 'text-cyber-neon-cyan',
-    border: 'hover:border-cyber-neon-cyan/50',
     badge: 'border-cyber-neon-cyan/30 bg-cyber-neon-cyan/10 text-cyber-neon-cyan'
   },
   xls: {
     icon: 'text-cyber-neon-cyan',
-    border: 'hover:border-cyber-neon-cyan/50',
     badge: 'border-cyber-neon-cyan/30 bg-cyber-neon-cyan/10 text-cyber-neon-cyan'
   },
 }
@@ -50,8 +46,7 @@ export function FileCard({ file }: FileCardProps) {
   const Icon = fileIcons[file.type] || FileText
   const styles = fileStyles[file.type] || {
     icon: 'text-cyber-text-muted',
-    border: 'hover:border-cyber-neon-cyan/50',
-    badge: 'border-cyber-border-DEFAULT bg-cyber-bg-tertiary text-cyber-text-secondary'
+    badge: 'border-cyber-border-default bg-cyber-bg-tertiary text-cyber-text-secondary'
   }
 
   // 检查是否支持预览
@@ -64,13 +59,10 @@ export function FileCard({ file }: FileCardProps) {
 
   return (
     <>
-      <Card className={`relative overflow-hidden card-scan group transition-all ${styles.border} hover:shadow-[0_0_15px_rgb(var(--cyber-neon-cyan)/0.15)]`}>
-        {/* Scan effect overlay */}
-        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-cyber-neon-cyan/5 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700 pointer-events-none" />
-
-        <CardContent className="p-4 relative">
+      <Card variant="interactive" className="overflow-hidden">
+        <CardContent className="relative p-4">
           <div className="flex items-start gap-3">
-            <div className={`p-2 rounded bg-cyber-bg-panel border border-cyber-border-DEFAULT ${styles.icon}`}>
+            <div className={`rounded-md border border-cyber-border-default bg-cyber-bg-tertiary/40 p-2 shadow-sm ${styles.icon}`}>
               <Icon className="w-6 h-6" />
             </div>
             <div className="flex-1 min-w-0">
@@ -93,7 +85,7 @@ export function FileCard({ file }: FileCardProps) {
             <Badge variant="outline" className={`text-[10px] font-mono ${styles.badge}`}>
               .{file.type.toUpperCase()}
             </Badge>
-            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="flex gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
               {isPreviewable && (
                 <Button
                   variant="ghost"

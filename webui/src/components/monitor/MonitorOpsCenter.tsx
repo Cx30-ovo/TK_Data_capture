@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, Bell, ListChecks, Server } from 'lucide-react'
+import { Activity, AlertTriangle, Bell, ListChecks, Server, ShieldCheck } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 import { MonitorTasks } from '@/components/monitor/MonitorTasks'
 import { MonitorHealth } from '@/components/monitor/MonitorHealth'
 import { MonitorAlerts, type AlertViewFilter } from '@/components/monitor/MonitorAlerts'
@@ -50,15 +51,18 @@ function MetricButton({
   return (
     <button
       type="button"
+      aria-pressed={active}
+      data-active={active ? 'true' : 'false'}
+      data-tone={tone}
       onClick={onClick}
-      className={`rounded-md border p-3 text-left transition-colors ${TONE_CLASSES[tone]} ${active ? 'ring-1 ring-cyber-neon-cyan/50' : 'hover:border-cyber-border-default'}`}
+      className={`ops-metric-card ${TONE_CLASSES[tone]}`}
     >
-      <div className="flex items-center gap-2 text-[10px] font-mono text-cyber-text-muted">
-        <Icon className="h-3.5 w-3.5" />
+      <div className="flex items-center gap-2 text-[11px] font-medium text-cyber-text-muted">
+        <span className="ops-metric-icon"><Icon aria-hidden="true" className="h-4 w-4" /></span>
         {label}
       </div>
-      <div className="mt-1.5 text-xl font-mono text-cyber-text-primary">{value}</div>
-      {detail ? <div className="mt-0.5 truncate text-[9px] font-mono text-cyber-text-muted">{detail}</div> : null}
+      <div className="mt-3 text-2xl font-semibold numeric-value text-cyber-text-primary">{value}</div>
+      {detail ? <div className="mt-1 text-[10px] leading-4 text-cyber-text-muted">{detail}</div> : null}
     </button>
   )
 }
@@ -105,7 +109,26 @@ export function MonitorOpsCenter({ target }: { target?: MonitorOpsTarget }) {
   }
 
   return (
-    <Tabs value={section} onValueChange={setSection} className="space-y-3 animate-slide-up">
+    <Tabs value={section} onValueChange={setSection} className="workspace-page space-y-3 animate-slide-up">
+      <section className="workspace-hero p-4 sm:p-5">
+        <div className="workspace-hero-grid" aria-hidden="true" />
+        <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="workspace-hero-icon"><ShieldCheck aria-hidden="true" className="h-5 w-5" /></span>
+            <div className="min-w-0">
+              <Badge variant="secondary" className="mb-2"><Activity aria-hidden="true" className="h-3 w-3" />{t('opsCenter.workspaceLabel')}</Badge>
+              <h1 className="workspace-title">{t('opsCenter.title')}</h1>
+              <p className="workspace-description">{t('opsCenter.description')}</p>
+            </div>
+          </div>
+          <div className="workspace-status-card">
+            <span className={`workspace-status-dot ${overallStatus === 'ok' ? 'bg-status-success' : overallStatus === 'error' ? 'bg-status-danger' : 'bg-status-warning'}`} />
+            <div><div className="text-[10px] text-cyber-text-muted">{t('opsCenter.systemSummary')}</div><div className="mt-0.5 text-sm font-semibold text-cyber-text-primary">{t(`health.status.${overallStatus}`)}</div></div>
+            <div className="ml-auto text-right"><div className="text-[10px] text-cyber-text-muted">{t('opsCenter.attentionSummary')}</div><div className="mt-0.5 text-sm font-semibold numeric-value text-cyber-text-primary">{abnormalCount + unreadCount}</div></div>
+          </div>
+        </div>
+      </section>
+
       <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
         <MetricButton
           active={section === 'tasks' && taskStatus === 'pending'}
@@ -145,18 +168,18 @@ export function MonitorOpsCenter({ target }: { target?: MonitorOpsTarget }) {
         />
       </div>
 
-      <TabsList className="h-auto w-fit max-w-full flex-wrap justify-start gap-1 p-1">
-        <TabsTrigger value="tasks" className="gap-2 px-3 py-1.5 text-xs">
-          <ListChecks className="w-3.5 h-3.5" />
+      <TabsList className="ops-section-nav h-auto w-full flex-wrap justify-start gap-1 p-1" aria-label={t('opsCenter.navigationLabel')}>
+        <TabsTrigger value="tasks" className="min-h-10 gap-2 px-4 py-2 text-xs">
+          <ListChecks aria-hidden="true" className="h-4 w-4" />
           {t('opsCenter.tasks')}
         </TabsTrigger>
-        <TabsTrigger value="alerts" className="gap-2 px-3 py-1.5 text-xs">
-          <Bell className="w-3.5 h-3.5" />
+        <TabsTrigger value="alerts" className="min-h-10 gap-2 px-4 py-2 text-xs">
+          <Bell aria-hidden="true" className="h-4 w-4" />
           {t('opsCenter.alerts')}
           {unreadCount > 0 ? <span className={`text-[10px] ${statusColor}`}>{unreadCount}</span> : null}
         </TabsTrigger>
-        <TabsTrigger value="health" className="gap-2 px-3 py-1.5 text-xs">
-          <Server className="w-3.5 h-3.5" />
+        <TabsTrigger value="health" className="min-h-10 gap-2 px-4 py-2 text-xs">
+          <Server aria-hidden="true" className="h-4 w-4" />
           {t('opsCenter.health')}
         </TabsTrigger>
       </TabsList>

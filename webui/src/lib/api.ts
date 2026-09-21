@@ -390,7 +390,7 @@ export interface AITopicCluster {
     aweme_id: string
     title: string
     interaction_total: number
-    create_time: number
+    create_time?: number
   }>
 }
 
@@ -436,6 +436,10 @@ export interface AITopicIdea {
   audience: string
   why_now: string
   evidence: string[]
+  viral_reason: string
+  title_formula: string
+  title_variants: string[]
+  writing_notes: string
   expected_performance: 'high' | 'medium' | 'low'
   difficulty: 'high' | 'medium' | 'low'
   risk_notes: string
@@ -530,11 +534,11 @@ export const monitorApi = {
     api.post<MonitorRunResult>('/monitor/discover', null, { params: { sec_user_id: secUserId } }),
   runDueSnapshots: (limit = 50) =>
     api.post<MonitorRunResult>('/monitor/snapshots/run-due', null, { params: { limit } }),
-  getDashboard: (limit = 100) =>
-    api.get<MonitorDashboard>('/monitor/dashboard', { params: { limit, ...accountParams() } }),
+  getDashboard: (limit?: number) =>
+    api.get<MonitorDashboard>('/monitor/dashboard', { params: { ...(limit === undefined ? {} : { limit }), ...accountParams() } }),
   getOverview: () => api.get<MonitorOverview>('/monitor/overview', { params: accountParams() }),
-  getJobs: (status?: string, limit = 300) =>
-    api.get<{ jobs: MonitorJob[]; count: number }>('/monitor/jobs', { params: { status, limit, ...accountParams() } }),
+  getJobs: (status?: string, limit?: number) =>
+    api.get<{ jobs: MonitorJob[]; count: number }>('/monitor/jobs', { params: { ...(status ? { status } : {}), ...(limit === undefined ? {} : { limit }), ...accountParams() } }),
   retryJob: (jobId: number) => api.post('/monitor/jobs/' + jobId + '/retry'),
   retryFailedJobs: (jobIds?: number[]) =>
     api.post<{ updated: number }>('/monitor/jobs/retry-failed', null, {

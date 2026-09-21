@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { BrainCircuit, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, History, Lightbulb, RefreshCw, Search, Sparkles, TriangleAlert } from 'lucide-react'
+import { BarChart3, BrainCircuit, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, History, Lightbulb, RefreshCw, Search, Sparkles, TriangleAlert } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -102,7 +102,7 @@ export function LifecycleAIReport({ accountId, timeRange, postLimit, posts }: Li
   const titleById = useMemo(() => new Map(posts.map((post) => [post.aweme_id, post.title || post.aweme_id])), [posts])
 
   return (
-    <div className="w-full space-y-5 pb-6">
+    <div className="report-theme w-full space-y-5 pb-6">
       <header className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-4">
         <div>
           <div className="flex items-center gap-2 text-xl font-semibold text-slate-900"><BrainCircuit className="h-5 w-5 text-[#722ED1]" />{t('lifecycleReport.title')}</div>
@@ -167,7 +167,7 @@ function RhythmDistribution({ result }: { result: AILifecycleAnalysisResult }) {
       <div className="text-base font-semibold text-slate-900">{t('lifecycleReport.rhythmTitle')}</div>
       <p className="mt-1 text-xs text-slate-500">{t('lifecycleReport.rhythmDescription')}</p>
       <div className="mt-5 flex flex-wrap items-center gap-6">
-        <div className="h-32 w-32 shrink-0 rounded-full" style={{ background: `conic-gradient(${gradient})` }}><div className="m-5 flex h-[88px] w-[88px] items-center justify-center rounded-full bg-white"><div className="text-center"><div className="text-xl font-semibold text-slate-900">{total}</div><div className="text-[10px] text-slate-500">{t('lifecycleReport.posts')}</div></div></div></div>
+        <div role="img" aria-label={`${t('lifecycleReport.rhythmTitle')}: ${entries.map(([type, count]) => `${t(`lifecycle.types.${type}`, { defaultValue: type })} ${count}`).join(', ')}`} className="h-32 w-32 shrink-0 rounded-full" style={{ background: `conic-gradient(${gradient})` }}><div className="m-5 flex h-[88px] w-[88px] items-center justify-center rounded-full bg-white"><div className="text-center"><div className="text-xl font-semibold text-slate-900">{total}</div><div className="text-[10px] text-slate-500">{t('lifecycleReport.posts')}</div></div></div></div>
         <div className="min-w-[220px] flex-1 space-y-2">{entries.map(([type, count]) => <div key={type} className="flex items-center gap-2 text-xs"><span className="h-2.5 w-2.5 rounded-full" style={{ background: TYPE_COLORS[type] || TYPE_COLORS.unknown }} /><span className="text-slate-600">{t(`lifecycle.types.${type}`, { defaultValue: type })}</span><span className="ml-auto font-semibold text-slate-900">{count}</span><span className="w-12 text-right text-slate-500">{total ? (count / total * 100).toFixed(1) : '0.0'}%</span></div>)}</div>
       </div>
       {dominant ? <div className="mt-4 rounded-md bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800">{t('lifecycleReport.dominantConclusion', { type: t(`lifecycle.types.${dominant[0]}`, { defaultValue: dominant[0] }), percent: dominantPercent.toFixed(1) })}</div> : null}
@@ -217,15 +217,15 @@ function LifecycleReportContent({ current, posts, insightMap, titleById }: { cur
         <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-200 px-5 py-4">
           <div><div className="text-base font-semibold text-slate-900">{t('lifecycleReport.detailTitle')}</div><p className="mt-1 text-xs text-slate-500">{t('lifecycleReport.detailDescription')}</p></div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="relative"><Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" /><Input value={searchText} onChange={(event) => setSearchText(event.target.value)} placeholder={t('lifecycleReport.searchPlaceholder')} className="h-8 w-[240px] pl-8 text-xs" /></div>
+            <div className="relative"><Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" /><Input aria-label={t('lifecycleReport.searchPlaceholder')} value={searchText} onChange={(event) => setSearchText(event.target.value)} placeholder={t('lifecycleReport.searchPlaceholder')} className="h-8 w-[240px] pl-8 text-xs" /></div>
             <Select value={sortOrder} onValueChange={(value) => setSortOrder(value as 'newest' | 'oldest')}><SelectTrigger className="h-8 w-[130px] text-xs"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="newest">{t('lifecycleReport.sortNewest')}</SelectItem><SelectItem value="oldest">{t('lifecycleReport.sortOldest')}</SelectItem></SelectContent></Select>
             <span className="text-xs text-slate-400">{t('lifecycleReport.detailTotal', { count: filteredPosts.length })}</span>
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] text-xs">
-            <thead className="bg-slate-50 text-left text-[11px] text-slate-500"><tr><th className="px-4 py-3">{t('lifecycleReport.post')}</th><th className="px-4 py-3">{t('lifecycleReport.publishDate')}</th><th className="px-4 py-3">{t('lifecycleReport.rhythm')}</th><th className="px-4 py-3">{t('lifecycleReport.snapshotCompleteness')}</th><th className="px-4 py-3">{t('lifecycleReport.aiDiagnosis')}</th></tr></thead>
-            <tbody>{tablePosts.map((post) => { const type = lifecycleType(post); const insight = insightMap.get(post.aweme_id); return <tr key={post.aweme_id} className="border-t border-slate-100 hover:bg-slate-50/70"><td className="max-w-[320px] px-4 py-3"><div title={post.title} className="truncate font-medium text-slate-800">{post.title || post.aweme_id}</div></td><td className="whitespace-nowrap px-4 py-3 text-slate-500">{formatDate(post.create_time)}</td><td className="whitespace-nowrap px-4 py-3"><span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] text-slate-600">{t(`lifecycle.types.${type}`, { defaultValue: type })}</span></td><td className="px-4 py-3"><SnapshotTimeline post={post} /></td><td className="px-4 py-3 text-slate-600"><RichText text={replacePostIds(insight?.pattern || fallbackDiagnosis(type), titleById)} /></td></tr> })}</tbody>
+          <table className="data-table w-full min-w-[980px] text-xs">
+            <thead className="bg-slate-50 text-left text-[11px] text-slate-500"><tr><th scope="col" className="px-4 py-3">{t('lifecycleReport.post')}</th><th scope="col" className="px-4 py-3">{t('lifecycleReport.publishDate')}</th><th scope="col" className="px-4 py-3">{t('lifecycleReport.rhythm')}</th><th scope="col" className="px-4 py-3">{t('lifecycleReport.snapshotCompleteness')}</th><th scope="col" className="px-4 py-3">{t('lifecycleReport.aiDiagnosis')}</th></tr></thead>
+            <tbody>{tablePosts.map((post) => { const type = lifecycleType(post); const insight = insightMap.get(post.aweme_id); return <tr key={post.aweme_id} className="border-t border-slate-100 hover:bg-slate-50/70"><td className="max-w-[320px] px-4 py-3"><div title={post.title} className="truncate font-medium text-slate-800">{post.title || post.aweme_id}</div></td><td className="whitespace-nowrap px-4 py-3 text-slate-500">{formatDate(post.create_time)}</td><td className="whitespace-nowrap px-4 py-3"><span className="status-chip border-cyber-border-subtle bg-cyber-bg-tertiary/45 text-cyber-text-secondary">{t(`lifecycle.types.${type}`, { defaultValue: type })}</span></td><td className="px-4 py-3"><SnapshotTimeline post={post} /></td><td className="px-4 py-3 text-slate-600"><RichText text={replacePostIds(insight?.pattern || fallbackDiagnosis(type), titleById)} /></td></tr> })}</tbody>
           </table>
         </div>
         {tablePosts.length === 0 ? <div className="px-5 py-12 text-center text-sm text-slate-500">{t('lifecycleReport.noMatchingPosts')}</div> : null}
@@ -253,7 +253,7 @@ function LifecycleEmpty({ onAnalyze }: { onAnalyze: () => void }) {
   const { t } = useTranslation('config')
   return (
     <div className="rounded-lg border border-slate-200 bg-white px-6 py-16 text-center">
-      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-2xl">📊</div>
+      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-slate-500"><BarChart3 className="h-6 w-6" /></div>
       <div className="mt-4 text-base font-semibold text-slate-900">{t('lifecycleReport.emptyTitle')}</div>
       <p className="mx-auto mt-2 max-w-xl text-sm leading-7 text-slate-500">{t('lifecycleReport.emptyDescription')}</p>
       <Button type="button" onClick={onAnalyze} className="mt-5 bg-[#722ED1] text-white hover:bg-[#5A1FA8]"><Sparkles className="h-4 w-4" />{t('lifecycleReport.analyze')}</Button>

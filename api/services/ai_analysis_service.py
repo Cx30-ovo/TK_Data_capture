@@ -17,9 +17,9 @@ from database.monitor_repository import monitor_repository
 from .ai_model_service import AIServiceError, ai_model_service
 
 
-TOPIC_PROMPT_VERSION = "topic-v6"
+TOPIC_PROMPT_VERSION = "topic-v8"
 LIFECYCLE_PROMPT_VERSION = "lifecycle-v2"
-TOPIC_IDEAS_PROMPT_VERSION = "topic-ideas-v2"
+TOPIC_IDEAS_PROMPT_VERSION = "topic-ideas-v4"
 TIME_RANGE_SECONDS = {
     "24h": 24 * 60 * 60,
     "7d": 7 * 24 * 60 * 60,
@@ -29,12 +29,12 @@ LIFECYCLE_STAGES = ("1h", "6h", "24h", "72h")
 
 
 TOPIC_SYSTEM_PROMPT = """
-你是抖音内容研究分析师。你只能使用输入中已有的作品 ID、标题、正文、标签和互动数据。
+你是抖音内容研究分析师。你只能使用输入中已有的作品 ID、标题、标签、最新点赞、最新收藏、最新评论和最新总互动。
 
 任务要求：
 1. 将作品归纳为 3 到 6 个主题聚类，描述保持简洁。
 2. 每个聚类必须返回主题名称、简短说明、作品 ID 列表、4 到 10 个关键词和 0 到 1 之间的置信度。
-3. 不允许编造作品 ID、互动数字或发布时间。
+3. 不允许编造作品 ID、标签或互动数字。
 4. 不允许把相关性表述为确定因果。
 5. 信息不足时写入 data_limits，不要猜测。
 6. summary 必须比较表现最好和较低的主题。
@@ -99,13 +99,16 @@ TOPIC_IDEAS_SYSTEM_PROMPT = """
 你是抖音内容策划编辑。你会收到一份已经生成的主题分析报告，只能基于报告中的主题表现、标签、代表作特征和行动建议提出选题方案。
 
 任务要求：
-1. 生成 3 到 6 个具体、可执行、彼此有差异的选题方案。
+1. 生成 3 到 4 个具体、可执行、彼此有差异的选题方案。
 2. 选题必须能够直接指导拍摄或制作，不能只写抽象主题。
 3. 优先选择互动表现好、内容供给有差异、可持续跟踪的选题。
 4. 不允许编造报告中没有的数据、事件或作品。
 5. 不希望直接重复报告里的行动建议，必须转成具体内容方案。
 6. 每个方案说明推荐理由、内容角度、适合形式、目标受众、预期表现和风险。
-7. strategy_points 必须明确区分数据依据、排除范围和生成原则。
+7. strategy_points 必须明确区分数据依据、排除范围和生成原则，每组最多 3 条。
+8. 每个选题必须解释 viral_reason：为什么这个标题在现有数据下更可能获得互动。
+9. title_formula 提炼标题结构，title_variants 给出 2 个可直接使用的改写标题。
+10. writing_notes 用一句话解释为什么使用这些词、结构或情绪表达。
 
 输出 JSON 结构：
 {
@@ -123,6 +126,10 @@ TOPIC_IDEAS_SYSTEM_PROMPT = """
       "audience": "目标受众",
       "why_now": "基于主题报告的数据依据和推荐原因",
       "evidence": ["引用的主题名称或代表作特征"],
+      "viral_reason": "为什么这个标题可能爆，必须引用报告中的主题表现",
+      "title_formula": "标题结构公式",
+      "title_variants": ["改写标题1", "改写标题2"],
+      "writing_notes": "解释为什么这样写更容易被点击或产生互动",
       "expected_performance": "high / medium / low",
       "difficulty": "low / medium / high",
       "risk_notes": "执行风险或注意事项",
@@ -173,6 +180,8 @@ class AIAnalysisService:
         force: bool = False,
     ) -> dict[str, Any]:
         normalized_scope = self._normalize_scope(scope, default_limit=100)
+        normalized_scope["today_only"] = True
+        normalized_scope["analysis_date"] = datetime.now().date().isoformat()
         normalized_scope["post_limit"] = min(int(normalized_scope["post_limit"]), 20)
         posts, snapshots_by_post = await self._load_source(sec_user_id, normalized_scope)
         if len(posts) < 3:
@@ -190,7 +199,7 @@ class AIAnalysisService:
             source_data={"posts": topic_posts},
             prompt_version=TOPIC_PROMPT_VERSION,
             system_prompt=TOPIC_SYSTEM_PROMPT,
-            max_tokens=int(config.AI_MAX_TOKENS),
+            max_tokens=max(int(config.AI_MAX_TOKENS), 12288),
             force=force,
             normalizer=lambda result: self._normalize_topic_result(result, topic_posts),
         )
@@ -203,6 +212,8 @@ class AIAnalysisService:
         force: bool = False,
     ) -> dict[str, Any]:
         normalized_scope = self._normalize_scope(scope, default_limit=12)
+        normalized_scope["today_only"] = True
+        normalized_scope["analysis_date"] = datetime.now().date().isoformat()
         normalized_scope["post_limit"] = min(int(normalized_scope["post_limit"]), 12)
         load_scope = {**normalized_scope, "post_limit": 50}
         posts, snapshots_by_post = await self._load_source(sec_user_id, load_scope)
@@ -298,6 +309,9 @@ class AIAnalysisService:
         if time_range != "all":
             cutoff = int(time.time()) - TIME_RANGE_SECONDS[time_range]
             posts = [post for post in posts if int(post.first_seen_at or 0) >= cutoff]
+        if scope.get("today_only"):
+            today = datetime.now().date()
+            posts = [post for post in posts if datetime.fromtimestamp(int(post.create_time)).date() == today]
 
         snapshots = await self._monitor_repository.list_snapshots(
             sec_user_id=sec_user_id,
@@ -354,7 +368,21 @@ class AIAnalysisService:
         }
 
     def _build_topic_posts(self, posts: list, snapshots_by_post: dict[str, list]) -> list[dict[str, Any]]:
-        return [self._post_base_payload(post, snapshots_by_post.get(post.aweme_id, [])) for post in posts]
+        result = []
+        for post in posts:
+            latest = (snapshots_by_post.get(post.aweme_id) or [None])[-1]
+            result.append({
+                "aweme_id": post.aweme_id,
+                "title": self._truncate(post.title or post.aweme_id, 180),
+                "tags": self._tags(post),
+                "latest": {
+                    "liked_count": int(latest.liked_count or 0) if latest else 0,
+                    "collected_count": int(latest.collected_count or 0) if latest else 0,
+                    "comment_count": int(latest.comment_count or 0) if latest else 0,
+                    "interaction_total": self._interaction(latest) if latest else 0,
+                },
+            })
+        return result
 
     def _build_lifecycle_posts(self, posts: list, snapshots_by_post: dict[str, list]) -> list[dict[str, Any]]:
         result = []
@@ -433,6 +461,8 @@ class AIAnalysisService:
     def _scope_key(analysis_type: str, scope: Mapping[str, Any]) -> str:
         if "source_result_id" in scope:
             return f"{analysis_type}:source={scope['source_result_id']}"
+        if scope.get("analysis_date"):
+            return f"{analysis_type}:date={scope['analysis_date']}:limit={scope['post_limit']}"
         return f"{analysis_type}:{scope['time_range']}:limit={scope['post_limit']}"
 
     async def _run_cached_analysis(
@@ -537,7 +567,6 @@ class AIAnalysisService:
                     "aweme_id": row["aweme_id"],
                     "title": row.get("title") or row["aweme_id"],
                     "interaction_total": int((row.get("latest") or {}).get("interaction_total") or 0),
-                    "create_time": row.get("create_time"),
                 }
                 for row in representatives
             ],
@@ -700,12 +729,16 @@ class AIAnalysisService:
                 "audience": _safe_text(row.get("audience"), 300),
                 "why_now": _safe_text(row.get("why_now"), 700),
                 "evidence": _string_list(row.get("evidence"), 8),
+                "viral_reason": _safe_text(row.get("viral_reason"), 1000),
+                "title_formula": _safe_text(row.get("title_formula"), 300),
+                "title_variants": _string_list(row.get("title_variants"), 5),
+                "writing_notes": _safe_text(row.get("writing_notes"), 1000),
                 "expected_performance": expected if expected in {"high", "medium", "low"} else "medium",
                 "difficulty": difficulty if difficulty in {"high", "medium", "low"} else "medium",
                 "risk_notes": _safe_text(row.get("risk_notes"), 500),
                 "priority": index + 1,
             })
-            if len(ideas) >= 6:
+            if len(ideas) >= 4:
                 break
         if not ideas:
             raise AIServiceError("AI topic ideas did not contain valid ideas.", code="invalid_analysis")

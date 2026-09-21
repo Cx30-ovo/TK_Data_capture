@@ -48,12 +48,16 @@ class ReportService:
     async def export_posts(
         self,
         file_format: str = "csv",
-        limit: int = 10000,
+        limit: Optional[int] = None,
         sec_user_id: Optional[str] = None,
     ) -> Path:
         self._ensure_dirs()
         posts = await monitor_repository.list_posts(limit=limit, sec_user_id=sec_user_id)
-        snapshots = await monitor_repository.list_snapshots(limit=100000, sec_user_id=sec_user_id)
+        snapshots = await monitor_repository.list_snapshots(
+            aweme_ids=[post.aweme_id for post in posts],
+            limit=None,
+            sec_user_id=sec_user_id,
+        )
 
         latest_snapshots: dict[str, object] = {}
         snapshot_counts: dict[str, int] = {}
@@ -120,7 +124,7 @@ class ReportService:
                 continue
             if sec_user_id and post.sec_user_id != sec_user_id:
                 continue
-            snapshots = await monitor_repository.list_snapshots(aweme_id=aweme_id, limit=10000, sec_user_id=sec_user_id)
+            snapshots = await monitor_repository.list_snapshots(aweme_id=aweme_id, limit=None, sec_user_id=sec_user_id)
             for snapshot in sorted(snapshots, key=lambda item: item.captured_at):
                 rows.append([
                     post.aweme_id,
@@ -164,9 +168,13 @@ class ReportService:
         start = self._period_start(period)
         start_ts = int(start.timestamp())
         now = datetime.now()
-        posts = await monitor_repository.list_posts(limit=10000, sec_user_id=sec_user_id)
-        snapshots = await monitor_repository.list_snapshots(limit=100000, sec_user_id=sec_user_id)
-        jobs = await monitor_repository.list_jobs(limit=100000, sec_user_id=sec_user_id)
+        posts = await monitor_repository.list_posts(limit=None, sec_user_id=sec_user_id)
+        snapshots = await monitor_repository.list_snapshots(
+            aweme_ids=[post.aweme_id for post in posts],
+            limit=None,
+            sec_user_id=sec_user_id,
+        )
+        jobs = await monitor_repository.list_jobs(limit=None, sec_user_id=sec_user_id)
 
         new_posts = [post for post in posts if post.first_seen_at >= start_ts]
         period_snapshots = [snapshot for snapshot in snapshots if snapshot.captured_at >= start_ts]

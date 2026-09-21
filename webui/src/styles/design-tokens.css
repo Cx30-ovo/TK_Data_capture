@@ -1,0 +1,137 @@
+/* Design Tokens - Auto-generated */
+/* Do not edit directly - modify tokens.json instead */
+
+/* === PRIMITIVES === */
+:root {
+  --primitive-color-gray-50: 246 248 251;
+  --primitive-color-gray-100: 241 245 249;
+  --primitive-color-gray-200: 226 232 240;
+  --primitive-color-gray-300: 203 213 225;
+  --primitive-color-gray-400: 148 163 184;
+  --primitive-color-gray-500: 100 116 139;
+  --primitive-color-gray-600: 71 85 105;
+  --primitive-color-gray-700: 51 65 85;
+  --primitive-color-gray-800: 30 41 59;
+  --primitive-color-gray-900: 15 23 42;
+  --primitive-color-gray-950: 11 17 32;
+  --primitive-color-blue-50: 239 246 255;
+  --primitive-color-blue-500: 59 130 246;
+  --primitive-color-blue-600: 37 99 235;
+  --primitive-color-blue-700: 29 78 216;
+  --primitive-color-red-500: 254 44 85;
+  --primitive-color-red-600: 217 26 63;
+  --primitive-color-red-700: 190 18 60;
+  --primitive-color-cyan-400: 37 244 238;
+  --primitive-color-cyan-600: 14 116 144;
+  --primitive-color-green-500: 34 197 94;
+  --primitive-color-green-600: 22 163 74;
+  --primitive-color-amber-500: 245 158 11;
+  --primitive-color-amber-600: 217 119 6;
+  --primitive-color-amber-700: 194 65 12;
+  --primitive-color-purple-600: 124 58 237;
+  --primitive-color-white: 255 255 255;
+  --primitive-space-1: 0.25rem;
+  --primitive-space-2: 0.5rem;
+  --primitive-space-3: 0.75rem;
+  --primitive-space-4: 1rem;
+  --primitive-space-5: 1.25rem;
+  --primitive-space-6: 1.5rem;
+  --primitive-space-8: 2rem;
+  --primitive-space-10: 2.5rem;
+  --primitive-space-12: 3rem;
+  --primitive-font-size-xs: 0.75rem;
+  --primitive-font-size-sm: 0.875rem;
+  --primitive-font-size-md: 1rem;
+  --primitive-font-size-lg: 1.125rem;
+  --primitive-font-size-xl: 1.25rem;
+  --primitive-font-size-2xl: 1.5rem;
+  --primitive-radius-sm: 0.25rem;
+  --primitive-radius-md: 0.5rem;
+  --primitive-radius-lg: 0.75rem;
+  --primitive-radius-full: 9999px;
+  --primitive-shadow-sm: 0 1px 2px rgb(15 23 42 / 0.04);
+  --primitive-shadow-md: 0 8px 24px rgb(15 23 42 / 0.08);
+  --primitive-shadow-lg: 0 24px 70px rgb(15 23 42 / 0.18);
+  --primitive-duration-fast: 150ms;
+  --primitive-duration-normal: 200ms;
+  --primitive-duration-slow: 300ms;
+}
+
+/* === SEMANTIC === */
+:root {
+  --color-background: 246 248 251;
+  --color-surface: 255 255 255;
+  --color-surface-muted: 241 245 249;
+  --color-foreground: 15 23 42;
+  --color-foreground-secondary: 51 65 85;
+  --color-foreground-muted: 100 116 139;
+  --color-border: 226 232 240;
+  --color-border-strong: 203 213 225;
+  --color-primary: 37 99 235;
+  --color-primary-hover: 29 78 216;
+  --color-primary-contrast: 255 255 255;
+  --color-brand: 254 44 85;
+  --color-brand-strong: 217 26 63;
+  --color-cyan: 37 244 238;
+  --color-success: 22 163 74;
+  --color-warning: 194 65 12;
+  --color-danger: 190 18 60;
+  --color-info: 14 116 144;
+  --color-purple: 124 58 237;
+  --space-component: 0.75rem;
+  --space-section: 1.5rem;
+}
+
+/* === COMPONENTS === */
+:root {
+  --button-bg: rgb(var(--color-primary));
+  --button-fg: rgb(var(--color-primary-contrast));
+  --button-hover-bg: rgb(var(--color-primary-hover));
+  --button-radius: 0.5rem;
+  --button-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+  --input-bg: rgb(var(--color-surface));
+  --input-border: rgb(var(--color-border));
+  --input-focus-ring: rgb(var(--color-primary));
+  --input-radius: 0.5rem;
+  --card-bg: rgb(var(--color-surface));
+  --card-border: rgb(var(--color-border));
+  --card-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+  --card-radius: 0.5rem;
+  --badge-radius: 9999px;
+  --badge-font-size: 0.75rem;
+  --table-header-bg: rgb(var(--color-surface-muted));
+  --table-row-bg: rgb(var(--color-surface));
+  --table-row-hover-bg: rgb(var(--color-surface-muted));
+  --table-border: rgb(var(--color-border));
+  --sidebar-width: 15.5rem;
+  --sidebar-bg: rgb(var(--color-surface));
+  --sidebar-border: rgb(var(--color-border));
+  --statusbar-height: 3rem;
+  --statusbar-bg: rgb(var(--color-surface));
+  --console-collapsed-height: 2.5rem;
+  --banner-bg: rgb(var(--color-surface));
+  --banner-border: rgb(var(--color-border));
+  --banner-title: rgb(var(--color-foreground));
+  --banner-muted: rgb(var(--color-foreground-muted));
+  --banner-brand: rgb(var(--color-brand));
+  --banner-tech: rgb(var(--color-cyan));
+  --banner-radius: 0.75rem;
+  --banner-min-height: 14rem;
+}
+
+/* === DARK MODE === */
+.dark {
+  --color-background: 11 17 32;
+  --color-surface: 17 24 39;
+  --color-surface-muted: 30 41 59;
+  --color-foreground: 230 237 243;
+  --color-foreground-secondary: 203 213 225;
+  --color-foreground-muted: 148 163 184;
+  --color-border: 30 41 59;
+  --color-border-strong: 51 65 85;
+  --color-success: 74 222 128;
+  --color-warning: 251 146 60;
+  --color-danger: 251 113 133;
+  --color-info: 34 211 238;
+  --color-purple: 192 132 252;
+}

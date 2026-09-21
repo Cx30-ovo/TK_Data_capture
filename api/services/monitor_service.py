@@ -633,12 +633,17 @@ class MonitorService:
             },
         }
 
-    async def get_dashboard_data(self, limit: int = 100, account_id: Optional[int] = None, all_accounts: bool = False) -> dict:
+    async def get_dashboard_data(self, limit: Optional[int] = None, account_id: Optional[int] = None, all_accounts: bool = False) -> dict:
         """Return the data needed by the WebUI monitoring dashboard."""
         account = await self._resolve_account(account_id, all_accounts=all_accounts)
         sec_user_id = account.sec_user_id if account else None
         posts = await monitor_repository.list_posts(limit=limit, sec_user_id=sec_user_id)
-        snapshots = await monitor_repository.list_snapshots(limit=1000, sec_user_id=sec_user_id)
+        post_count = await monitor_repository.count_posts(sec_user_id=sec_user_id)
+        snapshots = await monitor_repository.list_snapshots(
+            aweme_ids=[post.aweme_id for post in posts],
+            limit=None,
+            sec_user_id=sec_user_id,
+        )
         job_counts = await monitor_repository.get_job_counts(sec_user_id=sec_user_id)
 
         snapshots_by_post: dict[str, list[dict]] = {}
@@ -666,7 +671,7 @@ class MonitorService:
                 "last_discovered_at": account.last_discovered_at,
             } if account else None,
             "counts": {
-                "posts": len(posts),
+                "posts": post_count,
                 "snapshots": len(snapshots),
                 "jobs": job_counts,
             },
@@ -780,7 +785,7 @@ class MonitorService:
             "recent_abnormal_jobs": abnormal_jobs,
         }
 
-    async def list_jobs(self, status: Optional[str] = None, limit: int = 300, account_id: Optional[int] = None, all_accounts: bool = False) -> dict:
+    async def list_jobs(self, status: Optional[str] = None, limit: Optional[int] = None, account_id: Optional[int] = None, all_accounts: bool = False) -> dict:
         account = await self._resolve_account(account_id, all_accounts=all_accounts)
         jobs = await monitor_repository.list_jobs(
             status=status,

@@ -93,7 +93,10 @@ async def discover_monitor_account(account_id: int):
     account = await monitor_repository.get_monitored_account_by_id(account_id)
     if account is None:
         raise HTTPException(status_code=404, detail=f"Monitor account not found: {account_id}")
-    return await monitor_service.discover_account(sec_user_id=account.sec_user_id)
+    return await monitor_service.discover_account(
+        sec_user_id=account.sec_user_id,
+        backfill_covers=True,
+    )
 
 
 @router.get("/status")
@@ -127,7 +130,10 @@ async def save_monitor_config(request: MonitorAccountConfigRequest):
 
 @router.post("/discover")
 async def run_monitor_discovery(sec_user_id: Optional[str] = None):
-    return await monitor_service.discover_account(sec_user_id=sec_user_id)
+    return await monitor_service.discover_account(
+        sec_user_id=sec_user_id,
+        backfill_covers=True,
+    )
 
 
 @router.post("/snapshots/run-due")

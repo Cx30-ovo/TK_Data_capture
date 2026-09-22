@@ -105,20 +105,45 @@ class DouyinMonitorFetcher:
     @staticmethod
     def _extract_cover_url(item: dict) -> str:
         """Return the best available static cover URL for a video or image post."""
+        def first_url(payload: Any) -> str:
+            if isinstance(payload, str):
+                return payload.strip()
+            if isinstance(payload, (list, tuple)):
+                for value in reversed(payload):
+                    if url := first_url(value):
+                        return url
+                return ""
+            if not isinstance(payload, dict):
+                return ""
+            for key in ("url_list", "download_url_list", "urls", "url", "uri"):
+                if url := first_url(payload.get(key)):
+                    return url
+            return ""
+
         video = item.get("video") or {}
-        for key in ("raw_cover", "origin_cover", "cover", "dynamic_cover"):
-            payload = video.get(key) or {}
-            urls = (payload.get("url_list") or []) if isinstance(payload, dict) else []
-            if url := next((value for value in reversed(urls) if isinstance(value, str) and value), ""):
+        for key in (
+            "raw_cover",
+            "origin_cover",
+            "cover",
+            "dynamic_cover",
+            "animated_cover",
+            "ai_dynamic_cover",
+        ):
+            if url := first_url(video.get(key)):
                 return url
 
         images = item.get("images") or (item.get("image_post_info") or {}).get("images") or []
         if images:
             first_image = images[0] or {}
-            for key in ("origin_url", "url", "download_url"):
-                payload = first_image.get(key) or {}
-                urls = (payload.get("url_list") or []) if isinstance(payload, dict) else []
-                if url := next((value for value in reversed(urls or []) if isinstance(value, str) and value), ""):
+            for key in (
+                "origin_url",
+                "display_image",
+                "owner_watermark_image",
+                "download_url",
+                "url",
+                "url_list",
+            ):
+                if url := first_url(first_image.get(key)):
                     return url
         return ""
 
@@ -301,6 +326,7 @@ class MonitorService:
         sec_user_id: Optional[str] = None,
         fetcher=None,
         max_pages: Optional[int] = None,
+        backfill_covers: bool = False,
     ) -> dict:
         async with self._lock:
             if self._crawler_is_busy():
@@ -315,7 +341,14 @@ class MonitorService:
                 return {"status": "skipped", "reason": "no enabled monitored account"}
 
             known_ids = await monitor_repository.list_post_ids(account.sec_user_id, account.platform)
-            page_limit = max_pages if max_pages is not None else (1 if not known_ids else 3)
+            if max_pages is not None:
+                page_limit = max_pages
+            elif backfill_covers:
+                # Douyin usually returns about 18 posts per page. Manual discovery
+                # scans the full known range so legacy rows can receive covers.
+                page_limit = min(50, max(3, (len(known_ids) + 17) // 18 + 2))
+            else:
+                page_limit = 1 if not known_ids else 3
             owns_fetcher = fetcher is None
             if owns_fetcher:
                 fetcher = DouyinMonitorFetcher()
@@ -330,6 +363,20 @@ class MonitorService:
                     known_ids=known_ids,
                     max_pages=page_limit,
                 )
+                if backfill_covers:
+                    for item in posts:
+                        if item.get("cover_url"):
+                            continue
+                        try:
+                            metrics = await active_fetcher.fetch_metrics(item["aweme_id"])
+                        except Exception as exc:
+                            await crawler_manager.add_log(
+                                f"[Monitor] Cover backfill skipped for {item['aweme_id']}: {exc}",
+                                "warning",
+                            )
+                            continue
+                        if metrics.get("cover_url"):
+                            item["cover_url"] = metrics["cover_url"]
 
             created_posts = 0
             created_jobs = 0
@@ -379,6 +426,7 @@ class MonitorService:
                 "fetched": len(posts),
                 "created_posts": created_posts,
                 "created_jobs": created_jobs,
+                "updated_covers": sum(1 for item in posts if item.get("cover_url")),
             }
 
     async def run_due_snapshots(

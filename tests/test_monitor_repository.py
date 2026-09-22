@@ -247,9 +247,55 @@ def test_monitor_fetcher_extracts_video_and_image_post_covers():
         "aweme_id": "image-cover",
         "images": [{"origin_url": {"url_list": ["https://example.com/image-cover.jpg"]}}],
     }
+    alternate_video_post = {
+        "aweme_id": "alternate-video-cover",
+        "video": {"animated_cover": {"url": "https://example.com/animated-cover.jpg"}},
+    }
+    alternate_image_post = {
+        "aweme_id": "alternate-image-cover",
+        "image_post_info": {
+            "images": [{"display_image": {"url_list": ["https://example.com/display-image.jpg"]}}]
+        },
+    }
 
     assert DouyinMonitorFetcher._normalize_post(video_post, "sec")['cover_url'] == "https://example.com/video-cover.jpg"
     assert DouyinMonitorFetcher._normalize_post(image_post, "sec")['cover_url'] == "https://example.com/image-cover.jpg"
+    assert DouyinMonitorFetcher._normalize_post(alternate_video_post, "sec")['cover_url'] == "https://example.com/animated-cover.jpg"
+    assert DouyinMonitorFetcher._normalize_post(alternate_image_post, "sec")['cover_url'] == "https://example.com/display-image.jpg"
+
+
+@pytest.mark.asyncio
+async def test_manual_discovery_backfills_missing_cover_from_detail(isolated_monitor_db):
+    await db_session.create_tables("sqlite")
+    account = await monitor_repository.upsert_monitored_account(sec_user_id="cover_backfill_user")
+    fetcher = FakeFetcher(
+        posts=[{
+            "platform": "dy",
+            "aweme_id": "cover_backfill_post",
+            "sec_user_id": account.sec_user_id,
+            "title": "cover backfill",
+            "desc": "cover backfill",
+            "create_time": BASE_TIME,
+            "canonical_url": "https://www.douyin.com/video/cover_backfill_post",
+        }],
+        metrics={"cover_backfill_post": {
+            "liked_count": 1,
+            "collected_count": 2,
+            "comment_count": 3,
+            "share_count": 4,
+            "cover_url": "https://example.com/detail-cover.jpg",
+        }},
+    )
+
+    result = await MonitorService().discover_account(
+        sec_user_id=account.sec_user_id,
+        fetcher=fetcher,
+        backfill_covers=True,
+    )
+
+    stored_post = await monitor_repository.get_post("cover_backfill_post")
+    assert stored_post.cover_url == "https://example.com/detail-cover.jpg"
+    assert result["updated_covers"] == 1
 
 
 @pytest.mark.asyncio

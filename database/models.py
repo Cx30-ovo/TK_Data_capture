@@ -336,6 +336,7 @@ class DouyinPost(Base):
     create_time = Column(BigInteger, nullable=False, index=True, comment='作品发布时间戳')
     first_seen_at = Column(BigInteger, nullable=False, index=True, comment='首次发现时间戳')
     canonical_url = Column(Text, nullable=False, comment='规范作品URL')
+    cover_url = Column(Text, comment='作品封面URL')
     status = Column(String(32), nullable=False, default='active', index=True, comment='作品状态: active/deleted/unavailable')
     source = Column(String(64), default='creator_monitor', comment='数据来源')
     add_ts = Column(BigInteger, comment='添加时间戳')

@@ -66,7 +66,7 @@ class ReportService:
             snapshot_counts[snapshot.aweme_id] = snapshot_counts.get(snapshot.aweme_id, 0) + 1
 
         headers = [
-            "作品ID", "发布时间", "首次发现时间", "标题", "正文", "规范URL",
+            "作品ID", "发布时间", "首次发现时间", "标题", "正文", "规范URL", "封面URL",
             "快照数量", "最新点赞", "最新收藏", "最新评论", "最新分享",
         ]
         rows = []
@@ -79,6 +79,7 @@ class ReportService:
                 post.title or "",
                 post.desc or "",
                 post.canonical_url,
+                post.cover_url or "",
                 snapshot_counts.get(post.aweme_id, 0),
                 latest.liked_count if latest else 0,
                 latest.collected_count if latest else 0,

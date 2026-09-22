@@ -320,6 +320,10 @@
     "sortLabel": "Sort by",
     "postSearchPlaceholder": "Search title or post ID",
     "noMatchingPosts": "No matching posts",
+    "coverAlt": "Cover for {{title}}",
+    "noCover": "No cover",
+    "openCover": "Open cover in a new window: {{title}}",
+    "openPost": "Open post in a new window: {{title}}",
     "postAndPublish": "Post / published",
     "tableCaption": "Latest interaction snapshots, sortable by published time or interaction metrics",
     "sort": {

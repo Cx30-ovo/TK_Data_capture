@@ -95,6 +95,9 @@ async def _migrate_monitor_columns(conn) -> None:
         "douyin_monitor_jobs": {
             "sec_user_id": "ALTER TABLE douyin_monitor_jobs ADD COLUMN sec_user_id VARCHAR(255) NOT NULL DEFAULT ''",
         },
+        "douyin_posts": {
+            "cover_url": "ALTER TABLE douyin_posts ADD COLUMN cover_url TEXT",
+        },
         "monitor_alerts": {
             "sec_user_id": "ALTER TABLE monitor_alerts ADD COLUMN sec_user_id VARCHAR(255) NOT NULL DEFAULT ''",
         },

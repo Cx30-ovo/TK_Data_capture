@@ -172,6 +172,7 @@ export interface MonitorDashboardPost {
   create_time: number
   first_seen_at: number
   canonical_url: string
+  cover_url: string | null
   status: string
   snapshots: MonitorSnapshot[]
 }

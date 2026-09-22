@@ -541,6 +541,7 @@ class MonitorRepository:
         desc: str,
         create_time: int,
         canonical_url: str,
+        cover_url: str = "",
         platform: str = "dy",
         status: str = "active",
         source: str = "creator_monitor",
@@ -563,6 +564,7 @@ class MonitorRepository:
                     create_time=int(create_time),
                     first_seen_at=now,
                     canonical_url=canonical_url,
+                    cover_url=cover_url,
                     status=status,
                     source=source,
                     add_ts=now,
@@ -575,11 +577,30 @@ class MonitorRepository:
                 post.desc = desc
                 post.create_time = int(create_time)
                 post.canonical_url = canonical_url
+                if cover_url:
+                    post.cover_url = cover_url
                 post.status = status
                 post.source = source
                 post.last_modify_ts = now
             await session.flush()
             return post, created
+
+    async def update_post_cover_url(self, aweme_id: str, cover_url: str, platform: str = "dy") -> Optional[DouyinPost]:
+        """Persist a newly observed cover URL without overwriting it with an empty value."""
+        if not cover_url:
+            return None
+        async with get_monitor_session() as session:
+            stmt = select(DouyinPost).where(
+                DouyinPost.platform == platform,
+                DouyinPost.aweme_id == aweme_id,
+            )
+            post = (await session.execute(stmt)).scalar_one_or_none()
+            if post is None:
+                return None
+            post.cover_url = cover_url
+            post.last_modify_ts = _now_seconds()
+            await session.flush()
+            return post
 
     async def create_snapshot_jobs(
         self,

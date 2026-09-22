@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Activity, ArrowDown, ArrowUp, ArrowUpDown, BarChart3, Bookmark, CalendarRange, Clock3, Crosshair, Flame, Gauge, Heart, MessageSquare, Search, Share2, Sparkles } from 'lucide-react'
+import { Activity, ArrowDown, ArrowUp, ArrowUpDown, BarChart3, Bookmark, CalendarRange, Clock3, Crosshair, Flame, Gauge, Heart, ImageIcon, MessageSquare, Search, Share2, Sparkles } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -77,6 +77,42 @@ function MetricValue({ label, value, max, textClass, barClass }: { label: string
       <span aria-hidden="true" className="post-overview-metric-track"><span className={`post-overview-metric-fill ${barClass}`} style={{ width: `${width}%` }} /></span>
     </div>
   )
+}
+
+
+function PostCover({ post }: { post: MonitorDashboardPost }) {
+  const { t } = useTranslation('config')
+  const [failed, setFailed] = useState(false)
+  useEffect(() => setFailed(false), [post.cover_url])
+  const image = post.cover_url && !failed ? (
+    <img
+      src={post.cover_url}
+      alt={t('performance.coverAlt', { title: post.title || post.aweme_id })}
+      width={64}
+      height={48}
+      loading="lazy"
+      decoding="async"
+      referrerPolicy="no-referrer"
+      onError={() => setFailed(true)}
+      className="h-full w-full object-cover transition-transform duration-200 motion-reduce:transition-none group-hover/cover:scale-[1.03]"
+    />
+  ) : (
+    <span className="grid h-full w-full place-items-center bg-cyber-bg-tertiary text-cyber-text-muted" aria-label={t('performance.noCover')}>
+      <ImageIcon aria-hidden="true" className="h-4 w-4" />
+    </span>
+  )
+
+  return post.cover_url && !failed ? (
+    <a
+      href={post.cover_url}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={t('performance.openCover', { title: post.title || post.aweme_id })}
+      className="group/cover block h-12 w-16 shrink-0 overflow-hidden rounded-md border border-cyber-border-subtle bg-cyber-bg-tertiary shadow-sm outline-none transition-colors hover:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/40"
+    >
+      {image}
+    </a>
+  ) : <span className="block h-12 w-16 shrink-0 overflow-hidden rounded-md border border-cyber-border-subtle">{image}</span>
 }
 
 
@@ -306,7 +342,7 @@ export function MonitorPerformanceOverview({ posts, focusAwemeId, focusToken }: 
                 {overviewRows.map(({ post, snapshot, total }, index) => (
                   <tr key={post.aweme_id} data-aweme-id={post.aweme_id} data-selected={highlightedAwemeId === post.aweme_id ? 'true' : undefined} className="group">
                     <td className="post-overview-primary-cell sticky left-0 z-10 max-w-[420px] px-4 py-3">
-                      <div className="flex min-w-0 items-start gap-3"><span aria-hidden="true" className="post-overview-index font-mono">{String(index + 1).padStart(2, '0')}</span><div className="min-w-0 flex-1"><div className="flex min-w-0 items-center gap-2"><div title={post.title || post.aweme_id} className="min-w-0 flex-1 truncate text-sm font-semibold text-cyber-text-primary">{post.title || post.aweme_id}</div><span className={`status-chip shrink-0 ${stageBadgeClass(snapshot?.stage)}`}>{snapshot?.stage || t('performance.noSnapshot')}</span></div><div className="mt-1.5 flex min-w-0 items-center gap-3 text-[11px] text-cyber-text-muted"><span className="inline-flex shrink-0 items-center gap-1"><Clock3 aria-hidden="true" className="h-3 w-3" />{formatPublishedAt(post.create_time)}</span><span title={post.aweme_id} className="truncate font-mono">ID {post.aweme_id}</span></div></div></div>
+                      <div className="flex min-w-0 items-start gap-3"><span aria-hidden="true" className="post-overview-index font-mono">{String(index + 1).padStart(2, '0')}</span><PostCover post={post} /><div className="min-w-0 flex-1"><div className="flex min-w-0 items-center gap-2"><a href={post.canonical_url} target="_blank" rel="noopener noreferrer" title={post.title || post.aweme_id} aria-label={t('performance.openPost', { title: post.title || post.aweme_id })} className="min-w-0 flex-1 truncate text-sm font-semibold text-cyber-text-primary outline-none transition-colors hover:text-primary hover:underline focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-primary/40">{post.title || post.aweme_id}</a><span className={`status-chip shrink-0 ${stageBadgeClass(snapshot?.stage)}`}>{snapshot?.stage || t('performance.noSnapshot')}</span></div><div className="mt-1.5 flex min-w-0 items-center gap-3 text-[11px] text-cyber-text-muted"><span className="inline-flex shrink-0 items-center gap-1"><Clock3 aria-hidden="true" className="h-3 w-3" />{formatPublishedAt(post.create_time)}</span><span title={post.aweme_id} className="truncate font-mono">ID {post.aweme_id}</span></div></div></div>
                     </td>
                     <td data-numeric="true" className="post-overview-metric-cell px-3 py-3"><MetricValue label={t('monitorDashboard.metricLikes')} value={snapshot?.liked_count ?? null} max={metricMaximums.likes} textClass="text-status-info" barClass="bg-status-info" /></td>
                     <td data-numeric="true" className="post-overview-metric-cell px-3 py-3"><MetricValue label={t('monitorDashboard.metricCollections')} value={snapshot?.collected_count ?? null} max={metricMaximums.collections} textClass="text-status-purple" barClass="bg-status-purple" /></td>
@@ -323,7 +359,7 @@ export function MonitorPerformanceOverview({ posts, focusAwemeId, focusToken }: 
         <div className="space-y-3 p-3 lg:hidden">
           {overviewRows.map(({ post, snapshot, total }, index) => (
             <article key={post.aweme_id} data-aweme-id={post.aweme_id} data-selected={highlightedAwemeId === post.aweme_id ? 'true' : undefined} className="metric-surface-card post-overview-card p-3 data-[selected=true]:border-primary/50 data-[selected=true]:ring-2 data-[selected=true]:ring-primary/15">
-              <div className="flex min-w-0 items-start gap-2"><span aria-hidden="true" className="post-overview-index font-mono">{String(index + 1).padStart(2, '0')}</span><h3 className="min-w-0 flex-1 text-sm font-semibold leading-5 text-cyber-text-primary">{post.title || post.aweme_id}</h3><span className={`status-chip shrink-0 ${stageBadgeClass(snapshot?.stage)}`}>{snapshot?.stage || t('performance.noSnapshot')}</span></div>
+              <div className="flex min-w-0 items-start gap-2"><span aria-hidden="true" className="post-overview-index font-mono">{String(index + 1).padStart(2, '0')}</span><PostCover post={post} /><h3 className="min-w-0 flex-1 text-sm font-semibold leading-5 text-cyber-text-primary"><a href={post.canonical_url} target="_blank" rel="noopener noreferrer" aria-label={t('performance.openPost', { title: post.title || post.aweme_id })} className="outline-none transition-colors hover:text-primary hover:underline focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-primary/40">{post.title || post.aweme_id}</a></h3><span className={`status-chip shrink-0 ${stageBadgeClass(snapshot?.stage)}`}>{snapshot?.stage || t('performance.noSnapshot')}</span></div>
               <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-cyber-text-muted"><span className="inline-flex items-center gap-1"><Clock3 aria-hidden="true" className="h-3 w-3" />{formatPublishedAt(post.create_time)}</span><span className="break-all font-mono">ID {post.aweme_id}</span></div>
               <dl className="mt-3 grid grid-cols-2 gap-2">
                 <div className="post-overview-mobile-metric"><dt className="mb-1 text-[11px] text-cyber-text-muted">{t('monitorDashboard.metricLikes')}</dt><dd><MetricValue label={t('monitorDashboard.metricLikes')} value={snapshot?.liked_count ?? null} max={metricMaximums.likes} textClass="text-status-info" barClass="bg-status-info" /></dd></div>

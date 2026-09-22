@@ -75,6 +75,26 @@ def isolated_monitor_db(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_monitor_schema_migration_adds_cover_url(tmp_path, monkeypatch):
+    db_path = tmp_path / "legacy-monitor.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            "CREATE TABLE douyin_posts ("
+            "id INTEGER PRIMARY KEY, platform VARCHAR(32), aweme_id VARCHAR(128)"
+            ")"
+        )
+    monkeypatch.setitem(db_session.sqlite_db_config, "db_path", str(db_path))
+    db_session._engines.pop("sqlite", None)
+
+    await db_session.create_tables("sqlite")
+
+    with sqlite3.connect(db_path) as connection:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(douyin_posts)")}
+    assert "cover_url" in columns
+    db_session._engines.pop("sqlite", None)
+
+
+@pytest.mark.asyncio
 async def test_monitor_repository_flow(isolated_monitor_db):
     await db_session.create_tables("sqlite")
 
@@ -91,9 +111,11 @@ async def test_monitor_repository_flow(isolated_monitor_db):
         desc="body",
         create_time=BASE_TIME,
         canonical_url="https://www.douyin.com/video/aweme_1",
+        cover_url="https://example.com/cover-1.jpg",
     )
     assert created is True
     assert post.id is not None
+    assert post.cover_url == "https://example.com/cover-1.jpg"
 
     same_post, created_again = await monitor_repository.upsert_post(
         aweme_id="aweme_1",
@@ -106,6 +128,7 @@ async def test_monitor_repository_flow(isolated_monitor_db):
     assert created_again is False
     assert same_post.id == post.id
     assert same_post.title == "title updated"
+    assert same_post.cover_url == "https://example.com/cover-1.jpg"
 
     jobs = await monitor_repository.create_snapshot_jobs(post)
     assert [job.stage for job in jobs] == ["1h", "6h", "24h", "72h", "7d"]
@@ -170,6 +193,7 @@ async def test_monitor_service_discovery_and_snapshot_flow(isolated_monitor_db):
                 "desc": "post one",
                 "create_time": BASE_TIME,
                 "canonical_url": "https://www.douyin.com/video/aweme_service_1",
+                "cover_url": "https://example.com/service-cover.jpg",
                 "liked_count": 11,
                 "collected_count": 3,
                 "comment_count": 2,
@@ -189,13 +213,15 @@ async def test_monitor_service_discovery_and_snapshot_flow(isolated_monitor_db):
                 "share_count": 6,
             },
         ],
-        metrics={"aweme_service_1": {"liked_count": 100, "collected_count": 20, "comment_count": 10, "share_count": 5}},
+        metrics={"aweme_service_1": {"liked_count": 100, "collected_count": 20, "comment_count": 10, "share_count": 5, "cover_url": "https://example.com/refreshed-cover.jpg"}},
     )
 
     service = MonitorService()
     result = await service.discover_account(sec_user_id=account.sec_user_id, fetcher=fetcher, max_pages=1)
     assert result["created_posts"] == 2
     assert result["created_jobs"] == 10
+    stored_post = await monitor_repository.get_post("aweme_service_1")
+    assert stored_post.cover_url == "https://example.com/service-cover.jpg"
     first_seen_snapshots = await monitor_repository.list_snapshots(limit=10)
     assert len([item for item in first_seen_snapshots if item.stage == "first_seen"]) == 2
 
@@ -205,9 +231,25 @@ async def test_monitor_service_discovery_and_snapshot_flow(isolated_monitor_db):
 
     snapshot_result = await service.run_due_snapshots(limit=10, fetcher=fetcher, now=BASE_TIME + 3600)
     assert snapshot_result["completed"] == 2
+    refreshed_post = await monitor_repository.get_post("aweme_service_1")
+    assert refreshed_post.cover_url == "https://example.com/refreshed-cover.jpg"
 
     post_ids = await monitor_repository.list_post_ids(account.sec_user_id)
     assert post_ids == {"aweme_service_1", "aweme_service_2"}
+
+
+def test_monitor_fetcher_extracts_video_and_image_post_covers():
+    video_post = {
+        "aweme_id": "video-cover",
+        "video": {"raw_cover": {"url_list": ["", "https://example.com/video-cover.jpg"]}},
+    }
+    image_post = {
+        "aweme_id": "image-cover",
+        "images": [{"origin_url": {"url_list": ["https://example.com/image-cover.jpg"]}}],
+    }
+
+    assert DouyinMonitorFetcher._normalize_post(video_post, "sec")['cover_url'] == "https://example.com/video-cover.jpg"
+    assert DouyinMonitorFetcher._normalize_post(image_post, "sec")['cover_url'] == "https://example.com/image-cover.jpg"
 
 
 @pytest.mark.asyncio
@@ -238,7 +280,7 @@ class FakeDouyinClient:
 
 
 @pytest.mark.asyncio
-async def test_monitor_discovery_scans_past_known_pinned_post():
+async def test_monitor_discovery_refreshes_known_post_and_scans_past_it():
     fetcher = DouyinMonitorFetcher()
     fetcher._client = FakeDouyinClient([
         {
@@ -257,7 +299,8 @@ async def test_monitor_discovery_scans_past_known_pinned_post():
         max_pages=1,
     )
 
-    assert [post["aweme_id"] for post in posts] == ["new_post"]
+    assert [post["aweme_id"] for post in posts] == ["known_pinned", "new_post"]
+    assert [post["is_known"] for post in posts] == [True, False]
 
 
 @pytest.mark.asyncio

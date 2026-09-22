@@ -320,6 +320,10 @@
     "sortLabel": "排序方式",
     "postSearchPlaceholder": "搜索作品标题或作品 ID",
     "noMatchingPosts": "没有匹配的作品",
+    "coverAlt": "{{title}}的作品封面",
+    "noCover": "暂无封面",
+    "openCover": "在新窗口打开封面：{{title}}",
+    "openPost": "在新窗口打开作品：{{title}}",
     "postAndPublish": "作品 / 发布时间",
     "tableCaption": "作品最新互动快照，可按发布时间或互动指标排序",
     "sort": {

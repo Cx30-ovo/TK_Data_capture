@@ -103,6 +103,26 @@ class DouyinMonitorFetcher:
         await self.__aenter__()
 
     @staticmethod
+    def _extract_cover_url(item: dict) -> str:
+        """Return the best available static cover URL for a video or image post."""
+        video = item.get("video") or {}
+        for key in ("raw_cover", "origin_cover", "cover", "dynamic_cover"):
+            payload = video.get(key) or {}
+            urls = (payload.get("url_list") or []) if isinstance(payload, dict) else []
+            if url := next((value for value in reversed(urls) if isinstance(value, str) and value), ""):
+                return url
+
+        images = item.get("images") or (item.get("image_post_info") or {}).get("images") or []
+        if images:
+            first_image = images[0] or {}
+            for key in ("origin_url", "url", "download_url"):
+                payload = first_image.get(key) or {}
+                urls = (payload.get("url_list") or []) if isinstance(payload, dict) else []
+                if url := next((value for value in reversed(urls or []) if isinstance(value, str) and value), ""):
+                    return url
+        return ""
+
+    @staticmethod
     def _normalize_post(item: dict, sec_user_id: str) -> dict:
         aweme_id = str(item.get("aweme_id") or "")
         desc = item.get("desc") or ""
@@ -115,6 +135,7 @@ class DouyinMonitorFetcher:
             "desc": desc,
             "create_time": _to_int(item.get("create_time")),
             "canonical_url": f"https://www.douyin.com/video/{aweme_id}",
+            "cover_url": DouyinMonitorFetcher._extract_cover_url(item),
             "status": "active",
             "source": "creator_monitor",
             "liked_count": _to_int(statistics.get("digg_count")),
@@ -157,9 +178,9 @@ class DouyinMonitorFetcher:
                 aweme_id = str(item.get("aweme_id") or "")
                 if not aweme_id:
                     continue
-                if aweme_id in known_ids:
-                    continue
-                posts.append(self._normalize_post(item, sec_user_id))
+                normalized = self._normalize_post(item, sec_user_id)
+                normalized["is_known"] = aweme_id in known_ids
+                posts.append(normalized)
 
             pages += 1
             if not response.get("has_more"):
@@ -191,6 +212,7 @@ class DouyinMonitorFetcher:
             "collected_count": _to_int(statistics.get("collect_count")),
             "comment_count": _to_int(statistics.get("comment_count")),
             "share_count": _to_int(statistics.get("share_count")),
+            "cover_url": self._extract_cover_url(detail),
         }
 
 
@@ -319,6 +341,7 @@ class MonitorService:
                     desc=item.get("desc", ""),
                     create_time=item["create_time"],
                     canonical_url=item["canonical_url"],
+                    cover_url=item.get("cover_url", ""),
                     platform=item.get("platform", "dy"),
                     status=item.get("status", "active"),
                     source=item.get("source", "creator_monitor"),
@@ -392,6 +415,12 @@ class MonitorService:
                         continue
                     try:
                         metrics = await active_fetcher.fetch_metrics(job.aweme_id)
+                        if metrics.get("cover_url"):
+                            await monitor_repository.update_post_cover_url(
+                                aweme_id=job.aweme_id,
+                                cover_url=metrics["cover_url"],
+                                platform=job.platform,
+                            )
                         await monitor_repository.record_snapshot(
                             job_id=job.id,
                             liked_count=metrics.get("liked_count", 0),
@@ -683,6 +712,7 @@ class MonitorService:
                     "create_time": post.create_time,
                     "first_seen_at": post.first_seen_at,
                     "canonical_url": post.canonical_url,
+                    "cover_url": post.cover_url,
                     "status": post.status,
                     "snapshots": snapshots_by_post.get(post.aweme_id, []),
                 }

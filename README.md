@@ -268,6 +268,13 @@ AI_TEMPERATURE=0.2
 AI_MAX_RETRIES=2
 AI_ANALYSIS_CACHE_TTL_HOURS=24
 AI_ENABLE_THINKING=false
+
+# 可选：封面 OCR 与视觉标签模型（必须支持 OpenAI 兼容的图片消息）
+VISION_AI_ENABLED=true
+VISION_AI_BASE_URL=http://192.168.101.244:4000/v1
+VISION_AI_API_KEY=你的本地APIKey
+VISION_AI_MODEL=你的视觉模型名称
+VISION_AI_SAMPLE_LIMIT=20
 ```
 
 说明：
@@ -277,6 +284,9 @@ AI_ENABLE_THINKING=false
 - 修改 `.env` 后需要重启后端。
 - 本地模型不需要 API Key 时可以将 `AI_API_KEY` 留空。
 - 首次 AI 分析通常需要 30 到 120 秒，生成后写入缓存，再次打开可快速读取。
+- 封面分析只处理爆款与普通作品样本，不会把全部作品封面发送给视觉模型。
+- 视觉模型只负责 OCR 和结构化标签；封面统计由 Python 完成，文本模型只接收标签及统计值做归因。
+- 相同封面、视觉模型和提示词版本的标签会缓存，不会在重复分析时再次识别。
 
 ## 启动
 
@@ -500,12 +510,23 @@ AI_TEMPERATURE=0.2
 AI_MAX_RETRIES=2
 AI_ANALYSIS_CACHE_TTL_HOURS=24
 AI_ENABLE_THINKING=false
+
+VISION_AI_ENABLED=true
+VISION_AI_PROVIDER=openai_compatible
+VISION_AI_BASE_URL=http://192.168.101.244:4000/v1
+VISION_AI_API_KEY=
+VISION_AI_MODEL=你的视觉模型名称
+VISION_AI_TIMEOUT_SECONDS=300
+VISION_AI_MAX_TOKENS=4096
+VISION_AI_MAX_RETRIES=2
+VISION_AI_SAMPLE_LIMIT=20
 ```
 
 当前 WebUI 默认使用：
 
 - 主题分析：最多 10 篇文章作为模型分析样本。
 - 生命周期分析：最多 6 篇带生命周期快照的作品。
+- 封面分析：默认仅处理 20 个爆款/普通对照样本；视觉模型负责 OCR 与标签，Python 负责统计。
 - 后端仍保留更大的分析上限，但为了避免模型上下文超限和长时间等待，界面默认使用较小样本。
 
 AI 研报的互动数字和生命周期类型由后端重新计算，模型只负责聚类、总结、诊断和建议。

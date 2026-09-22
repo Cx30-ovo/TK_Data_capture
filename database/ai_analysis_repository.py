@@ -3,12 +3,12 @@
 
 import json
 import time
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 from sqlalchemy import or_, select
 
 from .db_session import get_monitor_session
-from .models import AIAnalysisResult
+from .models import AIAnalysisResult, CoverVisionLabel
 
 
 ANALYSIS_TYPES = {"topic", "lifecycle", "topic_ideas", "title_strategy"}
@@ -29,6 +29,69 @@ class AIAnalysisRepository:
     async def get_result(self, result_id: int) -> Optional[AIAnalysisResult]:
         async with get_monitor_session() as session:
             return await session.get(AIAnalysisResult, result_id)
+
+    async def get_cover_label(
+        self,
+        *,
+        aweme_id: str,
+        cover_hash: str,
+        model_name: str,
+        prompt_version: str,
+        platform: str = "dy",
+    ) -> Optional[dict[str, Any]]:
+        stmt = select(CoverVisionLabel).where(
+            CoverVisionLabel.platform == platform,
+            CoverVisionLabel.aweme_id == aweme_id,
+            CoverVisionLabel.cover_hash == cover_hash,
+            CoverVisionLabel.model_name == model_name,
+            CoverVisionLabel.prompt_version == prompt_version,
+        )
+        async with get_monitor_session() as session:
+            item = (await session.execute(stmt)).scalar_one_or_none()
+            if item is None:
+                return None
+            try:
+                value = json.loads(item.labels_json)
+            except (TypeError, json.JSONDecodeError):
+                return None
+            return value if isinstance(value, dict) else None
+
+    async def upsert_cover_label(
+        self,
+        *,
+        aweme_id: str,
+        cover_hash: str,
+        model_name: str,
+        prompt_version: str,
+        labels: Mapping[str, Any],
+        platform: str = "dy",
+    ) -> CoverVisionLabel:
+        now = _now_seconds()
+        stmt = select(CoverVisionLabel).where(
+            CoverVisionLabel.platform == platform,
+            CoverVisionLabel.aweme_id == aweme_id,
+            CoverVisionLabel.cover_hash == cover_hash,
+            CoverVisionLabel.model_name == model_name,
+            CoverVisionLabel.prompt_version == prompt_version,
+        )
+        async with get_monitor_session() as session:
+            item = (await session.execute(stmt)).scalar_one_or_none()
+            if item is None:
+                item = CoverVisionLabel(
+                    platform=platform,
+                    aweme_id=aweme_id,
+                    cover_hash=cover_hash,
+                    model_name=model_name,
+                    prompt_version=prompt_version,
+                    created_at=now,
+                    updated_at=now,
+                    labels_json="{}",
+                )
+                session.add(item)
+            item.labels_json = _json_dumps(dict(labels))
+            item.updated_at = now
+            await session.flush()
+            return item
 
     @staticmethod
     def _cache_filters(

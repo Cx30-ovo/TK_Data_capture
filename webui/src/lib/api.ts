@@ -373,6 +373,8 @@ export interface AIAnalysisProviderStatus {
   timeout_seconds: number
   max_tokens: number
   temperature: number
+  vision?: Omit<AIAnalysisProviderStatus, 'vision' | 'vision_sample_limit'>
+  vision_sample_limit?: number
 }
 
 export interface AITopicCluster {
@@ -470,6 +472,57 @@ export interface AITitleStrategyHitWork {
   interaction_structure: string
 }
 
+export interface AICoverDimensionStat {
+  dimension: string
+  dimension_name: string
+  label: string
+  label_name: string
+  count: number
+  ratio: number
+  avg_interaction: number
+  hit_rate: number
+  lift: number
+}
+
+export interface AICoverSample {
+  aweme_id: string
+  title: string
+  cover_url: string
+  interaction: number
+  is_hit: boolean
+  display_tags: string[]
+  labels: {
+    ocr_text: string
+    text_density: string
+    text_hook: string
+    subject_type: string
+    composition: string
+    visual_style: string[]
+    confidence: number
+    [key: string]: string | number | boolean | string[]
+  }
+}
+
+export interface AICoverAnalysis {
+  status: 'done' | 'partial' | 'not_configured' | 'no_covers'
+  requested_sample_count: number
+  sample_count: number
+  missing_cover_count: number
+  failed_count?: number
+  model: string
+  summary: string
+  hit_differences: string[]
+  recommendations: string[]
+  statistics: {
+    sample_count: number
+    hit_sample_count?: number
+    normal_sample_count?: number
+    overall_hit_rate: number
+    dimensions: AICoverDimensionStat[]
+  }
+  samples: AICoverSample[]
+}
+
 export interface AITitleStrategyResult {
   overview: {
     total_works: number
@@ -504,6 +557,7 @@ export interface AITitleStrategyResult {
   next_titles: Array<{ title: string; formula: string; expected_length: number; target_audience: string; hook_type: string }>
   risk_notes: string[]
   title_templates: Array<{ template: string; count: number; ratio: number }>
+  cover_analysis?: AICoverAnalysis
   meta: {
     account: string
     period: string

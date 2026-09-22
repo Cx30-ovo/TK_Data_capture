@@ -268,6 +268,24 @@ def test_lifecycle_result_uses_deterministic_fallback_when_model_has_no_valid_id
     assert normalized["post_insights"][0]["evidence"]
 
 
+def test_cover_attribution_payload_excludes_images_ocr_and_titles():
+    payload = AIAnalysisService._cover_text_payload({
+        "status": "done",
+        "sample_count": 1,
+        "statistics": {"dimensions": [{"dimension": "subject_type", "label": "person", "count": 1}]},
+        "samples": [{
+            "title": "不应进入文本模型",
+            "cover_url": "https://example.com/private-cover.jpg",
+            "labels": {"ocr_text": "封面原文"},
+        }],
+    })
+    serialized = str(payload)
+    assert "subject_type" in serialized
+    assert "private-cover" not in serialized
+    assert "封面原文" not in serialized
+    assert "不应进入文本模型" not in serialized
+
+
 @pytest.mark.asyncio
 async def test_topic_ideas_are_generated_from_selected_topic_report(isolated_ai_analysis_db):
     await db_session.create_tables("sqlite")

@@ -51,6 +51,38 @@ async def test_ai_model_service_lists_models_and_generates_json():
 
 
 @pytest.mark.asyncio
+async def test_ai_model_service_sends_openai_multimodal_content_parts():
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        content = payload["messages"][1]["content"]
+        assert any(part.get("type") == "image_url" and part["image_url"]["url"] == "https://example.com/cover.jpg" for part in content)
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": '{"items":[]}'}, "finish_reason": "stop"}]},
+            request=request,
+        )
+
+    service = AIModelService(
+        config_data={
+            "enabled": True,
+            "base_url": "http://vision.local/v1",
+            "model": "vision-model",
+            "timeout_seconds": 5,
+            "max_tokens": 256,
+            "temperature": 0,
+            "max_retries": 0,
+        },
+        transport=httpx.MockTransport(handler),
+    )
+    result = await service.generate_multimodal_json(
+        system_prompt="label",
+        user_prompt="label image",
+        images=[{"id": "post-1", "url": "https://example.com/cover.jpg"}],
+    )
+    assert result == {"items": []}
+
+
+@pytest.mark.asyncio
 async def test_ai_model_service_rejects_disabled_configuration():
     service = AIModelService(config_data={"enabled": False})
 

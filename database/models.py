@@ -450,3 +450,29 @@ class AIAnalysisResult(Base):
     expires_at = Column(BigInteger, index=True, comment='缓存过期时间戳')
     created_at = Column(BigInteger, nullable=False, index=True, comment='创建时间戳')
     updated_at = Column(BigInteger, nullable=False, index=True, comment='更新时间戳')
+
+
+class CoverVisionLabel(Base):
+    """Cached OCR and controlled visual tags for sampled post covers."""
+
+    __tablename__ = 'cover_vision_labels'
+    __table_args__ = (
+        UniqueConstraint(
+            'platform',
+            'aweme_id',
+            'cover_hash',
+            'model_name',
+            'prompt_version',
+            name='uq_cover_vision_label_cache',
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, comment='主键ID')
+    platform = Column(String(32), nullable=False, default='dy', index=True, comment='平台标识')
+    aweme_id = Column(String(128), nullable=False, index=True, comment='作品ID')
+    cover_hash = Column(String(64), nullable=False, index=True, comment='封面URL哈希')
+    model_name = Column(String(128), nullable=False, default='', comment='视觉模型名称')
+    prompt_version = Column(String(64), nullable=False, default='', comment='视觉标签提示词版本')
+    labels_json = Column(Text, nullable=False, comment='OCR与结构化视觉标签JSON')
+    created_at = Column(BigInteger, nullable=False, index=True, comment='创建时间戳')
+    updated_at = Column(BigInteger, nullable=False, index=True, comment='更新时间戳')

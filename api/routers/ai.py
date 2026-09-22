@@ -5,12 +5,14 @@ from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
+import config
 from database.ai_analysis_repository import ai_analysis_repository
 from database.monitor_repository import monitor_repository
 
 from ..schemas import AIAnalysisRequest, AITopicIdeasRequest
 from ..services.ai_analysis_service import ai_analysis_service
 from ..services.ai_model_service import AIServiceError, ai_model_service
+from ..services.cover_analysis_service import cover_analysis_service
 
 
 router = APIRouter(prefix="/monitor/ai", tags=["ai"])
@@ -47,7 +49,11 @@ def _analysis_scope(request: AIAnalysisRequest) -> dict:
 
 @router.get("/status")
 async def get_ai_status():
-    return ai_model_service.get_status()
+    return {
+        **ai_model_service.get_status(),
+        "vision": cover_analysis_service.get_status(),
+        "vision_sample_limit": int(config.VISION_AI_SAMPLE_LIMIT),
+    }
 
 
 @router.post("/analyze/topics")

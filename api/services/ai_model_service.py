@@ -181,7 +181,7 @@ class AIModelService:
 
     async def chat(
         self,
-        messages: Sequence[Mapping[str, str]],
+        messages: Sequence[Mapping[str, Any]],
         *,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
@@ -252,6 +252,44 @@ class AIModelService:
             return parse_json_response(response["content"])
         except ValueError as exc:
             raise AIServiceError(f"AI returned invalid structured JSON: {exc}", code="invalid_json") from exc
+
+    async def generate_multimodal_json(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        images: Sequence[Mapping[str, str]],
+        max_tokens: Optional[int] = None,
+    ) -> Any:
+        """Generate JSON from text plus sampled image URLs using OpenAI content parts."""
+        if not images:
+            raise ValueError("At least one image is required for multimodal analysis.")
+        content: list[dict[str, Any]] = [{"type": "text", "text": user_prompt.strip()}]
+        for image in images:
+            image_id = str(image.get("id") or "")
+            image_url = str(image.get("url") or "").strip()
+            if not image_id or not image_url:
+                continue
+            content.append({"type": "text", "text": f"图片ID: {image_id}"})
+            content.append({"type": "image_url", "image_url": {"url": image_url, "detail": "low"}})
+        if len(content) == 1:
+            raise ValueError("No valid image URLs were provided.")
+        response = await self.chat(
+            [
+                {
+                    "role": "system",
+                    "content": f"{system_prompt.strip()}\n\n只输出合法 JSON，不要使用 Markdown 代码块。",
+                },
+                {"role": "user", "content": content},
+            ],
+            temperature=0.0,
+            max_tokens=max_tokens,
+            response_format={"type": "json_object"},
+        )
+        try:
+            return parse_json_response(response["content"])
+        except ValueError as exc:
+            raise AIServiceError(f"Vision model returned invalid structured JSON: {exc}", code="invalid_json") from exc
 
 
 ai_model_service = AIModelService()

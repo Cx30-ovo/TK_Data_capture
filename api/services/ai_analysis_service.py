@@ -15,6 +15,7 @@ from database.ai_analysis_repository import ai_analysis_repository
 from database.monitor_repository import monitor_repository
 
 from .ai_model_service import AIServiceError, ai_model_service
+from .cover_analysis_service import cover_analysis_service
 from .title_strategy_metrics import DATA_LIMIT, clean_title, compute_title_strategy
 from .title_strategy_prompts import HIT_SYSTEM_PROMPT, PATTERN_SYSTEM_PROMPT, STRATEGY_SYSTEM_PROMPT
 
@@ -22,7 +23,7 @@ from .title_strategy_prompts import HIT_SYSTEM_PROMPT, PATTERN_SYSTEM_PROMPT, ST
 TOPIC_PROMPT_VERSION = "topic-v8"
 LIFECYCLE_PROMPT_VERSION = "lifecycle-v2"
 TOPIC_IDEAS_PROMPT_VERSION = "topic-ideas-v4"
-TITLE_STRATEGY_PROMPT_VERSION = "title-strategy-v1"
+TITLE_STRATEGY_PROMPT_VERSION = "title-strategy-v2-cover"
 TIME_RANGE_SECONDS = {
     "24h": 24 * 60 * 60,
     "7d": 7 * 24 * 60 * 60,
@@ -169,10 +170,12 @@ class AIAnalysisService:
         model_service=None,
         analysis_repository=None,
         monitor_repository_instance=None,
+        cover_analysis_service_instance=None,
     ) -> None:
         self._model_service = model_service or ai_model_service
         self._repository = analysis_repository or ai_analysis_repository
         self._monitor_repository = monitor_repository_instance or monitor_repository
+        self._cover_analysis_service = cover_analysis_service_instance or cover_analysis_service
         self._lock = asyncio.Lock()
 
     async def analyze_topics(
@@ -281,6 +284,31 @@ class AIAnalysisService:
             )
 
         metrics = compute_title_strategy(posts, snapshots_by_post)
+        sample_limit = int(config.VISION_AI_SAMPLE_LIMIT)
+        hit_limit = sample_limit // 2
+        selected_rows = list(metrics.get("hit_samples", []))[:hit_limit]
+        selected_rows.extend(list(metrics.get("normal_samples", []))[:sample_limit - len(selected_rows)])
+        if len(selected_rows) < sample_limit:
+            selected_ids = {str(row.get("aweme_id")) for row in selected_rows if isinstance(row, dict)}
+            remaining = [
+                row for row in [*metrics.get("hit_samples", []), *metrics.get("normal_samples", [])]
+                if isinstance(row, dict) and str(row.get("aweme_id")) not in selected_ids
+            ]
+            selected_rows.extend(remaining[:sample_limit - len(selected_rows)])
+        posts_by_id = {str(post.aweme_id): post for post in posts}
+        hit_ids = {str(row.get("aweme_id")) for row in metrics.get("hit_samples", []) if isinstance(row, dict)}
+        cover_samples = []
+        for row in selected_rows:
+            post_id = str(row.get("aweme_id") or "")
+            post = posts_by_id.get(post_id)
+            if post is None:
+                continue
+            cover_samples.append({
+                **row,
+                "cover_url": str(getattr(post, "cover_url", "") or ""),
+                "is_hit": post_id in hit_ids,
+            })
+        metrics["cover_analysis"] = await self._cover_analysis_service.analyze_samples(cover_samples)
         account = await self._monitor_repository.get_monitored_account(sec_user_id)
         account_name = _safe_text(getattr(account, "display_name", ""), 100) or sec_user_id
         period = self._analysis_period(posts, time_range)
@@ -394,6 +422,9 @@ class AIAnalysisService:
                 "top_keywords": metrics.get("top_keywords") or [],
                 "title_length_groups": metrics.get("title_length_groups") or [],
                 "long_vs_short": metrics.get("long_vs_short") or {},
+                # The text model receives only controlled cover tags and Python
+                # aggregates. Image URLs and pixels never enter this request.
+                "cover_tags": self._cover_text_payload(metrics.get("cover_analysis") or {}),
             }
 
             previous_hits = {
@@ -605,6 +636,10 @@ class AIAnalysisService:
             "next_titles": next_titles,
             "risk_notes": risk_notes,
             "title_templates": metrics.get("title_templates") or [],
+            "cover_analysis": self._normalize_cover_analysis(
+                metrics.get("cover_analysis") or {},
+                phase_one.get("cover_analysis") if isinstance(phase_one.get("cover_analysis"), dict) else {},
+            ),
             "meta": {
                 "account": source_data.get("account"),
                 "period": source_data.get("period"),
@@ -615,6 +650,28 @@ class AIAnalysisService:
                 "source_post_ids": metrics.get("source_post_ids") or [],
                 "reused_hit_analyses": reused_count,
             },
+        }
+
+    @staticmethod
+    def _cover_text_payload(cover_analysis: Mapping[str, Any]) -> dict[str, Any]:
+        statistics_payload = cover_analysis.get("statistics") if isinstance(cover_analysis.get("statistics"), dict) else {}
+        return {
+            "status": cover_analysis.get("status"),
+            "sample_count": cover_analysis.get("sample_count", 0),
+            "statistics": statistics_payload,
+            "rule": "这里只包含结构化标签的Python聚合统计，不包含图片、URL、OCR原文或作品标题；只能解释相关性，不得推断因果。",
+        }
+
+    def _normalize_cover_analysis(
+        self,
+        cover_analysis: Mapping[str, Any],
+        model_analysis: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            **dict(cover_analysis),
+            "summary": self._strategy_text(model_analysis.get("summary"), 1200),
+            "hit_differences": self._strategy_list(model_analysis.get("hit_differences"), 8),
+            "recommendations": self._strategy_list(model_analysis.get("recommendations"), 8),
         }
 
     @staticmethod

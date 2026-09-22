@@ -12,9 +12,11 @@ import {
   FileText,
   Gauge,
   History,
+  Image,
   KeyRound,
   Lightbulb,
   RefreshCw,
+  ScanText,
   Sparkles,
   Target,
   TextCursorInput,
@@ -28,6 +30,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   monitorApi,
   type AIAnalysisResponse,
+  type AICoverAnalysis,
   type AITitleLengthGroup,
   type AITitleStrategyHitWork,
   type AITitleStrategyKeyword,
@@ -189,7 +192,7 @@ function StrategyContent({ current }: { current: AIAnalysisResponse<AITitleStrat
       </section>
 
       <Tabs defaultValue="insights" className="space-y-4">
-        <TabsList className="grid h-auto w-full grid-cols-3 gap-1 p-1" aria-label={t('titleStrategy.sectionNavigation')}>
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 p-1 sm:grid-cols-4" aria-label={t('titleStrategy.sectionNavigation')}>
           <TabsTrigger value="insights" className="min-h-11 cursor-pointer gap-2 px-2 py-2 text-xs sm:px-4">
             <BarChart3 aria-hidden="true" className="h-4 w-4 shrink-0" />
             <span className="truncate">{t('titleStrategy.sectionInsights')}</span>
@@ -198,6 +201,11 @@ function StrategyContent({ current }: { current: AIAnalysisResponse<AITitleStrat
             <TrendingUp aria-hidden="true" className="h-4 w-4 shrink-0" />
             <span className="truncate">{t('titleStrategy.sectionViral')}</span>
             <span className="rounded bg-rose-50 px-1.5 py-0.5 font-mono text-[10px] text-rose-700">{result.hit_works.length}</span>
+          </TabsTrigger>
+          <TabsTrigger value="covers" className="min-h-11 cursor-pointer gap-2 px-2 py-2 text-xs sm:px-4">
+            <Image aria-hidden="true" className="h-4 w-4 shrink-0" />
+            <span className="truncate">{t('titleStrategy.sectionCovers')}</span>
+            {result.cover_analysis?.sample_count ? <span className="rounded bg-violet-50 px-1.5 py-0.5 font-mono text-[10px] text-violet-700">{result.cover_analysis.sample_count}</span> : null}
           </TabsTrigger>
           <TabsTrigger value="ideas" className="min-h-11 cursor-pointer gap-2 px-2 py-2 text-xs sm:px-4">
             <Lightbulb aria-hidden="true" className="h-4 w-4 shrink-0" />
@@ -226,6 +234,10 @@ function StrategyContent({ current }: { current: AIAnalysisResponse<AITitleStrat
           <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><SectionTitle icon={ArrowUpRight} title={t('titleStrategy.differenceTitle')} description={result.hit_vs_normal.common_patterns} /><ul className="mt-4 grid gap-2 lg:grid-cols-2">{result.hit_vs_normal.key_differences.map((item, index) => <li key={`${item}-${index}`} className="flex gap-3 rounded-lg bg-slate-50 px-3 py-2.5 text-xs leading-6 text-slate-700"><span className="mt-1 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-blue-700 text-[10px] font-semibold text-white">{index + 1}</span>{item}</li>)}</ul></article>
         </TabsContent>
 
+        <TabsContent value="covers" className="mt-0 space-y-4">
+          <CoverAnalysisPanel data={result.cover_analysis} />
+        </TabsContent>
+
         <TabsContent value="ideas" className="mt-0 space-y-4">
           <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><SectionTitle icon={Lightbulb} title={t('titleStrategy.formulaTitle')} description={t('titleStrategy.formulaDescription')} /><div className="mt-4 grid gap-3 lg:grid-cols-2">{result.reusable_formulas.map((row, index) => <div key={`${row.formula}-${index}`} className="rounded-lg border border-slate-200 p-4"><div className="text-sm font-semibold text-slate-900">{row.formula}</div><div className="mt-2 rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-800">{row.example}</div><p className="mt-2 text-xs leading-5 text-slate-500">{row.why_effective}</p></div>)}</div></article>
           <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm"><SectionTitle icon={TextCursorInput} title={t('titleStrategy.nextTitle')} description={t('titleStrategy.nextDescription')} /><div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">{result.next_titles.map((row, index) => <article key={`${row.title}-${index}`} className="flex min-h-44 flex-col rounded-xl border border-emerald-100 bg-white p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">{row.hook_type}</Badge><button type="button" onClick={() => copyTitle(row.title)} aria-label={t('titleStrategy.copyTitle', { title: row.title })} className="grid h-9 w-9 shrink-0 cursor-pointer place-items-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"><ClipboardCopy aria-hidden="true" className="h-4 w-4" /></button></div><h3 className="mt-3 text-sm font-semibold leading-6 text-slate-900">{row.title}</h3><div className="mt-auto pt-4 text-[11px] leading-5 text-slate-500"><div>{row.formula}</div><div>{row.expected_length} {t('titleStrategy.characters')} · {row.target_audience}</div></div></article>)}</div></section>
@@ -234,6 +246,52 @@ function StrategyContent({ current }: { current: AIAnalysisResponse<AITitleStrat
       </Tabs>
     </div>
   )
+}
+
+
+function CoverAnalysisPanel({ data }: { data?: AICoverAnalysis }) {
+  const { t } = useTranslation('config')
+  if (!data || data.status === 'not_configured') {
+    return <Notice text={t('titleStrategy.coverNotConfigured')} />
+  }
+  if (data.status === 'no_covers' || !data.sample_count) {
+    return <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><SectionTitle icon={Image} title={t('titleStrategy.coverTitle')} description={t('titleStrategy.coverDescription')} /><div className="mt-5"><EmptyLine text={t('titleStrategy.coverNoSamples')} /></div></article>
+  }
+  const preferredDimensions = ['subject_type', 'text_density', 'text_hook', 'composition', 'visual_style', 'color_tone']
+  const groups = preferredDimensions.map((key) => ({
+    key,
+    rows: data.statistics.dimensions.filter((row) => row.dimension === key).slice(0, 4),
+  })).filter((group) => group.rows.length)
+  const previewSamples = data.samples.slice(0, 8)
+  return (
+    <div className="space-y-4">
+      <section className="grid gap-3 sm:grid-cols-3" aria-label={t('titleStrategy.coverOverview')}>
+        <MiniSummary label={t('titleStrategy.coverSamples')} value={String(data.sample_count)} hint={t('titleStrategy.coverSampleRule', { count: data.requested_sample_count })} />
+        <MiniSummary label={t('titleStrategy.coverHitNormal')} value={`${data.statistics.hit_sample_count || 0} / ${data.statistics.normal_sample_count || 0}`} hint={t('titleStrategy.coverHitNormalHint')} />
+        <MiniSummary label={t('titleStrategy.coverModel')} value={data.model || '-'} hint={data.status === 'partial' ? t('titleStrategy.coverPartial') : t('titleStrategy.coverCached')} />
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+        <article className="rounded-xl border border-violet-200 bg-gradient-to-br from-violet-700 to-indigo-900 p-5 text-white shadow-sm">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-violet-200"><ScanText aria-hidden="true" className="h-4 w-4" />{t('titleStrategy.coverFinding')}</div>
+          <p className="mt-3 text-sm leading-7 text-white">{data.summary}</p>
+          <div className="mt-4 border-t border-white/15 pt-4"><div className="text-[10px] font-semibold uppercase tracking-wider text-violet-200">{t('titleStrategy.coverDifference')}</div><ul className="mt-2 space-y-1.5">{data.hit_differences.map((item) => <li key={item} className="text-xs leading-5 text-violet-50">• {item}</li>)}</ul></div>
+        </article>
+        <article className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm"><SectionTitle icon={Lightbulb} title={t('titleStrategy.coverRecommendations')} description={t('titleStrategy.coverRecommendationHint')} /><ul className="mt-4 space-y-2">{data.recommendations.map((item, index) => <li key={`${item}-${index}`} className="flex gap-2 rounded-lg bg-white px-3 py-2.5 text-xs leading-5 text-emerald-950"><span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-emerald-700 text-[10px] font-semibold text-white">{index + 1}</span>{item}</li>)}</ul></article>
+      </section>
+
+      <section className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3" aria-label={t('titleStrategy.coverTagDistribution')}>
+        {groups.map((group) => <article key={group.key} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-sm font-semibold text-slate-900">{group.rows[0].dimension_name}</div><div className="mt-3 space-y-3">{group.rows.map((row) => <div key={`${row.dimension}-${row.label}`}><div className="mb-1.5 flex items-center justify-between gap-3 text-[11px]"><span className="font-medium text-slate-700">{row.label_name}</span><span className="font-mono text-slate-500">{row.count} · {formatPercent(row.ratio)} · ×{row.lift.toFixed(2)}</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-100" role="img" aria-label={`${row.label_name} ${formatPercent(row.ratio)}`}><div className="h-full rounded-full bg-violet-600" style={{ width: `${Math.max(3, row.ratio * 100)}%` }} /></div></div>)}</div></article>)}
+      </section>
+
+      <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><SectionTitle icon={Image} title={t('titleStrategy.coverSampleTitle')} description={t('titleStrategy.coverSampleDescription')} /><div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{previewSamples.map((row) => <article key={row.aweme_id} className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50"><div className="aspect-video overflow-hidden bg-slate-100"><img src={row.cover_url} alt={t('titleStrategy.coverSampleAlt', { title: row.title })} loading="lazy" className="h-full w-full object-cover" /></div><div className="p-3"><div className="flex items-center justify-between gap-2"><Badge variant="outline" className={row.is_hit ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-slate-200 bg-white text-slate-600'}>{row.is_hit ? t('titleStrategy.coverHit') : t('titleStrategy.coverNormal')}</Badge><span className="font-mono text-[10px] text-slate-400">{Math.round(Number(row.labels.confidence || 0) * 100)}%</span></div><p className="mt-2 line-clamp-2 text-xs font-medium leading-5 text-slate-800">{row.title}</p><div className="mt-2 flex flex-wrap gap-1">{(row.display_tags || []).map((tag) => <span key={tag} className="rounded bg-violet-50 px-1.5 py-0.5 text-[10px] text-violet-700">{tag}</span>)}</div>{row.labels.ocr_text ? <p className="mt-2 line-clamp-2 border-t border-slate-200 pt-2 text-[10px] leading-4 text-slate-500">OCR · {row.labels.ocr_text}</p> : null}</div></article>)}</div></article>
+    </div>
+  )
+}
+
+
+function MiniSummary({ label, value, hint }: { label: string; value: string; hint: string }) {
+  return <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-xs font-medium text-slate-500">{label}</div><div className="mt-1 truncate text-xl font-semibold text-slate-950" title={value}>{value}</div><div className="mt-1 text-[11px] leading-5 text-slate-400">{hint}</div></article>
 }
 
 

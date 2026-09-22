@@ -12,7 +12,12 @@ PATTERN_SYSTEM_PROMPT = """
   "title_length_analysis":{
     "best_range":"","trend":"","long_vs_short":{"winner":"","explanation":""},"recommendation":""
   },
-  "overall_insight":""
+  "overall_insight":"",
+  "cover_analysis":{
+    "summary":"仅依据Python封面标签统计给出相关性总结；无标签时写数据不足",
+    "hit_differences":["爆款样本与普通样本的标签差异"],
+    "recommendations":["可验证的封面设计建议"]
+  }
 }
 """.strip()
 

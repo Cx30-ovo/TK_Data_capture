@@ -3,12 +3,16 @@
 
 from __future__ import annotations
 
+import asyncio
+import base64
 import hashlib
+import re
 import statistics
 from collections import defaultdict
 from typing import Any, Mapping, Optional
 
 import config
+import httpx
 from database.ai_analysis_repository import AIAnalysisRepository, ai_analysis_repository
 
 from .ai_model_service import AIModelService, AIServiceError
@@ -177,18 +181,50 @@ class CoverAnalysisService:
         self,
         model_service: Optional[AIModelService] = None,
         repository: Optional[AIAnalysisRepository] = None,
+        image_loader=None,
     ) -> None:
         self._model_service = model_service or AIModelService(config.vision_ai_config)
         self._repository = repository or ai_analysis_repository
+        self._image_loader = image_loader or self._inline_image
 
     def get_status(self) -> dict[str, Any]:
         return self._model_service.get_status()
 
+    @staticmethod
+    async def _inline_image(url: str) -> str:
+        """Download a sampled cover server-side to avoid provider-side hotlink 403s."""
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/138 Safari/537.36",
+            "Referer": "https://www.douyin.com/",
+            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        }
+        async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=30.0) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+        content = response.content
+        if not content or len(content) > 8 * 1024 * 1024:
+            raise AIServiceError("Cover image is empty or exceeds 8 MB.", code="invalid_media")
+        media_type = str(response.headers.get("content-type") or "image/jpeg").split(";", 1)[0].strip().lower()
+        if not media_type.startswith("image/"):
+            media_type = "image/jpeg"
+        return f"data:{media_type};base64,{base64.b64encode(content).decode('ascii')}"
+
     async def _label_batch(self, samples: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+        loaded = await asyncio.gather(
+            *(self._image_loader(str(row["cover_url"])) for row in samples),
+            return_exceptions=True,
+        )
+        images = [
+            {"id": str(row["aweme_id"]), "url": value}
+            for row, value in zip(samples, loaded)
+            if isinstance(value, str) and value
+        ]
+        if not images:
+            raise AIServiceError("No sampled cover could be downloaded.", code="invalid_media")
         response = await self._model_service.generate_multimodal_json(
             system_prompt=COVER_VISION_SYSTEM_PROMPT,
             user_prompt="请按图片ID逐张执行OCR并输出结构化视觉标签。",
-            images=[{"id": str(row["aweme_id"]), "url": str(row["cover_url"])} for row in samples],
+            images=images,
             max_tokens=int(config.VISION_AI_MAX_TOKENS),
         )
         items = response.get("items") if isinstance(response, dict) else None
@@ -249,14 +285,14 @@ class CoverAnalysisService:
             try:
                 labeled = await self._label_batch(batch)
             except Exception as exc:
-                errors.append(str(exc)[:300])
+                errors.append(re.sub(r"https?://\S+", "[image-url]", str(exc))[:300])
                 labeled = []
                 if len(batch) > 1:
                     for row in batch:
                         try:
                             labeled.extend(await self._label_batch([row]))
                         except Exception as item_exc:
-                            errors.append(str(item_exc)[:300])
+                            errors.append(re.sub(r"https?://\S+", "[image-url]", str(item_exc))[:300])
             for labels in labeled:
                 aweme_id = labels["aweme_id"]
                 source = next((row for row in batch if str(row["aweme_id"]) == aweme_id), None)

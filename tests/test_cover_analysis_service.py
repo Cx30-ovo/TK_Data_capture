@@ -66,7 +66,10 @@ def test_cover_statistics_are_computed_from_controlled_labels():
 async def test_cover_analysis_labels_only_eligible_samples_and_reuses_cache():
     model = FakeVisionModel()
     repository = FakeCoverRepository()
-    service = CoverAnalysisService(model_service=model, repository=repository)
+    async def image_loader(url):
+        return "data:image/jpeg;base64,dGVzdA=="
+
+    service = CoverAnalysisService(model_service=model, repository=repository, image_loader=image_loader)
     samples = [
         {"aweme_id": "hit", "title": "爆款", "cover_url": "https://example.com/hit.jpg", "interaction": 100, "is_hit": True},
         {"aweme_id": "normal", "title": "普通", "cover_url": "https://example.com/normal.jpg", "interaction": 10, "is_hit": False},
@@ -82,5 +85,6 @@ async def test_cover_analysis_labels_only_eligible_samples_and_reuses_cache():
     assert first["missing_cover_count"] == 1
     assert len(model.calls) == 1
     assert {image["id"] for image in model.calls[0]} == {"hit", "normal"}
+    assert all(image["url"].startswith("data:image/jpeg;base64,") for image in model.calls[0])
     assert second["sample_count"] == 2
     assert len(model.calls) == 1

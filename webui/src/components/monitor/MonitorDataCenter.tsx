@@ -81,7 +81,7 @@ export function MonitorDataCenter({ focusAwemeId, focusToken }: { focusAwemeId?:
   const scopedPosts = useMemo(() => {
     const cutoff = timeRange === 'all' ? 0 : Math.floor(Date.now() / 1000) - TIME_RANGE_SECONDS[timeRange]
     return allPosts.filter((post) => {
-      if (post.first_seen_at < cutoff) return false
+      if (post.create_time < cutoff) return false
       if (statusFilter !== 'all' && classifyPost(post, jobsByPost[post.aweme_id] || []) !== statusFilter) return false
       return true
     })

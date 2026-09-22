@@ -697,7 +697,7 @@ class AIAnalysisService:
         time_range = str(scope["time_range"])
         if time_range != "all":
             cutoff = int(time.time()) - TIME_RANGE_SECONDS[time_range]
-            posts = [post for post in posts if int(post.first_seen_at or 0) >= cutoff]
+            posts = [post for post in posts if int(post.create_time or 0) >= cutoff]
         if scope.get("today_only"):
             today = datetime.now().date()
             posts = [post for post in posts if datetime.fromtimestamp(int(post.create_time)).date() == today]

@@ -201,6 +201,32 @@ async def test_analysis_returns_insufficient_data_without_calling_model(isolated
 
 
 @pytest.mark.asyncio
+async def test_time_range_filters_by_publish_time_not_discovery_time():
+    now = int(time.time())
+    posts = [
+        make_post("recent", "最近发布", now - 60, now - 30),
+        make_post("old-imported", "旧作最近导入", now - 8 * 24 * 60 * 60, now - 30),
+    ]
+    snapshots = [
+        make_snapshot("recent", "first_seen", 60, liked_count=10),
+        make_snapshot("old-imported", "first_seen", 60, liked_count=20),
+    ]
+    service = AIAnalysisService(
+        model_service=FakeModelService({}),
+        analysis_repository=ai_analysis_repository,
+        monitor_repository_instance=FakeMonitorRepository(posts, snapshots),
+    )
+
+    selected_posts, snapshots_by_post = await service._load_source(
+        "sec_ai_service",
+        {"time_range": "7d", "post_limit": 100},
+    )
+
+    assert [post.aweme_id for post in selected_posts] == ["recent"]
+    assert set(snapshots_by_post) == {"recent"}
+
+
+@pytest.mark.asyncio
 async def test_title_strategy_runs_three_model_phases_and_uses_cache(isolated_ai_analysis_db):
     await db_session.create_tables("sqlite")
     now = int(time.time())

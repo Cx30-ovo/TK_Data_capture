@@ -12,7 +12,7 @@ import { StatePanel } from '@/components/ui/state-panel'
 import { monitorApi, type MonitorJob } from '@/lib/api'
 
 
-const STATUS_FILTERS = ['all', 'pending', 'running', 'done', 'abnormal', 'failed', 'missed'] as const
+const STATUS_FILTERS = ['all', 'pending', 'running', 'done', 'skipped', 'abnormal', 'failed', 'missed'] as const
 const PAGE_SIZE = 50
 type SortOption = 'due_asc' | 'due_desc' | 'attempts_desc' | 'failed_desc'
 
@@ -22,6 +22,7 @@ const CATEGORY_CLASSES: Record<string, string> = {
   browser_disconnected: 'border-cyber-neon-purple/40 bg-cyber-neon-purple/10 text-cyber-neon-purple',
   network_timeout: 'border-cyber-neon-orange/40 bg-cyber-neon-orange/10 text-cyber-neon-orange',
   post_not_found: 'border-cyber-border-default bg-cyber-bg-tertiary text-cyber-text-muted',
+  post_deleted: 'border-cyber-border-default bg-cyber-bg-tertiary text-cyber-text-muted',
   parse_error: 'border-cyber-neon-orange/40 bg-cyber-neon-orange/10 text-cyber-neon-orange',
   unknown: 'border-cyber-border-default bg-cyber-bg-tertiary text-cyber-text-secondary',
   none: 'border-cyber-border-subtle bg-cyber-bg-tertiary text-cyber-text-muted',

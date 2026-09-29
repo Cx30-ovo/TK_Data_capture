@@ -27,6 +27,10 @@ class MonitorHotRankError(RuntimeError):
     """A recoverable failure while loading Douyin's public hot ranking."""
 
 
+class DouyinPostUnavailableError(RuntimeError):
+    """The requested Douyin post no longer has a detail page and cannot be retried."""
+
+
 def _to_int(value: Any) -> int:
     try:
         return int(value or 0)
@@ -38,6 +42,10 @@ def classify_job_error(job: dict) -> str:
     text = f"{job.get('last_error') or ''} {job.get('miss_reason') or ''}".lower()
     if not text.strip():
         return "none"
+    if job.get("status") == "skipped" and (
+        "作品已删除" in text or "failed to get douyin detail for aweme_id=" in text
+    ):
+        return "post_deleted"
     if "argus" in text or "风控" in text or "blocked" in text:
         return "risk_control"
     if "login" in text or "登录" in text:
@@ -264,7 +272,7 @@ class DouyinMonitorFetcher:
     async def _fetch_metrics_once(self, aweme_id: str) -> dict:
         detail = await self._client.get_video_by_id(aweme_id)
         if not detail:
-            raise RuntimeError(f"Failed to get Douyin detail for aweme_id={aweme_id}")
+            raise DouyinPostUnavailableError(f"Failed to get Douyin detail for aweme_id={aweme_id}")
         statistics = detail.get("statistics") or {}
         return {
             "liked_count": _to_int(statistics.get("digg_count")),
@@ -343,6 +351,12 @@ class MonitorService:
 
     async def start(self) -> None:
         if not self.is_running:
+            reconciled = await monitor_repository.reconcile_deleted_post_jobs()
+            if reconciled:
+                await crawler_manager.add_log(
+                    f"[Monitor] Archived {reconciled} snapshot jobs for deleted posts",
+                    "info",
+                )
             self._task = asyncio.create_task(self._loop())
 
     async def stop(self) -> None:
@@ -627,7 +641,7 @@ class MonitorService:
 
             due_jobs = await monitor_repository.list_due_jobs(now=now, limit=limit)
             if not due_jobs:
-                return {"status": "ok", "completed": 0, "retried": 0, "failed": 0}
+                return {"status": "ok", "completed": 0, "retried": 0, "failed": 0, "skipped": 0, "deleted_posts": 0}
 
             await crawler_manager.add_log(
                 f"[Monitor] Running {len(due_jobs)} due snapshot jobs",
@@ -641,6 +655,8 @@ class MonitorService:
             completed = 0
             retried = 0
             failed = 0
+            skipped = 0
+            deleted_posts = 0
             account_results: dict[str, dict[str, int]] = {}
             async with fetcher as active_fetcher:
                 for job in due_jobs:
@@ -666,6 +682,29 @@ class MonitorService:
                         completed += 1
                         result = account_results.setdefault(job.sec_user_id or "unassigned", {"completed": 0, "retried": 0, "failed": 0})
                         result["completed"] += 1
+                    except DouyinPostUnavailableError as exc:
+                        skipped_jobs = await monitor_repository.mark_post_deleted_and_skip_jobs(
+                            aweme_id=job.aweme_id,
+                            platform=job.platform,
+                            reason=str(exc),
+                        )
+                        skipped += skipped_jobs
+                        deleted_posts += 1
+                        account = (
+                            await monitor_repository.get_monitored_account(job.sec_user_id)
+                            if job.sec_user_id
+                            else None
+                        )
+                        account_name = (
+                            account.display_name or account.sec_user_id
+                            if account
+                            else job.sec_user_id or "未归属账号"
+                        )
+                        await crawler_manager.add_log(
+                            f"[Monitor] [{account_name}] Post {job.aweme_id} was deleted; "
+                            f"terminated {skipped_jobs} snapshot jobs",
+                            "warning",
+                        )
                     except Exception as exc:
                         retry_job = await monitor_repository.mark_job_retry(
                             job_id=job.id,
@@ -682,7 +721,8 @@ class MonitorService:
                             result["retried"] += 1
 
             await crawler_manager.add_log(
-                f"[Monitor] Snapshot cycle result: completed={completed}, retried={retried}, failed={failed}",
+                f"[Monitor] Snapshot cycle result: completed={completed}, retried={retried}, "
+                f"failed={failed}, skipped={skipped}, deleted_posts={deleted_posts}",
                 "success" if completed and not retried and not failed else "info",
             )
             if retried > 0 or failed > 0:
@@ -698,7 +738,14 @@ class MonitorService:
                         dedupe_key=f"snapshot_errors:{sec_user_id}:{int(time.time() // 3600)}",
                         sec_user_id=sec_user_id if sec_user_id != "unassigned" else "",
                     )
-            return {"status": "ok", "completed": completed, "retried": retried, "failed": failed}
+            return {
+                "status": "ok",
+                "completed": completed,
+                "retried": retried,
+                "failed": failed,
+                "skipped": skipped,
+                "deleted_posts": deleted_posts,
+            }
 
     async def _create_alert(
         self,

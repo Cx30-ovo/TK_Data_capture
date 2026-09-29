@@ -179,7 +179,7 @@
     "discoverDone": "Latest-post check complete: {{posts}} new, {{jobs}} jobs created",
     "discoverFailed": "Discovery failed",
     "runSnapshots": "RUN DUE SNAPSHOTS",
-    "snapshotDone": "Snapshots complete: {{completed}} done, {{retried}} retried, {{failed}} failed",
+    "snapshotDone": "Snapshots complete: {{completed}} done, {{skipped}} terminated, {{retried}} retried, {{failed}} failed",
     "snapshotFailed": "Snapshot execution failed",
     "lastDiscovered": "Last discovered: {{time}}",
     "notDiscovered": "No discovery has run yet",
@@ -1172,7 +1172,7 @@
   },
   "tasks": {
     "title": "JOB CENTER",
-    "description": "Pending, failed and missed jobs",
+    "description": "Pending, abnormal and terminated jobs",
     "total": "{{count}} jobs",
     "searchPlaceholder": "Search title or post ID",
     "sortBy": "Sort jobs",
@@ -1224,6 +1224,7 @@
       "browser_disconnected": "Browser disconnected",
       "network_timeout": "Network timeout",
       "post_not_found": "Post not found",
+      "post_deleted": "Post deleted",
       "parse_error": "Parse error",
       "unknown": "Unknown error"
     },
@@ -1232,6 +1233,7 @@
       "pending": "Pending",
       "running": "Running",
       "done": "Done",
+      "skipped": "Terminated",
       "abnormal": "Abnormal",
       "failed": "Failed",
       "missed": "Missed"

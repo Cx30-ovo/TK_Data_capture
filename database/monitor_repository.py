@@ -33,6 +33,7 @@ SNAPSHOT_ALLOWED_WINDOWS: dict[str, int] = {
 }
 
 ALERT_STATUSES = {"unread", "read", "resolved", "ignored"}
+DELETED_POST_JOB_REASON = "作品已删除，后续快照已终止。"
 
 
 def _now_seconds() -> int:
@@ -624,6 +625,8 @@ class MonitorRepository:
         post: DouyinPost,
         stages: Optional[Sequence[tuple[str, int]]] = None,
     ) -> list[DouyinMonitorJob]:
+        if post.status == "deleted":
+            return []
         created_jobs: list[DouyinMonitorJob] = []
         now = _now_seconds()
         stage_defs = stages or SNAPSHOT_STAGES
@@ -757,6 +760,85 @@ class MonitorRepository:
                 job.started_at = None
             await session.flush()
             return job
+
+    async def mark_post_deleted_and_skip_jobs(
+        self,
+        aweme_id: str,
+        platform: str = "dy",
+        reason: str = "",
+    ) -> int:
+        """Mark a missing post deleted and terminate all of its unfinished snapshot jobs."""
+        now = _now_seconds()
+        async with get_monitor_session() as session:
+            post_stmt = select(DouyinPost).where(
+                DouyinPost.platform == platform,
+                DouyinPost.aweme_id == aweme_id,
+            )
+            post = (await session.execute(post_stmt)).scalar_one_or_none()
+            if post is not None:
+                post.status = "deleted"
+                post.last_modify_ts = now
+
+            jobs_stmt = select(DouyinMonitorJob).where(
+                DouyinMonitorJob.job_type == "snapshot",
+                DouyinMonitorJob.platform == platform,
+                DouyinMonitorJob.aweme_id == aweme_id,
+                DouyinMonitorJob.status.in_(("pending", "running", "failed")),
+            )
+            jobs = list((await session.execute(jobs_stmt)).scalars().all())
+            for job in jobs:
+                job.status = "skipped"
+                job.last_error = reason or job.last_error
+                job.miss_reason = DELETED_POST_JOB_REASON
+                job.finished_at = now
+            await session.flush()
+            return len(jobs)
+
+    async def reconcile_deleted_post_jobs(self) -> int:
+        """Archive legacy failures that contain the strong deleted-post detail signal."""
+        now = _now_seconds()
+        legacy_prefix = "Failed to get Douyin detail for aweme_id="
+        async with get_monitor_session() as session:
+            legacy_stmt = (
+                select(
+                    DouyinMonitorJob.platform,
+                    DouyinMonitorJob.aweme_id,
+                    DouyinMonitorJob.last_error,
+                )
+                .where(
+                    DouyinMonitorJob.job_type == "snapshot",
+                    DouyinMonitorJob.status == "failed",
+                    DouyinMonitorJob.last_error.like(f"{legacy_prefix}%"),
+                )
+                .distinct()
+            )
+            legacy_posts = list((await session.execute(legacy_stmt)).all())
+            skipped_count = 0
+            for platform, aweme_id, error in legacy_posts:
+                post_stmt = select(DouyinPost).where(
+                    DouyinPost.platform == platform,
+                    DouyinPost.aweme_id == aweme_id,
+                )
+                post = (await session.execute(post_stmt)).scalar_one_or_none()
+                if post is not None:
+                    post.status = "deleted"
+                    post.last_modify_ts = now
+
+                jobs_stmt = select(DouyinMonitorJob).where(
+                    DouyinMonitorJob.job_type == "snapshot",
+                    DouyinMonitorJob.platform == platform,
+                    DouyinMonitorJob.aweme_id == aweme_id,
+                    DouyinMonitorJob.status.in_(("pending", "running", "failed")),
+                )
+                jobs = list((await session.execute(jobs_stmt)).scalars().all())
+                for job in jobs:
+                    job.status = "skipped"
+                    job.last_error = error or job.last_error
+                    job.miss_reason = DELETED_POST_JOB_REASON
+                    job.finished_at = now
+                skipped_count += len(jobs)
+            await session.flush()
+            return skipped_count
 
     async def record_snapshot(
         self,

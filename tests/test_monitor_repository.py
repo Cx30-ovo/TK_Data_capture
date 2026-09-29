@@ -8,7 +8,12 @@ import config
 
 from database import db_session
 from database.monitor_repository import monitor_repository
-from api.services.monitor_service import DouyinMonitorFetcher, MonitorService, classify_job_error
+from api.services.monitor_service import (
+    DouyinMonitorFetcher,
+    DouyinPostUnavailableError,
+    MonitorService,
+    classify_job_error,
+)
 from api.services.report_service import ReportService
 from api.services.analytics_service import AnalyticsService
 from api.services.maintenance_service import MaintenanceService
@@ -65,6 +70,19 @@ class FakeBrowserContext:
         self.pages.append(page)
         self.created.append(page)
         return page
+
+
+@pytest.mark.asyncio
+async def test_monitor_fetcher_raises_unavailable_error_when_detail_is_missing():
+    class MissingDetailClient:
+        async def get_video_by_id(self, aweme_id):
+            return None
+
+    fetcher = DouyinMonitorFetcher()
+    fetcher._client = MissingDetailClient()
+
+    with pytest.raises(DouyinPostUnavailableError, match="missing_detail_post"):
+        await fetcher._fetch_metrics_once("missing_detail_post")
 
 
 @pytest.fixture
@@ -557,6 +575,117 @@ async def test_failed_job_can_be_manually_retried(isolated_monitor_db):
 
     with pytest.raises(ValueError):
         await monitor_repository.retry_failed_job(jobs[1].id)
+
+
+@pytest.mark.asyncio
+async def test_deleted_post_terminates_all_unfinished_snapshot_jobs(isolated_monitor_db):
+    await db_session.create_tables("sqlite")
+    await monitor_repository.upsert_monitored_account(sec_user_id="deleted_user")
+    post, _ = await monitor_repository.upsert_post(
+        aweme_id="deleted_post",
+        sec_user_id="deleted_user",
+        title="deleted",
+        desc="deleted",
+        create_time=BASE_TIME,
+        canonical_url="https://www.douyin.com/video/deleted_post",
+    )
+    jobs = await monitor_repository.create_snapshot_jobs(post)
+    await monitor_repository.mark_job_done(jobs[0].id)
+    await monitor_repository.mark_job_running(jobs[1].id)
+    await monitor_repository.mark_job_retry(
+        jobs[1].id,
+        error="Failed to get Douyin detail for aweme_id=deleted_post",
+        max_attempts=1,
+    )
+    await monitor_repository.mark_job_running(jobs[2].id)
+
+    skipped = await monitor_repository.mark_post_deleted_and_skip_jobs(
+        aweme_id="deleted_post",
+        reason="Failed to get Douyin detail for aweme_id=deleted_post",
+    )
+
+    assert skipped == 4
+    stored_post = await monitor_repository.get_post("deleted_post")
+    assert stored_post.status == "deleted"
+    stored_jobs = await monitor_repository.list_jobs(limit=None)
+    statuses = {item["id"]: item["status"] for item in stored_jobs}
+    assert statuses[jobs[0].id] == "done"
+    assert all(statuses[job.id] == "skipped" for job in jobs[1:])
+    skipped_job = next(item for item in stored_jobs if item["id"] == jobs[1].id)
+    assert skipped_job["miss_reason"] == "作品已删除，后续快照已终止。"
+    assert classify_job_error(skipped_job) == "post_deleted"
+
+
+@pytest.mark.asyncio
+async def test_due_snapshot_marks_deleted_post_skipped_without_retry(isolated_monitor_db):
+    await db_session.create_tables("sqlite")
+    await monitor_repository.upsert_monitored_account(
+        sec_user_id="deleted_snapshot_user",
+        display_name="删除测试账号",
+    )
+    post, _ = await monitor_repository.upsert_post(
+        aweme_id="deleted_snapshot_post",
+        sec_user_id="deleted_snapshot_user",
+        title="deleted snapshot",
+        desc="deleted snapshot",
+        create_time=BASE_TIME,
+        canonical_url="https://www.douyin.com/video/deleted_snapshot_post",
+    )
+    await monitor_repository.create_snapshot_jobs(post)
+
+    class DeletedPostFetcher(FakeFetcher):
+        async def fetch_metrics(self, aweme_id):
+            raise DouyinPostUnavailableError(
+                f"Failed to get Douyin detail for aweme_id={aweme_id}"
+            )
+
+    result = await MonitorService().run_due_snapshots(
+        limit=10,
+        fetcher=DeletedPostFetcher(posts=[]),
+        now=BASE_TIME + 3600,
+    )
+
+    assert result == {
+        "status": "ok",
+        "completed": 0,
+        "retried": 0,
+        "failed": 0,
+        "skipped": 5,
+        "deleted_posts": 1,
+    }
+    stored_post = await monitor_repository.get_post("deleted_snapshot_post")
+    assert stored_post.status == "deleted"
+    counts = await monitor_repository.get_job_counts()
+    assert counts == {"skipped": 5}
+    assert await monitor_repository.list_alerts() == []
+
+
+@pytest.mark.asyncio
+async def test_reconcile_archives_legacy_deleted_post_failures(isolated_monitor_db):
+    await db_session.create_tables("sqlite")
+    await monitor_repository.upsert_monitored_account(sec_user_id="legacy_deleted_user")
+    post, _ = await monitor_repository.upsert_post(
+        aweme_id="legacy_deleted_post",
+        sec_user_id="legacy_deleted_user",
+        title="legacy deleted",
+        desc="legacy deleted",
+        create_time=BASE_TIME,
+        canonical_url="https://www.douyin.com/video/legacy_deleted_post",
+    )
+    jobs = await monitor_repository.create_snapshot_jobs(post)
+    await monitor_repository.mark_job_running(jobs[0].id)
+    await monitor_repository.mark_job_retry(
+        jobs[0].id,
+        error="Failed to get Douyin detail for aweme_id=legacy_deleted_post",
+        max_attempts=1,
+    )
+
+    reconciled = await monitor_repository.reconcile_deleted_post_jobs()
+
+    assert reconciled == 5
+    assert (await monitor_repository.get_post("legacy_deleted_post")).status == "deleted"
+    assert await monitor_repository.get_job_counts() == {"skipped": 5}
+    assert await monitor_repository.reconcile_deleted_post_jobs() == 0
 
 
 @pytest.mark.asyncio

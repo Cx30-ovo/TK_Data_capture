@@ -153,6 +153,8 @@ export interface MonitorRunResult {
   skipped_historical?: number
   updated_covers?: number
   completed?: number
+  skipped?: number
+  deleted_posts?: number
   retried?: number
   failed?: number
 }

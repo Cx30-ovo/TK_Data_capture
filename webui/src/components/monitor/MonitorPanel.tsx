@@ -153,7 +153,12 @@ export function MonitorPanel({ embedded = false, onDirtyChange, onValidChange, s
     mutationFn: () => monitorApi.runDueSnapshots(),
     onSuccess: (response) => {
       const result = response.data
-      toast.success(t('monitor.snapshotDone', { completed: result.completed ?? 0, retried: result.retried ?? 0, failed: result.failed ?? 0 }))
+      toast.success(t('monitor.snapshotDone', {
+        completed: result.completed ?? 0,
+        skipped: result.skipped ?? 0,
+        retried: result.retried ?? 0,
+        failed: result.failed ?? 0,
+      }))
       refreshAccounts()
     },
     onError: (error: Error) => toast.error(`${t('monitor.snapshotFailed')}: ${error.message}`),

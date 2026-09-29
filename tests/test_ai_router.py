@@ -76,6 +76,43 @@ def test_ai_title_strategy_route(monkeypatch):
     assert response.json()["analysis_type"] == "title_strategy"
 
 
+def test_cover_candidate_route_uses_matching_report(monkeypatch):
+    async def resolve_account(account_id):
+        assert account_id == 7
+        return "sec_ai_router"
+
+    reference = SimpleNamespace(id=12, analysis_type="title_strategy", sec_user_id="sec_ai_router")
+
+    async def get_result(result_id):
+        assert result_id == 12
+        return reference
+
+    async def evaluate_candidate(image_data_url, cover_analysis):
+        assert image_data_url.startswith("data:image/jpeg;base64,")
+        assert cover_analysis["sample_count"] == 30
+        return {"status": "done", "decision": "recommended", "feasibility_score": 72}
+
+    monkeypatch.setattr(ai_router_module, "_resolve_account_sec_user_id", resolve_account)
+    monkeypatch.setattr(ai_router_module.ai_analysis_repository, "get_result", get_result)
+    monkeypatch.setattr(
+        ai_router_module.ai_analysis_service,
+        "serialize_result",
+        lambda item, cache_hit=True: {"result": {"cover_analysis": {"sample_count": 30}}},
+    )
+    monkeypatch.setattr(ai_router_module.cover_analysis_service, "evaluate_candidate", evaluate_candidate)
+
+    response = make_client().post(
+        "/api/monitor/ai/analyze/cover-candidate",
+        json={
+            "account_id": 7,
+            "reference_result_id": 12,
+            "image_data_url": "data:image/jpeg;base64,dGVzdC10ZXN0",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["decision"] == "recommended"
+
+
 def test_ai_result_list_detail_and_delete_routes(monkeypatch):
     item = SimpleNamespace(id=9, analysis_type="topic", status="done")
     serialized = {"id": 9, "analysis_type": "topic", "status": "done", "result": {"summary": "ok"}}
@@ -113,6 +150,27 @@ def test_ai_result_list_detail_and_delete_routes(monkeypatch):
     deleted = client.delete("/api/monitor/ai/results/9")
     assert deleted.status_code == 200
     assert deleted.json()["status"] == "ok"
+
+
+def test_delete_legacy_title_strategy_reports_route_is_account_scoped(monkeypatch):
+    async def resolve_account(account_id):
+        assert account_id == 7
+        return "sec_ai_router"
+
+    async def delete_legacy_results(**kwargs):
+        assert kwargs == {
+            "sec_user_id": "sec_ai_router",
+            "analysis_type": "title_strategy",
+            "current_prompt_version": ai_router_module.TITLE_STRATEGY_PROMPT_VERSION,
+        }
+        return 4
+
+    monkeypatch.setattr(ai_router_module, "_resolve_account_sec_user_id", resolve_account)
+    monkeypatch.setattr(ai_router_module.ai_analysis_repository, "delete_legacy_results", delete_legacy_results)
+
+    response = make_client().delete("/api/monitor/ai/results/title-strategy/legacy?account_id=7")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "deleted": 4}
 
 
 def test_ai_route_maps_disabled_provider_to_service_unavailable(monkeypatch):

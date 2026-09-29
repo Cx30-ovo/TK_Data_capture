@@ -221,6 +221,16 @@ class DouYinClient(AbstractApiClient, ProxyRefreshMixin):
         res = await self.get("/aweme/v1/web/aweme/detail/", params, headers)
         return res.get("aweme_detail", {})
 
+    async def get_hot_search_list(self) -> Dict:
+        """Fetch Douyin's public real-time hot-search ranking."""
+        headers = copy.copy(self.headers)
+        headers["Referer"] = "https://www.douyin.com/hot"
+        return await self.get(
+            "/aweme/v1/web/hot/search/list/",
+            {"detail_list": "1"},
+            headers=headers,
+        )
+
     async def get_aweme_comments(self, aweme_id: str, cursor: int = 0):
         """get note comments
 

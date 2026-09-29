@@ -4,6 +4,7 @@
 import asyncio
 import shutil
 import time
+import urllib.parse
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -16,6 +17,14 @@ from media_platform.douyin.core import DouYinCrawler
 from tools.cdp_browser import CDPBrowserManager, safe_page_goto
 
 from .crawler_manager import crawler_manager
+
+
+class MonitorBrowserNetworkError(RuntimeError):
+    """A recoverable browser-network problem that should not surface as HTTP 500."""
+
+
+class MonitorHotRankError(RuntimeError):
+    """A recoverable failure while loading Douyin's public hot ranking."""
 
 
 def _to_int(value: Any) -> int:
@@ -63,11 +72,19 @@ class DouyinMonitorFetcher:
         )
         self._crawler.browser_context = browser_context
         self._crawler.context_page = await self._crawler._get_or_create_context_page()
-        await safe_page_goto(
-            self._crawler.context_page,
-            self._crawler.index_url,
-            accepted_hosts=("douyin.com",),
-        )
+        try:
+            await safe_page_goto(
+                self._crawler.context_page,
+                self._crawler.index_url,
+                accepted_hosts=("douyin.com",),
+            )
+        except Exception as exc:
+            message = str(exc)
+            if "ERR_NETWORK_ACCESS_DENIED" in message:
+                raise MonitorBrowserNetworkError(
+                    "抖音专用浏览器的网络访问被拒绝，请检查代理软件或防火墙后重试。"
+                ) from exc
+            raise
         self._client = await self._crawler.create_douyin_client(None)
         if not await self._client.pong(browser_context=self._crawler.browser_context):
             raise RuntimeError("Douyin login required. Please run a normal crawler task first to refresh the login state.")
@@ -174,20 +191,28 @@ class DouyinMonitorFetcher:
         sec_user_id: str,
         known_ids: set[str],
         max_pages: int = 3,
+        published_since: Optional[int] = None,
+        stop_on_known: bool = False,
     ) -> list[dict]:
         try:
-            return await self._fetch_latest_posts_once(sec_user_id, known_ids, max_pages)
+            return await self._fetch_latest_posts_once(
+                sec_user_id, known_ids, max_pages, published_since, stop_on_known
+            )
         except Exception as exc:
             if not self._is_browser_disconnect_error(exc):
                 raise
             await self._reconnect(exc)
-            return await self._fetch_latest_posts_once(sec_user_id, known_ids, max_pages)
+            return await self._fetch_latest_posts_once(
+                sec_user_id, known_ids, max_pages, published_since, stop_on_known
+            )
 
     async def _fetch_latest_posts_once(
         self,
         sec_user_id: str,
         known_ids: set[str],
         max_pages: int = 3,
+        published_since: Optional[int] = None,
+        stop_on_known: bool = False,
     ) -> list[dict]:
         posts: list[dict] = []
         max_cursor = ""
@@ -199,15 +224,24 @@ class DouyinMonitorFetcher:
             if not aweme_list:
                 break
 
+            page_create_times: list[int] = []
+            page_has_known = False
             for item in aweme_list:
                 aweme_id = str(item.get("aweme_id") or "")
                 if not aweme_id:
                     continue
                 normalized = self._normalize_post(item, sec_user_id)
                 normalized["is_known"] = aweme_id in known_ids
+                page_has_known = page_has_known or normalized["is_known"]
                 posts.append(normalized)
+                if normalized["create_time"] > 0:
+                    page_create_times.append(normalized["create_time"])
 
             pages += 1
+            if stop_on_known and page_has_known:
+                break
+            if published_since is not None and page_create_times and max(page_create_times) < published_since:
+                break
             if not response.get("has_more"):
                 break
 
@@ -240,6 +274,52 @@ class DouyinMonitorFetcher:
             "cover_url": self._extract_cover_url(detail),
         }
 
+    async def fetch_hot_rank(self) -> list[dict]:
+        try:
+            return await self._fetch_hot_rank_once()
+        except Exception as exc:
+            if not self._is_browser_disconnect_error(exc):
+                raise
+            await self._reconnect(exc)
+            return await self._fetch_hot_rank_once()
+
+    async def _fetch_hot_rank_once(self) -> list[dict]:
+        response = await self._client.get_hot_search_list()
+        payload = response.get("data") or {}
+        if isinstance(payload, list):
+            payload = next((item for item in payload if isinstance(item, dict) and item.get("word_list")), {})
+        word_list = payload.get("word_list") if isinstance(payload, dict) else None
+        if not word_list:
+            word_list = response.get("word_list") or []
+
+        result: list[dict] = []
+        regular_rank = 0
+        for item in word_list:
+            if not isinstance(item, dict):
+                continue
+            word = str(item.get("word") or item.get("sentence") or "").strip()
+            if not word:
+                continue
+            is_pinned = item.get("is_n1") is True
+            if not is_pinned:
+                regular_rank += 1
+            raw_label = item.get("label_name") or item.get("tag_name") or item.get("word_type") or ""
+            label = str(raw_label).strip()
+            if label.isdigit():
+                label = ""
+            result.append({
+                "rank": None if is_pinned else regular_rank,
+                "is_pinned": is_pinned,
+                "word": word,
+                "hot_value": _to_int(item.get("hot_value") or item.get("hot_score")),
+                "video_count": _to_int(item.get("video_count") or item.get("discuss_video_count")),
+                "event_time": _to_int(item.get("event_time")),
+                "sentence_id": str(item.get("sentence_id") or ""),
+                "label": label,
+                "search_url": f"https://www.douyin.com/search/{urllib.parse.quote(word, safe='')}",
+            })
+        return result
+
 
 class MonitorService:
     """Coordinates incremental discovery and due snapshot execution."""
@@ -247,6 +327,8 @@ class MonitorService:
     def __init__(self):
         self._lock = asyncio.Lock()
         self._task: Optional[asyncio.Task] = None
+        self._hot_rank_cache: Optional[dict] = None
+        self._hot_rank_cached_at = 0.0
 
     @property
     def is_running(self) -> bool:
@@ -327,6 +409,8 @@ class MonitorService:
         fetcher=None,
         max_pages: Optional[int] = None,
         backfill_covers: bool = False,
+        new_post_window_days: int = 7,
+        latest_only: bool = False,
     ) -> dict:
         async with self._lock:
             if self._crawler_is_busy():
@@ -341,7 +425,14 @@ class MonitorService:
                 return {"status": "skipped", "reason": "no enabled monitored account"}
 
             known_ids = await monitor_repository.list_post_ids(account.sec_user_id, account.platform)
-            if max_pages is not None:
+            missing_cover_ids = (
+                await monitor_repository.list_post_ids_missing_cover(account.sec_user_id, account.platform)
+                if backfill_covers
+                else set()
+            )
+            if latest_only and not known_ids:
+                page_limit = 1
+            elif max_pages is not None:
                 page_limit = max_pages
             elif backfill_covers:
                 # Douyin usually returns about 18 posts per page. Manual discovery
@@ -353,18 +444,41 @@ class MonitorService:
             if owns_fetcher:
                 fetcher = DouyinMonitorFetcher()
             await crawler_manager.add_log(
-                f"[Monitor] Discovering new posts for {account.sec_user_id}, known={len(known_ids)}, pages={page_limit}",
+                f"[Monitor] Discovering new posts for {account.sec_user_id}, known={len(known_ids)}, "
+                f"max_pages={page_limit}, mode={'latest_only' if latest_only else 'scheduled'}",
                 "info",
             )
 
+            new_post_cutoff = int(time.time()) - max(1, new_post_window_days) * 24 * 60 * 60
             async with fetcher as active_fetcher:
                 posts = await active_fetcher.fetch_latest_posts(
                     sec_user_id=account.sec_user_id,
                     known_ids=known_ids,
                     max_pages=page_limit,
+                    published_since=new_post_cutoff,
+                    stop_on_known=latest_only,
                 )
+                fetched_count = len(posts)
+                skipped_historical = sum(
+                    1 for item in posts
+                    if item["aweme_id"] not in known_ids
+                    and (_to_int(item.get("create_time")) <= 0 or _to_int(item.get("create_time")) < new_post_cutoff)
+                )
+                if latest_only:
+                    posts = [
+                        item for item in posts
+                        if item["aweme_id"] not in known_ids
+                        and _to_int(item.get("create_time")) >= new_post_cutoff
+                    ]
+                else:
+                    posts = [
+                        item for item in posts
+                        if item["aweme_id"] in known_ids or _to_int(item.get("create_time")) >= new_post_cutoff
+                    ]
                 if backfill_covers:
                     for item in posts:
+                        if item["aweme_id"] not in missing_cover_ids:
+                            continue
                         if item.get("cover_url"):
                             continue
                         try:
@@ -380,6 +494,8 @@ class MonitorService:
 
             created_posts = 0
             created_jobs = 0
+            updated_covers = 0
+            existing_processed = 0
             for item in posts:
                 post, created = await monitor_repository.upsert_post(
                     aweme_id=item["aweme_id"],
@@ -393,6 +509,8 @@ class MonitorService:
                     status=item.get("status", "active"),
                     source=item.get("source", "creator_monitor"),
                 )
+                if item["aweme_id"] in missing_cover_ids and item.get("cover_url"):
+                    updated_covers += 1
                 if created:
                     created_posts += 1
                     await monitor_repository.record_first_seen_snapshot(
@@ -405,6 +523,8 @@ class MonitorService:
                         captured_at=post.first_seen_at,
                     )
                     created_jobs += len(await monitor_repository.create_snapshot_jobs(post))
+                else:
+                    existing_processed += 1
 
             await monitor_repository.update_account_discovered_at(account.id)
             if created_posts > 0:
@@ -417,17 +537,83 @@ class MonitorService:
                     sec_user_id=account.sec_user_id,
                 )
             await crawler_manager.add_log(
-                f"[Monitor] Discovery result: fetched={len(posts)}, new_posts={created_posts}, new_jobs={created_jobs}",
+                f"[Monitor] Discovery result: fetched={fetched_count}, existing={existing_processed}, "
+                f"skipped_historical={skipped_historical}, new_posts={created_posts}, "
+                f"new_jobs={created_jobs}, covers={updated_covers}",
                 "success" if created_posts else "info",
             )
             return {
                 "status": "ok",
                 "account_id": account.id,
-                "fetched": len(posts),
+                "fetched": fetched_count,
+                "existing": existing_processed,
+                "skipped_historical": skipped_historical,
                 "created_posts": created_posts,
                 "created_jobs": created_jobs,
-                "updated_covers": sum(1 for item in posts if item.get("cover_url")),
+                "updated_covers": updated_covers,
             }
+
+    async def get_hot_rank(self, force: bool = False, fetcher=None) -> dict:
+        cache_ttl_seconds = 60
+        now = time.time()
+        if (
+            not force
+            and self._hot_rank_cache is not None
+            and now - self._hot_rank_cached_at < cache_ttl_seconds
+        ):
+            return {**self._hot_rank_cache, "cached": True}
+
+        async with self._lock:
+            now = time.time()
+            if (
+                not force
+                and self._hot_rank_cache is not None
+                and now - self._hot_rank_cached_at < cache_ttl_seconds
+            ):
+                return {**self._hot_rank_cache, "cached": True}
+            if self._crawler_is_busy():
+                if self._hot_rank_cache is not None:
+                    return {
+                        **self._hot_rank_cache,
+                        "cached": True,
+                        "stale": True,
+                        "warning": "采集任务正在运行，当前显示最近一次热榜数据。",
+                    }
+                raise MonitorHotRankError("采集任务正在运行，请稍后刷新热榜。")
+
+            owns_fetcher = fetcher is None
+            if owns_fetcher:
+                fetcher = DouyinMonitorFetcher()
+            try:
+                async with fetcher as active_fetcher:
+                    items = await active_fetcher.fetch_hot_rank()
+            except MonitorBrowserNetworkError:
+                raise
+            except Exception as exc:
+                message = str(exc)
+                if self._hot_rank_cache is not None:
+                    return {
+                        **self._hot_rank_cache,
+                        "cached": True,
+                        "stale": True,
+                        "warning": "实时热榜刷新失败，当前显示最近一次成功数据。",
+                    }
+                if "blocked" in message.lower() or "风控" in message:
+                    raise MonitorHotRankError("触发抖音风控，请稍后重试。") from exc
+                raise MonitorHotRankError(f"实时热榜获取失败：{message}") from exc
+
+            if not items:
+                raise MonitorHotRankError("抖音热榜暂时没有返回可用数据，请稍后重试。")
+            result = {
+                "generated_at": datetime.now().astimezone().isoformat(),
+                "source": "douyin_hot_search",
+                "cached": False,
+                "stale": False,
+                "items": items,
+            }
+            self._hot_rank_cache = result
+            self._hot_rank_cached_at = time.time()
+            return result
 
     async def run_due_snapshots(
         self,
@@ -534,22 +720,25 @@ class MonitorService:
 
     async def ensure_browser_ready(self) -> dict:
         """Start or reuse the dedicated browser when the backend starts."""
-        if self._crawler_is_busy():
-            return {"status": "skipped", "reason": "crawler already running"}
+        async with self._lock:
+            if self._crawler_is_busy():
+                return {"status": "skipped", "reason": "crawler already running"}
 
-        async with async_playwright() as playwright:
-            manager = CDPBrowserManager()
-            browser_context = await manager.launch_and_connect(
-                playwright,
-                None,
-                None,
-                headless=config.CDP_HEADLESS,
-            )
-            crawler = DouYinCrawler()
-            crawler.browser_context = browser_context
-            page = await crawler._get_or_create_context_page()
-            await safe_page_goto(page, crawler.index_url, accepted_hosts=("douyin.com",))
-            await manager.cleanup()
+            async with async_playwright() as playwright:
+                manager = CDPBrowserManager(profile_platform="dy")
+                try:
+                    browser_context = await manager.launch_and_connect(
+                        playwright,
+                        None,
+                        None,
+                        headless=config.CDP_HEADLESS,
+                    )
+                    crawler = DouYinCrawler()
+                    crawler.browser_context = browser_context
+                    page = await crawler._get_or_create_context_page()
+                    await safe_page_goto(page, crawler.index_url, accepted_hosts=("douyin.com",))
+                finally:
+                    await manager.cleanup()
         await crawler_manager.add_log("[Monitor] Dedicated browser is ready", "success")
         return {"status": "ok"}
 
@@ -623,7 +812,7 @@ class MonitorService:
                 "system_config": {},
             }
 
-        browser_ok, browser_port = await CDPBrowserManager().probe_existing_browser()
+        browser_ok, browser_port = await CDPBrowserManager(profile_platform="dy").probe_existing_browser()
         checks.append({
             "key": "browser",
             "status": "ok" if browser_ok else "warning",
@@ -865,14 +1054,33 @@ class MonitorService:
 
     async def list_jobs(self, status: Optional[str] = None, limit: Optional[int] = None, account_id: Optional[int] = None, all_accounts: bool = False) -> dict:
         account = await self._resolve_account(account_id, all_accounts=all_accounts)
+        sec_user_id = account.sec_user_id if account else None
+        normalized_status = str(status or "").strip().lower()
+        statuses = ("failed", "missed") if normalized_status == "abnormal" else None
+        exact_status = normalized_status if normalized_status and normalized_status not in {"all", "abnormal"} else None
         jobs = await monitor_repository.list_jobs(
-            status=status,
+            status=exact_status,
+            statuses=statuses,
             limit=limit,
-            sec_user_id=account.sec_user_id if account else None,
+            sec_user_id=sec_user_id,
         )
         for job in jobs:
             job["error_category"] = classify_job_error(job)
-        return {"jobs": jobs, "count": len(jobs)}
+        status_counts = await monitor_repository.get_job_counts(sec_user_id=sec_user_id)
+        total_count = sum(status_counts.values())
+        if normalized_status == "abnormal":
+            filtered_count = int(status_counts.get("failed", 0)) + int(status_counts.get("missed", 0))
+        elif exact_status:
+            filtered_count = int(status_counts.get(exact_status, 0))
+        else:
+            filtered_count = total_count
+        return {
+            "jobs": jobs,
+            "count": filtered_count,
+            "returned_count": len(jobs),
+            "total_count": total_count,
+            "status_counts": status_counts,
+        }
 
     async def retry_job(self, job_id: int) -> dict:
         job = await monitor_repository.retry_failed_job(job_id)

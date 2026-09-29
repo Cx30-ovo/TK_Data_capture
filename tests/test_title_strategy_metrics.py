@@ -34,8 +34,10 @@ def test_title_strategy_metrics_are_deterministic_and_use_unique_title_keywords(
         post(1, "厦门地铁地铁迎来新进展"),
         post(2, "厦门地铁新线路正式通车"),
         post(3, "厦门地铁建设进入新阶段"),
-        post(4, "周末公园活动指南"),
-        post(5, "城市夜景打卡攻略"),
+        post(4, "厦门地铁公布运营安排"),
+        post(5, "厦门地铁调整换乘方案"),
+        post(6, "周末公园活动指南"),
+        post(7, "城市夜景打卡攻略"),
     ]
     snapshots = {
         "p1": [snapshot(1, 10)],
@@ -43,16 +45,22 @@ def test_title_strategy_metrics_are_deterministic_and_use_unique_title_keywords(
         "p3": [snapshot(3, 1000, shares=100)],
         "p4": [snapshot(4, 5)],
         "p5": [snapshot(5, 8)],
+        "p6": [snapshot(6, 6)],
+        "p7": [snapshot(7, 9)],
     }
 
     result = compute_title_strategy(posts, snapshots)
 
-    assert result["overview"]["total_works"] == 5
+    assert result["overview"]["total_works"] == 7
     assert result["overview"]["hit_threshold"] > result["overview"]["interaction_mean"]
     keyword = next(row for row in result["top_keywords"] if row["keyword"] == "厦门")
-    assert keyword["count"] == 3
-    assert keyword["ratio"] == 0.6
-    assert result["long_vs_short"]["short"]["count"] + result["long_vs_short"]["long"]["count"] == 5
+    assert keyword["count"] == 5
+    assert keyword["ratio"] == 0.7143
+    assert keyword["baseline_median_interaction"] == 7.5
+    assert keyword["sample_status"] == "insufficient"
+    assert result["overview"]["interaction_median"] == 9
+    assert result["title_length_groups"][0]["sample_status"] in {"insufficient", "reference", "stable"}
+    assert result["long_vs_short"]["short"]["count"] + result["long_vs_short"]["long"]["count"] == 7
     assert len(result["hit_samples"]) <= 20
     assert len(result["normal_samples"]) <= 20
 

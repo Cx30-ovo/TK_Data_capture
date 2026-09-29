@@ -79,13 +79,26 @@ class CDPBrowserManager:
     CDP browser manager, responsible for launching and managing browsers connected via CDP
     """
 
-    def __init__(self):
+    def __init__(self, profile_platform: Optional[str] = None):
         self.launcher = BrowserLauncher()
         self.browser: Optional[Browser] = None
         self.browser_context: Optional[BrowserContext] = None
         self.debug_port: Optional[int] = None
         self._cleanup_registered = False
-        self._port_file = Path(os.getcwd()) / "browser_data" / "cdp_debug_port.txt"
+        normalized_profile = str(profile_platform or "").strip().lower()
+        self.profile_platform = normalized_profile or None
+        port_file_name = (
+            f"cdp_debug_port_{self.profile_platform}.txt"
+            if self.profile_platform
+            else "cdp_debug_port.txt"
+        )
+        self._port_file = Path(os.getcwd()) / "browser_data" / port_file_name
+
+    def _profile_name(self) -> str:
+        return self.profile_platform or str(config.PLATFORM)
+
+    def _profile_user_data_dir(self) -> Path:
+        return Path(os.getcwd()) / "browser_data" / f"cdp_{config.USER_DATA_DIR % self._profile_name()}"
 
     def _read_recorded_port(self) -> Optional[int]:
         try:
@@ -342,15 +355,21 @@ class CDPBrowserManager:
     async def _find_reusable_browser_port(self) -> Optional[int]:
         """Find a live program-managed browser with a valid /json/version endpoint."""
         recorded_port = self._read_recorded_port()
-        candidates = []
-        if recorded_port:
-            candidates.append(recorded_port)
-        if config.CDP_DEBUG_PORT not in candidates:
-            candidates.append(config.CDP_DEBUG_PORT)
-        candidates.extend(
-            port for port in range(config.CDP_DEBUG_PORT + 1, config.CDP_DEBUG_PORT + 10)
-            if port not in candidates
-        )
+        if self.profile_platform:
+            # A platform-specific manager must never attach to a browser that
+            # belongs to another crawler profile. Its own port record is the
+            # only safe reusable candidate; otherwise launch a fresh profile.
+            candidates = [recorded_port] if recorded_port else []
+        else:
+            candidates = []
+            if recorded_port:
+                candidates.append(recorded_port)
+            if config.CDP_DEBUG_PORT not in candidates:
+                candidates.append(config.CDP_DEBUG_PORT)
+            candidates.extend(
+                port for port in range(config.CDP_DEBUG_PORT + 1, config.CDP_DEBUG_PORT + 10)
+                if port not in candidates
+            )
 
         for port in candidates:
             if not await self._test_cdp_connection(port, log_warning=False, timeout=0.5):
@@ -366,7 +385,12 @@ class CDPBrowserManager:
 
     async def probe_existing_browser(self) -> tuple[bool, Optional[int]]:
         """Probe the recorded or configured browser port without launching a new browser."""
-        candidates = [self._read_recorded_port(), config.CDP_DEBUG_PORT]
+        recorded_port = self._read_recorded_port()
+        candidates = (
+            [recorded_port]
+            if self.profile_platform
+            else [recorded_port, config.CDP_DEBUG_PORT]
+        )
         checked = set()
         for port in candidates:
             if not port or port in checked:
@@ -388,11 +412,7 @@ class CDPBrowserManager:
         # Set user data directory (if save login state is enabled)
         user_data_dir = None
         if config.SAVE_LOGIN_STATE:
-            user_data_dir = os.path.join(
-                os.getcwd(),
-                "browser_data",
-                f"cdp_{config.USER_DATA_DIR % config.PLATFORM}",
-            )
+            user_data_dir = str(self._profile_user_data_dir())
             os.makedirs(user_data_dir, exist_ok=True)
             utils.logger.info(f"[CDPBrowserManager] User data directory: {user_data_dir}")
 

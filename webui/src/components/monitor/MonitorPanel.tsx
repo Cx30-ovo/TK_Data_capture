@@ -19,6 +19,14 @@ function parseSecUserId(value: string): string {
 }
 
 
+function apiErrorMessage(error: unknown): string {
+  const responseError = error as { response?: { data?: { detail?: unknown } }; message?: string }
+  const detail = responseError.response?.data?.detail
+  if (typeof detail === 'string' && detail.trim()) return detail
+  return String(error instanceof Error ? error.message : error || '')
+}
+
+
 interface MonitorPanelProps {
   embedded?: boolean
   onDirtyChange?: (dirty: boolean) => void
@@ -129,10 +137,16 @@ export function MonitorPanel({ embedded = false, onDirtyChange, onValidChange, s
     mutationFn: (accountId: number) => monitorApi.discoverAccount(accountId),
     onSuccess: (response) => {
       const result = response.data
-      toast.success(t('monitor.discoverDone', { posts: result.created_posts ?? 0, jobs: result.created_jobs ?? 0 }))
+      toast.success(t('monitor.discoverDone', {
+        existing: result.existing ?? 0,
+        posts: result.created_posts ?? 0,
+        jobs: result.created_jobs ?? 0,
+        covers: result.updated_covers ?? 0,
+        skipped: result.skipped_historical ?? 0,
+      }))
       refreshAccounts()
     },
-    onError: (error: Error) => toast.error(`${t('monitor.discoverFailed')}: ${error.message}`),
+    onError: (error: unknown) => toast.error(`${t('monitor.discoverFailed')}: ${apiErrorMessage(error)}`),
   })
 
   const snapshotMutation = useMutation({

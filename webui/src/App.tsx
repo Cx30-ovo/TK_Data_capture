@@ -24,7 +24,7 @@ function getInitialTab(): AppTab {
   const params = new URLSearchParams(window.location.search)
   const value = params.get('tab')
   const module = params.get('module')
-  if (!value && (module === 'topics' || module === 'lifecycle')) return 'data'
+  if (!value && (module === 'overview' || module === 'topics' || module === 'lifecycle' || module === 'strategy' || module === 'hot')) return 'data'
   return value === 'data' || value === 'ops' || value === 'export' || value === 'config' ? value : 'overview'
 }
 

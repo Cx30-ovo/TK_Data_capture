@@ -30,7 +30,9 @@ class FakeFetcher:
     async def __aexit__(self, exc_type, exc, tb):
         return None
 
-    async def fetch_latest_posts(self, sec_user_id, known_ids, max_pages=3):
+    async def fetch_latest_posts(
+        self, sec_user_id, known_ids, max_pages=3, published_since=None, stop_on_known=False
+    ):
         self.last_known_ids = set(known_ids)
         return [post for post in self.posts if post["aweme_id"] not in known_ids]
 
@@ -267,17 +269,60 @@ def test_monitor_fetcher_extracts_video_and_image_post_covers():
 @pytest.mark.asyncio
 async def test_manual_discovery_backfills_missing_cover_from_detail(isolated_monitor_db):
     await db_session.create_tables("sqlite")
+    now = int(time.time())
     account = await monitor_repository.upsert_monitored_account(sec_user_id="cover_backfill_user")
-    fetcher = FakeFetcher(
-        posts=[{
-            "platform": "dy",
-            "aweme_id": "cover_backfill_post",
-            "sec_user_id": account.sec_user_id,
-            "title": "cover backfill",
-            "desc": "cover backfill",
-            "create_time": BASE_TIME,
-            "canonical_url": "https://www.douyin.com/video/cover_backfill_post",
-        }],
+    await monitor_repository.upsert_post(
+        aweme_id="cover_backfill_post",
+        sec_user_id=account.sec_user_id,
+        title="cover backfill",
+        desc="cover backfill",
+        create_time=now - 10 * 86400,
+        canonical_url="https://www.douyin.com/video/cover_backfill_post",
+    )
+
+    class ExistingAwareFakeFetcher(FakeFetcher):
+        async def fetch_latest_posts(
+            self, sec_user_id, known_ids, max_pages=3, published_since=None, stop_on_known=False
+        ):
+            self.last_known_ids = set(known_ids)
+            return list(self.posts)
+
+    fetcher = ExistingAwareFakeFetcher(
+        posts=[
+            {
+                "platform": "dy",
+                "aweme_id": "cover_backfill_post",
+                "sec_user_id": account.sec_user_id,
+                "title": "cover backfill",
+                "desc": "cover backfill",
+                "create_time": now - 10 * 86400,
+                "canonical_url": "https://www.douyin.com/video/cover_backfill_post",
+            },
+            {
+                "platform": "dy",
+                "aweme_id": "new_recent_post",
+                "sec_user_id": account.sec_user_id,
+                "title": "must be collected",
+                "desc": "must be collected",
+                "create_time": now - 3600,
+                "canonical_url": "https://www.douyin.com/video/new_recent_post",
+                "cover_url": "https://example.com/recent-cover.jpg",
+                "liked_count": 10,
+                "collected_count": 2,
+                "comment_count": 3,
+                "share_count": 4,
+            },
+            {
+                "platform": "dy",
+                "aweme_id": "uncollected_history_post",
+                "sec_user_id": account.sec_user_id,
+                "title": "must be skipped",
+                "desc": "must be skipped",
+                "create_time": now - 8 * 86400,
+                "canonical_url": "https://www.douyin.com/video/uncollected_history_post",
+                "cover_url": "https://example.com/history-cover.jpg",
+            },
+        ],
         metrics={"cover_backfill_post": {
             "liked_count": 1,
             "collected_count": 2,
@@ -291,11 +336,72 @@ async def test_manual_discovery_backfills_missing_cover_from_detail(isolated_mon
         sec_user_id=account.sec_user_id,
         fetcher=fetcher,
         backfill_covers=True,
+        new_post_window_days=7,
     )
 
     stored_post = await monitor_repository.get_post("cover_backfill_post")
     assert stored_post.cover_url == "https://example.com/detail-cover.jpg"
     assert result["updated_covers"] == 1
+    assert result["created_posts"] == 1
+    assert result["created_jobs"] == 5
+    assert result["skipped_historical"] == 1
+    assert await monitor_repository.get_post("new_recent_post") is not None
+    assert await monitor_repository.get_post("uncollected_history_post") is None
+
+
+@pytest.mark.asyncio
+async def test_manual_latest_discovery_only_creates_recent_unknown_posts(isolated_monitor_db):
+    await db_session.create_tables("sqlite")
+    now = int(time.time())
+    account = await monitor_repository.upsert_monitored_account(sec_user_id="latest_only_user")
+    await monitor_repository.upsert_post(
+        aweme_id="known_boundary",
+        sec_user_id=account.sec_user_id,
+        title="original title",
+        desc="original title",
+        create_time=now - 86400,
+        canonical_url="https://www.douyin.com/video/known_boundary",
+    )
+
+    class LatestFakeFetcher(FakeFetcher):
+        async def fetch_latest_posts(
+            self, sec_user_id, known_ids, max_pages=3, published_since=None, stop_on_known=False
+        ):
+            self.last_known_ids = set(known_ids)
+            return list(self.posts)
+
+    fetcher = LatestFakeFetcher(posts=[
+        {
+            "platform": "dy", "aweme_id": "recent_new", "sec_user_id": account.sec_user_id,
+            "title": "recent", "desc": "recent", "create_time": now - 600,
+            "canonical_url": "https://www.douyin.com/video/recent_new",
+        },
+        {
+            "platform": "dy", "aweme_id": "known_boundary", "sec_user_id": account.sec_user_id,
+            "title": "must not overwrite", "desc": "must not overwrite", "create_time": now - 86400,
+            "canonical_url": "https://www.douyin.com/video/known_boundary",
+        },
+        {
+            "platform": "dy", "aweme_id": "historical_unknown", "sec_user_id": account.sec_user_id,
+            "title": "history", "desc": "history", "create_time": now - 8 * 86400,
+            "canonical_url": "https://www.douyin.com/video/historical_unknown",
+        },
+    ])
+
+    result = await MonitorService().discover_account(
+        sec_user_id=account.sec_user_id,
+        fetcher=fetcher,
+        max_pages=10,
+        new_post_window_days=7,
+        latest_only=True,
+    )
+
+    assert result["created_posts"] == 1
+    assert result["created_jobs"] == 5
+    assert result["skipped_historical"] == 1
+    assert (await monitor_repository.get_post("known_boundary")).title == "original title"
+    assert await monitor_repository.get_post("recent_new") is not None
+    assert await monitor_repository.get_post("historical_unknown") is None
 
 
 @pytest.mark.asyncio
@@ -347,6 +453,73 @@ async def test_monitor_discovery_refreshes_known_post_and_scans_past_it():
 
     assert [post["aweme_id"] for post in posts] == ["known_pinned", "new_post"]
     assert [post["is_known"] for post in posts] == [True, False]
+
+
+@pytest.mark.asyncio
+async def test_monitor_discovery_stops_after_first_page_entirely_before_cutoff():
+    fetcher = DouyinMonitorFetcher()
+    fetcher._client = FakeDouyinClient([
+        {
+            "aweme_list": [{"aweme_id": "recent", "desc": "recent", "create_time": BASE_TIME}],
+            "has_more": 1,
+            "max_cursor": "1",
+        },
+        {
+            "aweme_list": [{"aweme_id": "old", "desc": "old", "create_time": BASE_TIME - 8 * 86400}],
+            "has_more": 1,
+            "max_cursor": "2",
+        },
+        {
+            "aweme_list": [{"aweme_id": "older", "desc": "older", "create_time": BASE_TIME - 9 * 86400}],
+            "has_more": 0,
+            "max_cursor": "",
+        },
+    ])
+
+    posts = await fetcher.fetch_latest_posts(
+        sec_user_id="sec_user_1",
+        known_ids=set(),
+        max_pages=10,
+        published_since=BASE_TIME - 7 * 86400,
+    )
+
+    assert fetcher._client.calls == 2
+    assert [post["aweme_id"] for post in posts] == ["recent", "old"]
+
+
+@pytest.mark.asyncio
+async def test_monitor_discovery_stops_after_page_containing_known_post():
+    fetcher = DouyinMonitorFetcher()
+    fetcher._client = FakeDouyinClient([
+        {
+            "aweme_list": [{"aweme_id": "new_1", "desc": "new", "create_time": BASE_TIME}],
+            "has_more": 1,
+            "max_cursor": "1",
+        },
+        {
+            "aweme_list": [
+                {"aweme_id": "new_2", "desc": "new", "create_time": BASE_TIME - 10},
+                {"aweme_id": "known", "desc": "known", "create_time": BASE_TIME - 20},
+            ],
+            "has_more": 1,
+            "max_cursor": "2",
+        },
+        {
+            "aweme_list": [{"aweme_id": "should_not_scan", "desc": "old", "create_time": BASE_TIME - 30}],
+            "has_more": 0,
+            "max_cursor": "",
+        },
+    ])
+
+    posts = await fetcher.fetch_latest_posts(
+        sec_user_id="sec_user_1",
+        known_ids={"known"},
+        max_pages=10,
+        stop_on_known=True,
+    )
+
+    assert fetcher._client.calls == 2
+    assert [post["aweme_id"] for post in posts] == ["new_1", "new_2", "known"]
 
 
 @pytest.mark.asyncio
@@ -412,6 +585,19 @@ async def test_failed_jobs_can_be_batch_retried_and_classified(isolated_monitor_
     failed_jobs = await monitor_repository.list_jobs(status="failed")
     assert len(failed_jobs) == 2
     assert classify_job_error(failed_jobs[0]) == "risk_control"
+    abnormal_jobs = await monitor_repository.list_jobs(statuses=("failed", "missed"))
+    assert {item["id"] for item in abnormal_jobs} == {jobs[0].id, jobs[1].id}
+
+    service_result = await MonitorService().list_jobs(status="abnormal", all_accounts=True)
+    assert service_result["count"] == 2
+    assert service_result["returned_count"] == 2
+    assert service_result["total_count"] == len(jobs)
+    assert service_result["status_counts"]["failed"] == 2
+
+    limited_pending = await MonitorService().list_jobs(status="pending", limit=1, all_accounts=True)
+    assert limited_pending["count"] == 3
+    assert limited_pending["returned_count"] == 1
+    assert limited_pending["jobs"][0]["status"] == "pending"
 
     updated = await monitor_repository.retry_failed_jobs([jobs[0].id])
     assert updated == 1

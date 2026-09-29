@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, BarChart3, BrainCircuit, Clock3, Database, Filter, RefreshCw, RotateCcw, Tags } from 'lucide-react'
+import { AlertTriangle, BarChart3, BrainCircuit, Clock3, Database, Filter, Flame, RefreshCw, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -9,12 +9,12 @@ import { StatePanel } from '@/components/ui/state-panel'
 import { monitorApi, type MonitorDashboardPost, type MonitorJob } from '@/lib/api'
 
 const MonitorPerformanceOverview = lazy(() => import('@/components/monitor/MonitorPerformanceOverview').then((module) => ({ default: module.MonitorPerformanceOverview })))
-const MonitorTopicAnalytics = lazy(() => import('@/components/monitor/MonitorTopicAnalytics').then((module) => ({ default: module.MonitorTopicAnalytics })))
 const MonitorTitleStrategyAnalytics = lazy(() => import('@/components/monitor/MonitorTitleStrategyAnalytics').then((module) => ({ default: module.MonitorTitleStrategyAnalytics })))
+const MonitorHotRank = lazy(() => import('@/components/monitor/MonitorHotRank').then((module) => ({ default: module.MonitorHotRank })))
 
 
 type TimeRange = '24h' | '7d' | '30d' | 'all'
-type DataModule = 'overview' | 'topics' | 'strategy'
+type DataModule = 'overview' | 'strategy' | 'hot'
 type PostStatus = 'all' | 'normal' | 'insufficient' | 'missed' | 'abnormal'
 
 const TIME_RANGE_SECONDS: Record<Exclude<TimeRange, 'all'>, number> = {
@@ -45,8 +45,8 @@ function formatGeneratedAt(value?: string): string {
 
 
 function parseDataModule(value: string | null): DataModule {
-  if (value === 'topics') return 'topics'
   if (value === 'strategy' || value === 'lifecycle') return 'strategy'
+  if (value === 'hot') return 'hot'
   return 'overview'
 }
 
@@ -158,7 +158,7 @@ export function MonitorDataCenter({ focusAwemeId, focusToken }: { focusAwemeId?:
         </div>
       </section>
 
-      <section className="overview-panel z-20 p-3 backdrop-blur lg:sticky lg:top-12" aria-labelledby="data-center-filter-title">
+      {activeModule !== 'hot' ? <section className="overview-panel z-20 p-3 backdrop-blur lg:sticky lg:top-12" aria-labelledby="data-center-filter-title">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
           <div className="flex min-w-40 items-center gap-2 lg:self-center">
             <span className="grid h-8 w-8 place-items-center rounded-md bg-cyber-bg-tertiary text-cyber-text-secondary"><Filter aria-hidden="true" className="h-4 w-4" /></span>
@@ -181,22 +181,30 @@ export function MonitorDataCenter({ focusAwemeId, focusToken }: { focusAwemeId?:
           <Button type="button" variant="ghost" size="sm" onClick={() => { setTimeRange('all'); setStatusFilter('all') }} disabled={timeRange === 'all' && statusFilter === 'all'} className="min-h-9 self-start px-3 text-xs lg:self-end"><RotateCcw aria-hidden="true" className="h-3.5 w-3.5" />{t('dataCenter.reset')}</Button>
           <Badge variant="outline" aria-live="polite" className="lg:ml-auto lg:self-end">{t('dataCenter.resultCount', { count: scopedPosts.length })}</Badge>
         </div>
-      </section>
+      </section> : null}
 
       <nav className="data-center-module-nav" aria-label={t('dataCenter.modules.label')}>
         {([
-          { key: 'overview', icon: BarChart3, label: t('dataCenter.modules.overview') },
-          { key: 'topics', icon: Tags, label: t('dataCenter.modules.topics') },
-          { key: 'strategy', icon: BrainCircuit, label: t('dataCenter.modules.strategy') },
+          { key: 'overview', icon: BarChart3, label: t('dataCenter.modules.overview'), hint: t('dataCenter.modules.overviewHint') },
+          { key: 'strategy', icon: BrainCircuit, label: t('dataCenter.modules.strategy'), hint: t('dataCenter.modules.strategyHint') },
+          { key: 'hot', icon: Flame, label: t('dataCenter.modules.hot'), hint: t('dataCenter.modules.hotHint') },
         ] as const).map((module) => (
-          <button key={module.key} type="button" aria-current={activeModule === module.key ? 'page' : undefined} data-active={activeModule === module.key ? 'true' : 'false'} onClick={() => changeModule(module.key)} className="data-center-module-tab"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-cyber-bg-tertiary"><module.icon aria-hidden="true" className="h-4 w-4" /></span><span className="truncate">{module.label}</span>{module.key === 'overview' && scopedSummary.attention > 0 ? <AlertTriangle aria-label={t('dataCenter.attentionPosts')} className="ml-auto h-3.5 w-3.5 text-status-warning" /> : null}</button>
+          <button key={module.key} type="button" aria-current={activeModule === module.key ? 'page' : undefined} data-active={activeModule === module.key ? 'true' : 'false'} onClick={() => changeModule(module.key)} className="data-center-module-tab">
+            <span className="data-center-module-icon"><module.icon aria-hidden="true" className="h-4 w-4" /></span>
+            <span className="min-w-0 flex-1 text-left">
+              <span className="data-center-module-label">{module.label}</span>
+              <span className="data-center-module-hint">{module.hint}</span>
+            </span>
+            {module.key === 'overview' && scopedSummary.attention > 0 ? <span className="data-center-module-meta data-center-module-meta-warning"><AlertTriangle aria-hidden="true" className="h-3 w-3" />{t('dataCenter.modules.attentionCount', { count: scopedSummary.attention })}</span> : null}
+            {module.key === 'hot' ? <span className="data-center-module-meta data-center-module-meta-live"><span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-status-success" />{t('dataCenter.modules.live')}</span> : null}
+          </button>
         ))}
       </nav>
 
       <Suspense fallback={<StatePanel variant="loading" title={t('dataCenter.loading')} />}>
         {activeModule === 'overview' ? <MonitorPerformanceOverview posts={scopedPosts} focusAwemeId={focusAwemeId} focusToken={focusToken} /> : null}
-        {activeModule === 'topics' ? <MonitorTopicAnalytics posts={scopedPosts} timeRange={timeRange} /> : null}
         {activeModule === 'strategy' ? <MonitorTitleStrategyAnalytics posts={scopedPosts} timeRange={timeRange} /> : null}
+        {activeModule === 'hot' ? <MonitorHotRank /> : null}
       </Suspense>
     </div>
   )

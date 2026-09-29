@@ -7,6 +7,26 @@ import config
 from tools.cdp_browser import CDPBrowserManager
 
 
+def test_platform_profile_uses_isolated_port_and_user_data_files(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    manager = CDPBrowserManager(profile_platform="dy")
+
+    assert manager._port_file == tmp_path / "browser_data" / "cdp_debug_port_dy.txt"
+    assert manager._profile_user_data_dir() == tmp_path / "browser_data" / "cdp_dy_user_data_dir"
+
+
+@pytest.mark.asyncio
+async def test_platform_profile_does_not_reuse_unrelated_default_port(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(config, "CDP_DEBUG_PORT", 9222)
+    manager = CDPBrowserManager(profile_platform="dy")
+    manager._test_cdp_connection = AsyncMock(return_value=True)  # type: ignore[method-assign]
+    manager._get_browser_websocket_url = AsyncMock(return_value="ws://unrelated")  # type: ignore[method-assign]
+
+    assert await manager._find_reusable_browser_port() is None
+    manager._test_cdp_connection.assert_not_awaited()
+
+
 @pytest.mark.asyncio
 async def test_existing_browser_connects_directly_to_devtools_browser(monkeypatch):
     monkeypatch.setattr(config, "CDP_CONNECT_EXISTING", True)

@@ -321,6 +321,28 @@ class AIAnalysisRepository:
             await session.flush()
             return True
 
+    async def delete_legacy_results(
+        self,
+        *,
+        sec_user_id: str,
+        analysis_type: str,
+        current_prompt_version: str,
+        platform: str = "dy",
+    ) -> int:
+        """Delete only reports from older prompt/schema versions for one account."""
+        stmt = select(AIAnalysisResult).where(
+            AIAnalysisResult.platform == platform,
+            AIAnalysisResult.sec_user_id == sec_user_id,
+            AIAnalysisResult.analysis_type == analysis_type,
+            AIAnalysisResult.prompt_version != current_prompt_version,
+        )
+        async with get_monitor_session() as session:
+            items = list((await session.execute(stmt)).scalars().all())
+            for item in items:
+                await session.delete(item)
+            await session.flush()
+            return len(items)
+
     async def delete_for_scope(
         self,
         *,

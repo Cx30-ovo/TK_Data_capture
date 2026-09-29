@@ -269,12 +269,12 @@ AI_MAX_RETRIES=2
 AI_ANALYSIS_CACHE_TTL_HOURS=24
 AI_ENABLE_THINKING=false
 
-# 可选：封面 OCR 与视觉标签模型（必须支持 OpenAI 兼容的图片消息）
+# 可选：封面视觉标签与评分模型（必须支持 OpenAI 兼容的图片消息）
 VISION_AI_ENABLED=true
 VISION_AI_BASE_URL=http://192.168.101.244:4000/v1
 VISION_AI_API_KEY=你的本地APIKey
 VISION_AI_MODEL=你的视觉模型名称
-VISION_AI_SAMPLE_LIMIT=20
+VISION_AI_BATCH_SIZE=4
 ```
 
 说明：
@@ -519,14 +519,14 @@ VISION_AI_MODEL=你的视觉模型名称
 VISION_AI_TIMEOUT_SECONDS=300
 VISION_AI_MAX_TOKENS=4096
 VISION_AI_MAX_RETRIES=2
-VISION_AI_SAMPLE_LIMIT=20
+VISION_AI_BATCH_SIZE=4
 ```
 
 当前 WebUI 默认使用：
 
 - 主题分析：最多 10 篇文章作为模型分析样本。
 - 生命周期分析：最多 6 篇带生命周期快照的作品。
-- 封面分析：默认仅处理 20 个爆款/普通对照样本；视觉模型负责 OCR 与标签，Python 负责统计。
+- 封面分析：处理当前筛选范围内全部有效封面；视觉模型负责标签与视觉评分，Python 结合互动百分位计算封面表现分。`VISION_AI_BATCH_SIZE` 仅控制单次请求图片数，不限制分析总量。
 - 后端仍保留更大的分析上限，但为了避免模型上下文超限和长时间等待，界面默认使用较小样本。
 
 AI 研报的互动数字和生命周期类型由后端重新计算，模型只负责聚类、总结、诊断和建议。

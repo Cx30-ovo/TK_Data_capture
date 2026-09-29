@@ -227,7 +227,7 @@ async def test_time_range_filters_by_publish_time_not_discovery_time():
 
 
 @pytest.mark.asyncio
-async def test_title_strategy_runs_three_model_phases_and_uses_cache(isolated_ai_analysis_db):
+async def test_content_performance_runs_one_model_phase_and_uses_cache(isolated_ai_analysis_db):
     await db_session.create_tables("sqlite")
     now = int(time.time())
     posts = [
@@ -265,12 +265,14 @@ async def test_title_strategy_runs_three_model_phases_and_uses_cache(isolated_ai
     assert first["status"] == "done"
     assert first["analysis_type"] == "title_strategy"
     assert first["result"]["meta"]["total_works"] == 6
-    assert first["result"]["next_titles"][0]["expected_length"] == len("厦门地铁又有新进展")
-    assert model.calls == 3
+    assert first["result"]["schema_version"] == "content-performance-v2"
+    assert "next_titles" not in first["result"]
+    assert "hit_works" not in first["result"]
+    assert model.calls == 1
 
     second = await service.analyze_title_strategy(sec_user_id="sec_ai_service", scope={"time_range": "all", "post_limit": 100})
     assert second["cache_hit"] is True
-    assert model.calls == 3
+    assert model.calls == 1
 
 
 def test_lifecycle_result_uses_deterministic_fallback_when_model_has_no_valid_ids():
@@ -298,7 +300,7 @@ def test_cover_attribution_payload_excludes_images_ocr_and_titles():
     payload = AIAnalysisService._cover_text_payload({
         "status": "done",
         "sample_count": 1,
-        "statistics": {"dimensions": [{"dimension": "subject_type", "label": "person", "count": 1}]},
+        "statistics": {"dimensions": [{"dimension": "theme_type", "label": "people_story", "count": 1}]},
         "samples": [{
             "title": "不应进入文本模型",
             "cover_url": "https://example.com/private-cover.jpg",
@@ -306,7 +308,7 @@ def test_cover_attribution_payload_excludes_images_ocr_and_titles():
         }],
     })
     serialized = str(payload)
-    assert "subject_type" in serialized
+    assert "theme_type" in serialized
     assert "private-cover" not in serialized
     assert "封面原文" not in serialized
     assert "不应进入文本模型" not in serialized

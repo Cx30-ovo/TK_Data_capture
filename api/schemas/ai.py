@@ -17,3 +17,9 @@ class AITopicIdeasRequest(BaseModel):
     account_id: int = Field(gt=0)
     topic_result_id: int = Field(gt=0)
     force: bool = False
+
+
+class AICoverCandidateRequest(BaseModel):
+    account_id: int = Field(gt=0)
+    reference_result_id: int | None = Field(default=None, gt=0)
+    image_data_url: str = Field(min_length=32, max_length=12 * 1024 * 1024)

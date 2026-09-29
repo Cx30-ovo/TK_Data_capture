@@ -36,8 +36,8 @@ AI_MAX_RETRIES = max(0, _as_int(os.getenv("AI_MAX_RETRIES"), 2))
 AI_ANALYSIS_CACHE_TTL_HOURS = max(1, _as_int(os.getenv("AI_ANALYSIS_CACHE_TTL_HOURS"), 24))
 AI_ENABLE_THINKING = _as_bool(os.getenv("AI_ENABLE_THINKING", "false"), default=False)
 
-# Optional multimodal model used only for sampled cover labeling. It is kept
-# separate from the text model so cover images never enter the attribution LLM.
+# Optional multimodal model used for full-scope cover labeling and visual scores.
+# It is kept separate from the text model so cover images never enter the text LLM.
 VISION_AI_ENABLED = _as_bool(os.getenv("VISION_AI_ENABLED", "false"), default=False)
 VISION_AI_PROVIDER = os.getenv("VISION_AI_PROVIDER", AI_PROVIDER).strip().lower()
 VISION_AI_BASE_URL = os.getenv("VISION_AI_BASE_URL", AI_BASE_URL).strip().rstrip("/")
@@ -46,7 +46,7 @@ VISION_AI_MODEL = os.getenv("VISION_AI_MODEL", "").strip()
 VISION_AI_TIMEOUT_SECONDS = max(1.0, _as_float(os.getenv("VISION_AI_TIMEOUT_SECONDS"), AI_TIMEOUT_SECONDS))
 VISION_AI_MAX_TOKENS = max(256, _as_int(os.getenv("VISION_AI_MAX_TOKENS"), 4096))
 VISION_AI_MAX_RETRIES = max(0, _as_int(os.getenv("VISION_AI_MAX_RETRIES"), AI_MAX_RETRIES))
-VISION_AI_SAMPLE_LIMIT = max(2, min(40, _as_int(os.getenv("VISION_AI_SAMPLE_LIMIT"), 20)))
+VISION_AI_BATCH_SIZE = max(1, min(8, _as_int(os.getenv("VISION_AI_BATCH_SIZE"), 4)))
 
 
 ai_config = {
@@ -97,7 +97,7 @@ __all__ = [
     "VISION_AI_TIMEOUT_SECONDS",
     "VISION_AI_MAX_TOKENS",
     "VISION_AI_MAX_RETRIES",
-    "VISION_AI_SAMPLE_LIMIT",
+    "VISION_AI_BATCH_SIZE",
     "ai_config",
     "vision_ai_config",
 ]

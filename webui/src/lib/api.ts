@@ -149,6 +149,9 @@ export interface MonitorRunResult {
   reason?: string
   created_posts?: number
   created_jobs?: number
+  existing?: number
+  skipped_historical?: number
+  updated_covers?: number
   completed?: number
   retried?: number
   failed?: number
@@ -186,6 +189,27 @@ export interface MonitorDashboard {
     jobs: Record<string, number>
   }
   posts: MonitorDashboardPost[]
+}
+
+export interface DouyinHotRankItem {
+  rank: number | null
+  is_pinned: boolean
+  word: string
+  hot_value: number
+  video_count: number
+  event_time: number
+  sentence_id: string
+  label: string
+  search_url: string
+}
+
+export interface DouyinHotRankResponse {
+  generated_at: string
+  source: string
+  cached: boolean
+  stale: boolean
+  warning?: string
+  items: DouyinHotRankItem[]
 }
 
 export interface MonitorAbnormalJob {
@@ -234,6 +258,14 @@ export interface MonitorJob {
   started_at: number | null
   finished_at: number | null
   error_category: string
+}
+
+export interface MonitorJobsResponse {
+  jobs: MonitorJob[]
+  count: number
+  returned_count: number
+  total_count: number
+  status_counts: Record<string, number>
 }
 
 export interface MonitorAlert {
@@ -373,8 +405,9 @@ export interface AIAnalysisProviderStatus {
   timeout_seconds: number
   max_tokens: number
   temperature: number
-  vision?: Omit<AIAnalysisProviderStatus, 'vision' | 'vision_sample_limit'>
-  vision_sample_limit?: number
+  vision?: Omit<AIAnalysisProviderStatus, 'vision' | 'vision_scope' | 'vision_batch_size'>
+  vision_scope?: 'all_valid_covers'
+  vision_batch_size?: number
 }
 
 export interface AITopicCluster {
@@ -436,8 +469,18 @@ export interface AITitleStrategyKeyword {
   count: number
   ratio: number
   avg_interaction: number
+  median_interaction?: number
+  baseline_median_interaction?: number
+  median_lift_percent?: number | null
+  avg_interaction_ex_top1?: number
+  baseline_avg_interaction_ex_top1?: number
+  ex_top1_lift_percent?: number | null
   hit_rate: number
-  lift: number
+  baseline_hit_rate?: number
+  hit_rate_diff_pp?: number
+  lift: number | null
+  sample_status?: 'insufficient' | 'reference' | 'stable'
+  status?: 'strong' | 'slight' | 'neutral' | 'drag' | 'no_hit' | 'insufficient'
   conclusion: string
 }
 
@@ -447,12 +490,15 @@ export interface AITitleLengthGroup {
   ratio: number
   avg_interaction: number
   median_interaction: number
+  median_lift_percent?: number | null
+  avg_interaction_ex_top1?: number
   avg_likes: number
   avg_comments: number
   avg_collects: number
   avg_shares: number
   hit_count: number
   hit_rate: number
+  sample_status?: 'insufficient' | 'reference' | 'stable'
 }
 
 export interface AITitleStrategyHitWork {
@@ -480,8 +526,13 @@ export interface AICoverDimensionStat {
   count: number
   ratio: number
   avg_interaction: number
-  hit_rate: number
-  lift: number
+  median_interaction?: number
+  hit_rate?: number
+  lift?: number | null
+  avg_visual_score?: number
+  avg_data_score?: number
+  avg_cover_score?: number
+  sample_status?: 'insufficient' | 'reference' | 'stable'
 }
 
 export interface AICoverSample {
@@ -492,24 +543,44 @@ export interface AICoverSample {
   is_hit: boolean
   display_tags: string[]
   labels: {
-    ocr_text: string
+    theme_type: string
     text_density: string
     text_hook: string
-    subject_type: string
     composition: string
     visual_style: string[]
+    color_tone: string
     confidence: number
     [key: string]: string | number | boolean | string[]
   }
 }
 
+export interface AICoverScoreRecord {
+  aweme_id: string
+  title: string
+  cover_url: string
+  canonical_url: string
+  create_time: number
+  publish_time: string
+  interaction: number
+  likes: number
+  comments: number
+  collects: number
+  shares: number
+  visual_quality_score: number
+  data_performance_score: number
+  cover_performance_score: number
+  labels: Record<string, unknown>
+}
+
 export interface AICoverAnalysis {
   status: 'done' | 'partial' | 'not_configured' | 'no_covers'
   requested_sample_count: number
+  valid_cover_count?: number
   sample_count: number
   missing_cover_count: number
   failed_count?: number
   model: string
+  prompt_version?: string
   summary: string
   hit_differences: string[]
   recommendations: string[]
@@ -517,19 +588,80 @@ export interface AICoverAnalysis {
     sample_count: number
     hit_sample_count?: number
     normal_sample_count?: number
-    overall_hit_rate: number
+    overall_hit_rate?: number
+    average_visual_score?: number
+    average_data_score?: number
+    average_cover_score?: number
+    score_formula?: string
+    score_distribution?: Array<{ label: string; count: number; ratio: number }>
     dimensions: AICoverDimensionStat[]
   }
-  samples: AICoverSample[]
+  samples?: AICoverSample[]
+  score_records?: AICoverScoreRecord[]
+  errors?: string[]
+}
+
+export interface AICoverCandidateFactorEvidence {
+  dimension: string
+  dimension_name: string
+  labels: string[]
+  label_names: string[]
+  sample_count: number
+  avg_data_score: number | null
+  sample_status: 'insufficient' | 'reference' | 'stable'
+  delta_vs_overall: number | null
+}
+
+export interface AICoverCandidateResult {
+  status: 'done'
+  model: string
+  decision: 'recommended' | 'usable' | 'adjust' | 'insufficient_reference'
+  confidence: 'high' | 'medium' | 'low'
+  visual_quality_score: number
+  estimated_data_score: number
+  feasibility_score: number
+  visual_percentile: number
+  reference_count: number
+  similar_count: number
+  labels: {
+    theme_type: string
+    text_density: string
+    text_hook: string
+    composition: string
+    visual_style: string[]
+    color_tone: string
+    visual_quality_score: number
+    confidence: number
+    scores: Record<string, number>
+    [key: string]: unknown
+  }
+  factor_evidence: AICoverCandidateFactorEvidence[]
+  benchmark: {
+    average_visual_score: number
+    average_data_score: number
+    average_cover_score: number
+  }
+  suggestions: Array<{
+    type: 'visual' | 'factor' | 'keep'
+    code?: string
+    score?: number
+    dimension?: string
+    label?: string
+    delta?: number
+    sample_count?: number
+  }>
 }
 
 export interface AITitleStrategyResult {
+  schema_version?: string
   overview: {
     total_works: number
     hit_count: number
     overall_hit_rate: number
     hit_threshold: number
     interaction_mean: number
+    interaction_median?: number
+    interaction_avg_ex_top1?: number
     interaction_p90: number
     interaction_stddev: number
     core_finding: string
@@ -551,12 +683,12 @@ export interface AITitleStrategyResult {
     comparison_explanation: string
     recommendation: string
   }
-  hit_works: AITitleStrategyHitWork[]
-  hit_vs_normal: { key_differences: string[]; common_patterns: string }
-  reusable_formulas: Array<{ formula: string; example: string; why_effective: string }>
-  next_titles: Array<{ title: string; formula: string; expected_length: number; target_audience: string; hook_type: string }>
-  risk_notes: string[]
-  title_templates: Array<{ template: string; count: number; ratio: number }>
+  hit_works?: AITitleStrategyHitWork[]
+  hit_vs_normal?: { key_differences: string[]; common_patterns: string }
+  reusable_formulas?: Array<{ formula: string; example: string; why_effective: string }>
+  next_titles?: Array<{ title: string; formula: string; expected_length: number; target_audience: string; hook_type: string }>
+  risk_notes?: string[]
+  title_templates?: Array<{ template: string; count: number; ratio: number }>
   cover_analysis?: AICoverAnalysis
   meta: {
     account: string
@@ -667,20 +799,25 @@ export const monitorApi = {
   updateAccount: (accountId: number, payload: Partial<MonitorConfigPayload>) =>
     api.put<MonitorAccount>('/monitor/accounts/' + accountId, payload),
   deleteAccount: (accountId: number) => api.delete('/monitor/accounts/' + accountId),
-  discoverAccount: (accountId: number) => api.post<MonitorRunResult>('/monitor/accounts/' + accountId + '/discover'),
+  discoverAccount: (accountId: number) =>
+    api.post<MonitorRunResult>('/monitor/accounts/' + accountId + '/discover', undefined, { timeout: 10 * 60 * 1000 }),
   getAccountComparison: (limit = 100) =>
     api.get<{ generated_at: string; accounts: MonitorAccountComparison[] }>('/monitor/accounts/comparison', { params: { limit } }),
   getStatus: (accountId?: number) => api.get<MonitorStatus>('/monitor/status', { params: accountId ? { account_id: accountId } : accountParams() }),
   updateConfig: (payload: MonitorConfigPayload) => api.post('/monitor/config', payload),
   discover: (secUserId?: string) =>
-    api.post<MonitorRunResult>('/monitor/discover', null, { params: { sec_user_id: secUserId } }),
+    api.post<MonitorRunResult>('/monitor/discover', null, {
+      params: { sec_user_id: secUserId },
+      timeout: 10 * 60 * 1000,
+    }),
   runDueSnapshots: (limit = 50) =>
     api.post<MonitorRunResult>('/monitor/snapshots/run-due', null, { params: { limit } }),
   getDashboard: (limit?: number) =>
     api.get<MonitorDashboard>('/monitor/dashboard', { params: { ...(limit === undefined ? {} : { limit }), ...accountParams() } }),
   getOverview: () => api.get<MonitorOverview>('/monitor/overview', { params: accountParams() }),
+  getHotRank: (force = false) => api.get<DouyinHotRankResponse>('/monitor/hot-rank', { params: { force }, timeout: 120000 }),
   getJobs: (status?: string, limit?: number) =>
-    api.get<{ jobs: MonitorJob[]; count: number }>('/monitor/jobs', { params: { ...(status ? { status } : {}), ...(limit === undefined ? {} : { limit }), ...accountParams() } }),
+    api.get<MonitorJobsResponse>('/monitor/jobs', { params: { ...(status ? { status } : {}), ...(limit === undefined ? {} : { limit }), ...accountParams() } }),
   retryJob: (jobId: number) => api.post('/monitor/jobs/' + jobId + '/retry'),
   retryFailedJobs: (jobIds?: number[]) =>
     api.post<{ updated: number }>('/monitor/jobs/retry-failed', null, {
@@ -713,7 +850,9 @@ export const monitorApi = {
   analyzeLifecycle: (payload: AIAnalysisRequest) =>
     api.post<AIAnalysisResponse<AILifecycleAnalysisResult>>('/monitor/ai/analyze/lifecycle', payload, { timeout: 300000 }),
   analyzeTitleStrategy: (payload: AIAnalysisRequest) =>
-    api.post<AIAnalysisResponse<AITitleStrategyResult>>('/monitor/ai/analyze/title-strategy', payload, { timeout: 300000 }),
+    api.post<AIAnalysisResponse<AITitleStrategyResult>>('/monitor/ai/analyze/title-strategy', payload, { timeout: 30 * 60 * 1000 }),
+  analyzeCoverCandidate: (payload: { account_id: number; reference_result_id?: number; image_data_url: string }) =>
+    api.post<AICoverCandidateResult>('/monitor/ai/analyze/cover-candidate', payload, { timeout: 5 * 60 * 1000 }),
   analyzeTopicIdeas: (payload: { account_id: number; topic_result_id: number; force?: boolean }) =>
     api.post<AIAnalysisResponse<AITopicIdeasResult>>('/monitor/ai/analyze/topic-ideas', payload, { timeout: 300000 }),
   getAIResults: (accountId?: number, analysisType?: AIAnalysisType, status?: AIAnalysisStatus, limit = 20) =>
@@ -722,6 +861,8 @@ export const monitorApi = {
     }),
   getAIResult: (resultId: number) => api.get<AIAnalysisResponse>(`/monitor/ai/results/${resultId}`),
   deleteAIResult: (resultId: number) => api.delete(`/monitor/ai/results/${resultId}`),
+  deleteLegacyTitleStrategyReports: (accountId: number) =>
+    api.delete<{ status: 'ok'; deleted: number }>('/monitor/ai/results/title-strategy/legacy', { params: { account_id: accountId } }),
 }
 
 export default api

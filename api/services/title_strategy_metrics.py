@@ -80,6 +80,43 @@ def _ratio(numerator: int, denominator: int) -> float:
     return _round(numerator / denominator, 4) if denominator else 0.0
 
 
+def _sample_status(count: int) -> str:
+    if count < 10:
+        return "insufficient"
+    if count < 30:
+        return "reference"
+    return "stable"
+
+
+def _mean_ex_top1(values: Iterable[int]) -> float:
+    items = sorted((int(value) for value in values), reverse=True)
+    if len(items) <= 1:
+        return 0.0
+    return _round(statistics.fmean(items[1:]))
+
+
+def _lift_percent(value: float, baseline: float) -> float | None:
+    if baseline <= 0:
+        return None
+    return _round((value - baseline) / baseline * 100)
+
+
+def _keyword_status(*, count: int, hit_count: int, lift_percent: float | None) -> str:
+    if count < 10:
+        return "insufficient"
+    if hit_count == 0:
+        return "no_hit"
+    if lift_percent is None or abs(lift_percent) < 5:
+        return "neutral"
+    if lift_percent >= 20:
+        return "strong"
+    if lift_percent > 0:
+        return "slight"
+    if lift_percent <= -10:
+        return "drag"
+    return "neutral"
+
+
 def _length_group(length: int) -> str:
     if length <= 20:
         return "≤20字"
@@ -135,20 +172,29 @@ def _tokenize(title: str) -> set[str]:
     }
 
 
-def _group_statistics(group: str, rows: list[dict[str, Any]], total: int) -> dict[str, Any]:
+def _group_statistics(
+    group: str,
+    rows: list[dict[str, Any]],
+    total: int,
+    overall_median: float,
+) -> dict[str, Any]:
     interactions = [int(row["interaction"]) for row in rows]
+    median_interaction = _round(statistics.median(interactions)) if interactions else 0.0
     return {
         "len_group": group,
         "count": len(rows),
         "ratio": _ratio(len(rows), total),
         "avg_interaction": _round(statistics.fmean(interactions)) if interactions else 0.0,
-        "median_interaction": _round(statistics.median(interactions)) if interactions else 0.0,
+        "median_interaction": median_interaction,
+        "median_lift_percent": _lift_percent(median_interaction, overall_median),
+        "avg_interaction_ex_top1": _mean_ex_top1(interactions),
         "avg_likes": _round(statistics.fmean(row["likes"] for row in rows)) if rows else 0.0,
         "avg_comments": _round(statistics.fmean(row["comments"] for row in rows)) if rows else 0.0,
         "avg_collects": _round(statistics.fmean(row["collects"] for row in rows)) if rows else 0.0,
         "avg_shares": _round(statistics.fmean(row["shares"] for row in rows)) if rows else 0.0,
         "hit_count": sum(1 for row in rows if row["is_hit"]),
         "hit_rate": _ratio(sum(1 for row in rows if row["is_hit"]), len(rows)),
+        "sample_status": _sample_status(len(rows)),
     }
 
 
@@ -185,6 +231,8 @@ def compute_title_strategy(posts: list[Any], snapshots_by_post: Mapping[str, lis
     total = len(rows)
     hit_count = sum(1 for row in rows if row["is_hit"])
     overall_hit_rate = hit_count / total if total else 0.0
+    overall_median = _round(statistics.median(interactions)) if interactions else 0.0
+    overall_avg_ex_top1 = _mean_ex_top1(interactions)
 
     token_rows: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
@@ -192,21 +240,50 @@ def compute_title_strategy(posts: list[Any], snapshots_by_post: Mapping[str, lis
             token_rows.setdefault(token, []).append(row)
     top_keywords = []
     for keyword, items in token_rows.items():
-        if len(items) < 3:
+        if len(items) < 5:
             continue
-        keyword_hit_rate = sum(1 for row in items if row["is_hit"]) / len(items)
+        item_ids = {str(row["aweme_id"]) for row in items}
+        baseline_items = [row for row in rows if str(row["aweme_id"]) not in item_ids]
+        item_interactions = [int(row["interaction"]) for row in items]
+        baseline_interactions = [int(row["interaction"]) for row in baseline_items]
+        keyword_hit_count = sum(1 for row in items if row["is_hit"])
+        baseline_hit_count = sum(1 for row in baseline_items if row["is_hit"])
+        keyword_hit_rate = keyword_hit_count / len(items)
+        baseline_hit_rate = baseline_hit_count / len(baseline_items) if baseline_items else 0.0
+        median_interaction = _round(statistics.median(item_interactions))
+        baseline_median = _round(statistics.median(baseline_interactions)) if baseline_interactions else 0.0
+        avg_ex_top1 = _mean_ex_top1(item_interactions)
+        baseline_avg_ex_top1 = _mean_ex_top1(baseline_interactions)
+        ex_top1_lift = _lift_percent(avg_ex_top1, baseline_avg_ex_top1)
         top_keywords.append({
             "keyword": keyword,
             "count": len(items),
             "ratio": _ratio(len(items), total),
-            "avg_interaction": _round(statistics.fmean(row["interaction"] for row in items)),
+            "avg_interaction": _round(statistics.fmean(item_interactions)),
+            "median_interaction": median_interaction,
+            "baseline_median_interaction": baseline_median,
+            "median_lift_percent": _lift_percent(median_interaction, baseline_median),
+            "avg_interaction_ex_top1": avg_ex_top1,
+            "baseline_avg_interaction_ex_top1": baseline_avg_ex_top1,
+            "ex_top1_lift_percent": ex_top1_lift,
             "hit_rate": _round(keyword_hit_rate, 4),
+            "baseline_hit_rate": _round(baseline_hit_rate, 4),
+            "hit_rate_diff_pp": _round((keyword_hit_rate - baseline_hit_rate) * 100, 1),
             "lift": _round(keyword_hit_rate / overall_hit_rate, 2) if overall_hit_rate else 0.0,
+            "sample_status": _sample_status(len(items)),
+            "status": _keyword_status(count=len(items), hit_count=keyword_hit_count, lift_percent=ex_top1_lift),
         })
-    top_keywords.sort(key=lambda row: (row["count"], row["avg_interaction"]), reverse=True)
+    top_keywords.sort(
+        key=lambda row: (
+            row["ex_top1_lift_percent"] is not None,
+            float(row["ex_top1_lift_percent"] or 0),
+            row["count"],
+        ),
+        reverse=True,
+    )
 
     length_stats = [
-        _group_statistics(group, [row for row in rows if row["len_group"] == group], total)
+        _group_statistics(group, [row for row in rows if row["len_group"] == group], total, overall_median)
         for group in LENGTH_GROUPS
     ]
     hit_samples = sorted((row for row in rows if row["is_hit"]), key=lambda row: row["interaction"], reverse=True)[:20]
@@ -219,7 +296,7 @@ def compute_title_strategy(posts: list[Any], snapshots_by_post: Mapping[str, lis
         if count >= 2
     ]
 
-    sample_keys = ("aweme_id", "title", "title_clean", "publish_time", "title_len", "interaction", "likes", "comments", "collects", "shares")
+    sample_keys = ("aweme_id", "title", "title_clean", "create_time", "publish_time", "title_len", "interaction", "likes", "comments", "collects", "shares")
     compact = lambda row: {key: row[key] for key in sample_keys}
     return {
         "overview": {
@@ -228,6 +305,8 @@ def compute_title_strategy(posts: list[Any], snapshots_by_post: Mapping[str, lis
             "overall_hit_rate": _round(overall_hit_rate, 4),
             "hit_threshold": _round(threshold),
             "interaction_mean": _round(mean),
+            "interaction_median": overall_median,
+            "interaction_avg_ex_top1": overall_avg_ex_top1,
             "interaction_p90": _round(p90),
             "interaction_stddev": _round(deviation),
         },
@@ -236,6 +315,9 @@ def compute_title_strategy(posts: list[Any], snapshots_by_post: Mapping[str, lis
         "long_vs_short": _long_short_statistics(rows),
         "hit_samples": [compact(row) for row in hit_samples],
         "normal_samples": [compact(row) for row in normal_samples],
+        # Cover analysis must use every work in the selected account/time scope,
+        # not the compact hit/normal samples used by the title model.
+        "all_samples": [compact(row) for row in rows],
         "title_templates": templates,
         "source_post_ids": [row["aweme_id"] for row in rows],
         "data_limit": DATA_LIMIT,

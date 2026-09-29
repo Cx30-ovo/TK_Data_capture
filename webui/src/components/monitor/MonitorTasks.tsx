@@ -62,8 +62,8 @@ export function MonitorTasks({ statusFilter, onStatusFilterChange, focusJobId, f
   const handledFocusToken = useRef<number | undefined>()
 
   const { data, isLoading } = useQuery({
-    queryKey: ['monitorJobs', 300],
-    queryFn: async () => (await monitorApi.getJobs(undefined, 300)).data,
+    queryKey: ['monitorJobs', statusFilter],
+    queryFn: async () => (await monitorApi.getJobs(statusFilter === 'all' ? undefined : statusFilter)).data,
     refetchInterval: 30000,
   })
 
@@ -98,10 +98,12 @@ export function MonitorTasks({ statusFilter, onStatusFilterChange, focusJobId, f
   })
 
   const jobs = useMemo(() => data?.jobs || [], [data])
-  const counts = useMemo(() => jobs.reduce<Record<string, number>>((result, job) => {
+  const loadedCounts = useMemo(() => jobs.reduce<Record<string, number>>((result, job) => {
     result[job.status] = (result[job.status] || 0) + 1
     return result
   }, {}), [jobs])
+  const counts = data?.status_counts || loadedCounts
+  const totalCount = data?.total_count ?? Object.values(counts).reduce((sum, count) => sum + count, 0)
 
   const normalizedSearch = searchText.trim().toLowerCase()
   const filteredJobs = useMemo(() => jobs.filter((job) => {
@@ -205,7 +207,7 @@ export function MonitorTasks({ statusFilter, onStatusFilterChange, focusJobId, f
             <div className="text-[10px] text-cyber-text-muted">{t('tasks.description')}</div>
           </div>
           <div className="ml-auto text-[10px] font-mono text-cyber-text-muted">
-            {t('tasks.total', { count: jobs.length })}
+            {t('tasks.total', { count: totalCount })}
           </div>
         </header>
 
@@ -213,7 +215,7 @@ export function MonitorTasks({ statusFilter, onStatusFilterChange, focusJobId, f
           <div className="flex gap-1 overflow-x-auto rounded-md border border-cyber-border-subtle bg-cyber-bg-tertiary/20 p-1">
             {STATUS_FILTERS.map((status) => {
               const count = status === 'all'
-                ? jobs.length
+                ? totalCount
                 : status === 'abnormal'
                   ? (counts.failed || 0) + (counts.missed || 0)
                   : counts[status] || 0
@@ -342,7 +344,9 @@ export function MonitorTasks({ statusFilter, onStatusFilterChange, focusJobId, f
                 ))}
               </tbody>
             </table>
-            {!isLoading && sortedJobs.length === 0 ? (
+            {isLoading ? (
+              <div className="flex items-center justify-center gap-2 py-10 text-xs font-mono text-cyber-text-muted"><RefreshCw aria-hidden="true" className="h-4 w-4 animate-spin" />{t('tasks.loading')}</div>
+            ) : sortedJobs.length === 0 ? (
               <div className="py-10 text-center text-xs font-mono text-cyber-text-muted">{t('tasks.noJobs')}</div>
             ) : null}
           </div>
@@ -378,7 +382,9 @@ export function MonitorTasks({ statusFilter, onStatusFilterChange, focusJobId, f
                 </div>
               </div>
             ))}
-            {!isLoading && sortedJobs.length === 0 ? (
+            {isLoading ? (
+              <div className="flex items-center justify-center gap-2 py-10 text-xs font-mono text-cyber-text-muted"><RefreshCw aria-hidden="true" className="h-4 w-4 animate-spin" />{t('tasks.loading')}</div>
+            ) : sortedJobs.length === 0 ? (
               <div className="py-10 text-center text-xs font-mono text-cyber-text-muted">{t('tasks.noJobs')}</div>
             ) : null}
           </div>

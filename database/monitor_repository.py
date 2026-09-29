@@ -190,6 +190,20 @@ class MonitorRepository:
             )
             return set((await session.execute(stmt)).scalars().all())
 
+    async def list_post_ids_missing_cover(
+        self,
+        sec_user_id: str,
+        platform: str = "dy",
+    ) -> set[str]:
+        """Return existing posts whose cover URL is still empty."""
+        async with get_monitor_session() as session:
+            stmt = select(DouyinPost.aweme_id).where(
+                DouyinPost.platform == platform,
+                DouyinPost.sec_user_id == sec_user_id,
+                (DouyinPost.cover_url.is_(None)) | (func.trim(DouyinPost.cover_url) == ""),
+            )
+            return set((await session.execute(stmt)).scalars().all())
+
     async def list_posts(
         self,
         platform: str = "dy",
@@ -300,6 +314,7 @@ class MonitorRepository:
     async def list_jobs(
         self,
         status: Optional[str] = None,
+        statuses: Optional[Sequence[str]] = None,
         platform: str = "dy",
         sec_user_id: Optional[str] = None,
         limit: Optional[int] = 300,
@@ -314,7 +329,9 @@ class MonitorRepository:
                 )
                 .where(DouyinMonitorJob.platform == platform)
             )
-            if status:
+            if statuses:
+                stmt = stmt.where(DouyinMonitorJob.status.in_(tuple(statuses)))
+            elif status:
                 stmt = stmt.where(DouyinMonitorJob.status == status)
             if sec_user_id:
                 stmt = stmt.where(DouyinMonitorJob.sec_user_id == sec_user_id)

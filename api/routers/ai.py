@@ -9,8 +9,8 @@ import config
 from database.ai_analysis_repository import ai_analysis_repository
 from database.monitor_repository import monitor_repository
 
-from ..schemas import AIAnalysisRequest, AITopicIdeasRequest
-from ..services.ai_analysis_service import ai_analysis_service
+from ..schemas import AIAnalysisRequest, AICoverCandidateRequest, AITopicIdeasRequest
+from ..services.ai_analysis_service import TITLE_STRATEGY_PROMPT_VERSION, ai_analysis_service
 from ..services.ai_model_service import AIServiceError, ai_model_service
 from ..services.cover_analysis_service import cover_analysis_service
 
@@ -28,6 +28,8 @@ async def _resolve_account_sec_user_id(account_id: int) -> str:
 def _raise_ai_error(error: AIServiceError) -> None:
     if error.code in {"disabled", "not_configured"}:
         status_code = 503
+    elif error.code == "invalid_media":
+        status_code = 422
     elif error.code in {"timeout", "connection_error"}:
         status_code = 504
     elif error.code == "http_error" and error.status_code and 400 <= error.status_code < 500:
@@ -52,7 +54,8 @@ async def get_ai_status():
     return {
         **ai_model_service.get_status(),
         "vision": cover_analysis_service.get_status(),
-        "vision_sample_limit": int(config.VISION_AI_SAMPLE_LIMIT),
+        "vision_scope": "all_valid_covers",
+        "vision_batch_size": int(config.VISION_AI_BATCH_SIZE),
     }
 
 
@@ -95,6 +98,30 @@ async def analyze_title_strategy(request: AIAnalysisRequest):
         _raise_ai_error(exc)
 
 
+@router.post("/analyze/cover-candidate")
+async def analyze_cover_candidate(request: AICoverCandidateRequest):
+    sec_user_id = await _resolve_account_sec_user_id(request.account_id)
+    if request.reference_result_id is not None:
+        reference = await ai_analysis_repository.get_result(request.reference_result_id)
+    else:
+        reference = await ai_analysis_repository.get_latest_result(
+            sec_user_id=sec_user_id,
+            analysis_type="title_strategy",
+            status="done",
+        )
+    if reference is None or reference.analysis_type != "title_strategy" or reference.sec_user_id != sec_user_id:
+        raise HTTPException(status_code=404, detail="A matching content performance report was not found.")
+    serialized = ai_analysis_service.serialize_result(reference, cache_hit=True)
+    result = serialized.get("result") if isinstance(serialized, dict) else None
+    cover_analysis = result.get("cover_analysis") if isinstance(result, dict) else None
+    if not isinstance(cover_analysis, dict) or not cover_analysis.get("sample_count"):
+        raise HTTPException(status_code=409, detail="Run cover analysis before evaluating a new cover.")
+    try:
+        return await cover_analysis_service.evaluate_candidate(request.image_data_url, cover_analysis)
+    except AIServiceError as exc:
+        _raise_ai_error(exc)
+
+
 @router.post("/analyze/topic-ideas")
 async def analyze_topic_ideas(request: AITopicIdeasRequest):
     sec_user_id = await _resolve_account_sec_user_id(request.account_id)
@@ -123,6 +150,17 @@ async def list_ai_results(
         limit=limit,
     )
     return {"results": [ai_analysis_service.serialize_result(item, cache_hit=True) for item in items]}
+
+
+@router.delete("/results/title-strategy/legacy")
+async def delete_legacy_title_strategy_results(account_id: int = Query(..., ge=1)):
+    sec_user_id = await _resolve_account_sec_user_id(account_id)
+    deleted = await ai_analysis_repository.delete_legacy_results(
+        sec_user_id=sec_user_id,
+        analysis_type="title_strategy",
+        current_prompt_version=TITLE_STRATEGY_PROMPT_VERSION,
+    )
+    return {"status": "ok", "deleted": deleted}
 
 
 @router.get("/results/{result_id}")

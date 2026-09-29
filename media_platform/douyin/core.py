@@ -452,7 +452,7 @@ class DouYinCrawler(AbstractCrawler):
         使用CDP模式启动浏览器
         """
         try:
-            self.cdp_manager = CDPBrowserManager()
+            self.cdp_manager = CDPBrowserManager(profile_platform="dy")
             browser_context = await self.cdp_manager.launch_and_connect(
                 playwright=playwright,
                 playwright_proxy=playwright_proxy,

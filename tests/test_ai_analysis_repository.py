@@ -118,6 +118,33 @@ async def test_ai_analysis_cache_delete_and_expiration_cleanup(isolated_ai_analy
 
 
 @pytest.mark.asyncio
+async def test_delete_legacy_results_keeps_current_and_other_analysis_types(isolated_ai_analysis_db):
+    await db_session.create_tables("sqlite")
+    await ai_analysis_repository.upsert_result(
+        **cache_kwargs(analysis_type="title_strategy", input_hash="d" * 64, prompt_version="content-performance-v1"),
+        result={"schema_version": "content-performance-v1"},
+    )
+    current = await ai_analysis_repository.upsert_result(
+        **cache_kwargs(analysis_type="title_strategy", input_hash="e" * 64, prompt_version="content-performance-v2"),
+        result={"schema_version": "content-performance-v2"},
+    )
+    topic = await ai_analysis_repository.upsert_result(
+        **cache_kwargs(analysis_type="topic", input_hash="f" * 64, prompt_version="topic-v1"),
+        result={"summary": "keep"},
+    )
+
+    deleted = await ai_analysis_repository.delete_legacy_results(
+        sec_user_id="sec_ai_user",
+        analysis_type="title_strategy",
+        current_prompt_version="content-performance-v2",
+    )
+
+    assert deleted == 1
+    assert await ai_analysis_repository.get_result(current.id) is not None
+    assert await ai_analysis_repository.get_result(topic.id) is not None
+
+
+@pytest.mark.asyncio
 async def test_ai_analysis_repository_rejects_invalid_values(isolated_ai_analysis_db):
     await db_session.create_tables("sqlite")
 

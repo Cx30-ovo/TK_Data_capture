@@ -17,13 +17,13 @@ from database.monitor_repository import monitor_repository
 from .ai_model_service import AIServiceError, ai_model_service
 from .cover_analysis_service import cover_analysis_service
 from .title_strategy_metrics import DATA_LIMIT, clean_title, compute_title_strategy
-from .title_strategy_prompts import HIT_SYSTEM_PROMPT, PATTERN_SYSTEM_PROMPT, STRATEGY_SYSTEM_PROMPT
+from .title_strategy_prompts import PATTERN_SYSTEM_PROMPT
 
 
 TOPIC_PROMPT_VERSION = "topic-v8"
 LIFECYCLE_PROMPT_VERSION = "lifecycle-v2"
 TOPIC_IDEAS_PROMPT_VERSION = "topic-ideas-v4"
-TITLE_STRATEGY_PROMPT_VERSION = "title-strategy-v2-cover"
+TITLE_STRATEGY_PROMPT_VERSION = "content-performance-v2"
 TIME_RANGE_SECONDS = {
     "24h": 24 * 60 * 60,
     "7d": 7 * 24 * 60 * 60,
@@ -284,19 +284,8 @@ class AIAnalysisService:
             )
 
         metrics = compute_title_strategy(posts, snapshots_by_post)
-        sample_limit = int(config.VISION_AI_SAMPLE_LIMIT)
-        hit_limit = sample_limit // 2
-        selected_rows = list(metrics.get("hit_samples", []))[:hit_limit]
-        selected_rows.extend(list(metrics.get("normal_samples", []))[:sample_limit - len(selected_rows)])
-        if len(selected_rows) < sample_limit:
-            selected_ids = {str(row.get("aweme_id")) for row in selected_rows if isinstance(row, dict)}
-            remaining = [
-                row for row in [*metrics.get("hit_samples", []), *metrics.get("normal_samples", [])]
-                if isinstance(row, dict) and str(row.get("aweme_id")) not in selected_ids
-            ]
-            selected_rows.extend(remaining[:sample_limit - len(selected_rows)])
+        selected_rows = list(metrics.get("all_samples", []))
         posts_by_id = {str(post.aweme_id): post for post in posts}
-        hit_ids = {str(row.get("aweme_id")) for row in metrics.get("hit_samples", []) if isinstance(row, dict)}
         cover_samples = []
         for row in selected_rows:
             post_id = str(row.get("aweme_id") or "")
@@ -306,7 +295,7 @@ class AIAnalysisService:
             cover_samples.append({
                 **row,
                 "cover_url": str(getattr(post, "cover_url", "") or ""),
-                "is_hit": post_id in hit_ids,
+                "canonical_url": str(getattr(post, "canonical_url", "") or ""),
             })
         metrics["cover_analysis"] = await self._cover_analysis_service.analyze_samples(cover_samples)
         account = await self._monitor_repository.get_monitored_account(sec_user_id)
@@ -395,18 +384,6 @@ class AIAnalysisService:
             if not force and cached is not None:
                 return self._serialize_cache_item(cached, cache_hit=True)
 
-            previous_item = await self._repository.get_latest_result(
-                sec_user_id=sec_user_id,
-                analysis_type="title_strategy",
-                status="done",
-            )
-            previous_result: dict[str, Any] = {}
-            if previous_item and previous_item.result_json:
-                try:
-                    previous_result = json.loads(previous_item.result_json)
-                except json.JSONDecodeError:
-                    previous_result = {}
-
             metrics = dict(source_data.get("metrics") or {})
             overview = dict(metrics.get("overview") or {})
             compact_context = {
@@ -422,34 +399,6 @@ class AIAnalysisService:
                 "top_keywords": metrics.get("top_keywords") or [],
                 "title_length_groups": metrics.get("title_length_groups") or [],
                 "long_vs_short": metrics.get("long_vs_short") or {},
-                # The text model receives only controlled cover tags and Python
-                # aggregates. Image URLs and pixels never enter this request.
-                "cover_tags": self._cover_text_payload(metrics.get("cover_analysis") or {}),
-            }
-
-            previous_hits = {
-                str(row.get("aweme_id")): row
-                for row in previous_result.get("hit_works", [])
-                if isinstance(row, dict) and row.get("aweme_id")
-            }
-            current_hits = [row for row in metrics.get("hit_samples", []) if isinstance(row, dict)]
-            new_hits = [row for row in current_hits if str(row.get("aweme_id")) not in previous_hits]
-            retained_hits = [
-                {
-                    "aweme_id": row.get("aweme_id"),
-                    "title": row.get("title"),
-                    "hook_type": row.get("hook_type"),
-                    "why_viral": row.get("why_viral"),
-                    "title_formula": row.get("title_formula"),
-                }
-                for row in previous_result.get("hit_works", [])
-                if isinstance(row, dict) and str(row.get("aweme_id")) in {str(item.get("aweme_id")) for item in current_hits}
-            ]
-            phase_two_payload = {
-                **compact_context,
-                "hit_samples_to_analyze": new_hits or current_hits,
-                "reused_hit_analyses": retained_hits if new_hits else [],
-                "normal_samples": metrics.get("normal_samples") or [],
             }
 
             try:
@@ -459,26 +408,9 @@ class AIAnalysisService:
                     user_prompt=json.dumps(phase_one_payload, ensure_ascii=False, separators=(",", ":")),
                     max_tokens=max_tokens,
                 )
-                phase_two = await self._model_service.generate_json(
-                    system_prompt=HIT_SYSTEM_PROMPT,
-                    user_prompt=json.dumps(phase_two_payload, ensure_ascii=False, separators=(",", ":")),
-                    max_tokens=max_tokens,
-                )
-                phase_three = await self._model_service.generate_json(
-                    system_prompt=STRATEGY_SYSTEM_PROMPT,
-                    user_prompt=json.dumps({
-                        **compact_context,
-                        "phase_one_result": phase_one,
-                        "phase_two_result": phase_two,
-                    }, ensure_ascii=False, separators=(",", ":")),
-                    max_tokens=max_tokens,
-                )
-                normalized = self._normalize_title_strategy_result(
+                normalized = self._normalize_content_performance_result(
                     source_data=source_data,
                     phase_one=phase_one,
-                    phase_two=phase_two,
-                    phase_three=phase_three,
-                    previous_result=previous_result,
                 )
                 item = await self._repository.upsert_result(
                     **cache_key,
@@ -486,7 +418,7 @@ class AIAnalysisService:
                     result=normalized,
                     scope={**dict(scope), "total_works": overview.get("total_works", 0)},
                     # The input hash already invalidates the cache when posts or snapshots change.
-                    # Keeping the exact-input result avoids repeating three model calls after a TTL.
+                    # Keeping the exact-input result avoids repeating model and vision calls.
                     expires_at=None,
                 )
                 return self._serialize_cache_item(item, cache_hit=False)
@@ -518,6 +450,56 @@ class AIAnalysisService:
             if len(result) >= limit:
                 break
         return result
+
+    def _normalize_content_performance_result(
+        self,
+        *,
+        source_data: Mapping[str, Any],
+        phase_one: Any,
+    ) -> dict[str, Any]:
+        """Build the compact two-tab report without title ideas or hit attribution."""
+        if not isinstance(phase_one, dict):
+            raise AIServiceError("Content performance analysis did not return a JSON object.", code="invalid_analysis")
+        metrics = dict(source_data.get("metrics") or {})
+        overview = dict(metrics.get("overview") or {})
+        top_keywords = [
+            {**row, "conclusion": str(row.get("status") or "neutral")}
+            for row in metrics.get("top_keywords", [])
+            if isinstance(row, dict)
+        ]
+        length_ai = phase_one.get("title_length_analysis") if isinstance(phase_one.get("title_length_analysis"), dict) else {}
+        long_short_ai = length_ai.get("long_vs_short") if isinstance(length_ai.get("long_vs_short"), dict) else {}
+        return {
+            "schema_version": "content-performance-v2",
+            "overview": {
+                **overview,
+                "core_finding": self._strategy_text(phase_one.get("overall_insight"), 120),
+                "title_length_advice": self._strategy_text(length_ai.get("recommendation"), 120),
+                "keyword_advice": "数据结论以关键词对照统计为准",
+                "content_advice": DATA_LIMIT,
+            },
+            "top_keywords": top_keywords,
+            "title_length_analysis": {
+                "groups": metrics.get("title_length_groups") or [],
+                "long_vs_short": metrics.get("long_vs_short") or {},
+                "best_range": self._strategy_text(length_ai.get("best_range"), 80),
+                "trend": self._strategy_text(length_ai.get("trend"), 120),
+                "winner": self._strategy_text(long_short_ai.get("winner"), 80),
+                "comparison_explanation": self._strategy_text(long_short_ai.get("explanation"), 120),
+                "recommendation": self._strategy_text(length_ai.get("recommendation"), 120),
+            },
+            "cover_analysis": dict(metrics.get("cover_analysis") or {}),
+            "meta": {
+                "account": source_data.get("account"),
+                "period": source_data.get("period"),
+                "total_works": overview.get("total_works", 0),
+                "hit_threshold": overview.get("hit_threshold", 0),
+                "data_limit": DATA_LIMIT,
+                "interaction_formula": "点赞 + 2×评论 + 2×收藏 + 3×转发",
+                "source_post_ids": metrics.get("source_post_ids") or [],
+                "reused_hit_analyses": 0,
+            },
+        }
 
     def _normalize_title_strategy_result(
         self,

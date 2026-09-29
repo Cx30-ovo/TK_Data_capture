@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from database.monitor_repository import monitor_repository
 
 from ..schemas import MonitorAccountConfigRequest, MonitorAccountUpdateRequest, MonitorAlertStatusRequest
-from ..services.monitor_service import monitor_service
+from ..services.monitor_service import MonitorBrowserNetworkError, MonitorHotRankError, monitor_service
 from ..services.report_service import report_service
 from ..services.analytics_service import analytics_service
 
@@ -93,10 +93,16 @@ async def discover_monitor_account(account_id: int):
     account = await monitor_repository.get_monitored_account_by_id(account_id)
     if account is None:
         raise HTTPException(status_code=404, detail=f"Monitor account not found: {account_id}")
-    return await monitor_service.discover_account(
-        sec_user_id=account.sec_user_id,
-        backfill_covers=True,
-    )
+    try:
+        return await monitor_service.discover_account(
+            sec_user_id=account.sec_user_id,
+            max_pages=10,
+            backfill_covers=False,
+            new_post_window_days=7,
+            latest_only=True,
+        )
+    except MonitorBrowserNetworkError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.get("/status")
@@ -130,10 +136,16 @@ async def save_monitor_config(request: MonitorAccountConfigRequest):
 
 @router.post("/discover")
 async def run_monitor_discovery(sec_user_id: Optional[str] = None):
-    return await monitor_service.discover_account(
-        sec_user_id=sec_user_id,
-        backfill_covers=True,
-    )
+    try:
+        return await monitor_service.discover_account(
+            sec_user_id=sec_user_id,
+            max_pages=10,
+            backfill_covers=False,
+            new_post_window_days=7,
+            latest_only=True,
+        )
+    except MonitorBrowserNetworkError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post("/snapshots/run-due")
@@ -149,6 +161,17 @@ async def get_monitor_dashboard(limit: Optional[int] = Query(None, ge=1, le=1000
 @router.get("/overview")
 async def get_monitor_overview(account_id: Optional[int] = None, all_accounts: bool = False):
     return await monitor_service.get_overview_data(account_id=account_id, all_accounts=all_accounts)
+
+
+@router.get("/hot-rank")
+async def get_douyin_hot_rank(force: bool = False):
+    try:
+        return await monitor_service.get_hot_rank(force=force)
+    except MonitorBrowserNetworkError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except MonitorHotRankError as exc:
+        status_code = 429 if "风控" in str(exc) else 503
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
 
 @router.get("/jobs")

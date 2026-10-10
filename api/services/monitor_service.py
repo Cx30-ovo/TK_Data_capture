@@ -18,6 +18,9 @@ from tools.cdp_browser import CDPBrowserManager, safe_page_goto
 
 from .crawler_manager import crawler_manager
 
+RISK_CONTROL_BASE_COOLDOWN_SECONDS = 30 * 60
+RISK_CONTROL_MAX_COOLDOWN_SECONDS = 6 * 60 * 60
+
 
 class MonitorBrowserNetworkError(RuntimeError):
     """A recoverable browser-network problem that should not surface as HTTP 500."""
@@ -99,6 +102,8 @@ class DouyinMonitorFetcher:
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
+        if self._client:
+            await self._client.close_browser_pages()
         if self._crawler and self._crawler.cdp_manager:
             await self._crawler.cdp_manager.cleanup()
         if self._playwright:
@@ -273,7 +278,11 @@ class DouyinMonitorFetcher:
         detail = await self._client.get_video_by_id(aweme_id)
         if not detail:
             raise DouyinPostUnavailableError(f"Failed to get Douyin detail for aweme_id={aweme_id}")
+        if str(detail.get("aweme_id") or "") != str(aweme_id):
+            raise ValueError("Snapshot response does not match the requested post ID")
         statistics = detail.get("statistics") or {}
+        if any(key not in statistics for key in ("digg_count", "collect_count", "comment_count", "share_count")):
+            raise ValueError("Snapshot response is missing required interaction metrics")
         return {
             "liked_count": _to_int(statistics.get("digg_count")),
             "collected_count": _to_int(statistics.get("collect_count")),
@@ -337,10 +346,41 @@ class MonitorService:
         self._task: Optional[asyncio.Task] = None
         self._hot_rank_cache: Optional[dict] = None
         self._hot_rank_cached_at = 0.0
+        self._risk_control_failures = 0
+        self._risk_control_until = 0.0
 
     @property
     def is_running(self) -> bool:
         return bool(self._task and not self._task.done())
+
+    @staticmethod
+    def _is_risk_control_error(exc: Exception) -> bool:
+        text = str(exc).lower()
+        return any(token in text for token in ("argus", "uifid", "blocked", "风控"))
+
+    def _risk_control_cooldown_remaining(self) -> int:
+        remaining = int(self._risk_control_until - time.time())
+        if remaining <= 0:
+            self._risk_control_until = 0.0
+            return 0
+        return remaining
+
+    async def _start_risk_control_cooldown(self, reason: str) -> int:
+        self._risk_control_failures += 1
+        cooldown = min(
+            RISK_CONTROL_BASE_COOLDOWN_SECONDS * (2 ** (self._risk_control_failures - 1)),
+            RISK_CONTROL_MAX_COOLDOWN_SECONDS,
+        )
+        self._risk_control_until = time.time() + cooldown
+        await crawler_manager.add_log(
+            f"[Monitor] Risk-control response detected; pausing Douyin requests for {cooldown // 60} minutes: {reason}",
+            "warning",
+        )
+        return cooldown
+
+    def _clear_risk_control_cooldown(self) -> None:
+        self._risk_control_failures = 0
+        self._risk_control_until = 0.0
 
     async def _resolve_account(self, account_id: Optional[int] = None, all_accounts: bool = False):
         if all_accounts:
@@ -375,6 +415,8 @@ class MonitorService:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
+                if self._is_risk_control_error(exc):
+                    await self._start_risk_control_cooldown(str(exc))
                 await self._create_alert(
                     alert_type="loop_error",
                     severity="error",
@@ -388,6 +430,8 @@ class MonitorService:
     async def _run_cycle(self) -> None:
         if self._crawler_is_busy():
             return
+        if self._risk_control_cooldown_remaining():
+            return
 
         missed_count = await monitor_repository.mark_overdue_jobs_missed()
         if missed_count > 0:
@@ -400,6 +444,8 @@ class MonitorService:
             )
 
         await self.run_due_snapshots()
+        if self._risk_control_cooldown_remaining():
+            return
 
         accounts = await monitor_repository.list_monitored_accounts(include_disabled=False)
         now = int(time.time())
@@ -427,6 +473,9 @@ class MonitorService:
         latest_only: bool = False,
     ) -> dict:
         async with self._lock:
+            cooldown_remaining = self._risk_control_cooldown_remaining()
+            if cooldown_remaining:
+                return {"status": "deferred", "reason": "risk_control_cooldown", "retry_after_seconds": cooldown_remaining}
             if self._crawler_is_busy():
                 return {"status": "skipped", "reason": "crawler already running"}
 
@@ -472,6 +521,7 @@ class MonitorService:
                     published_since=new_post_cutoff,
                     stop_on_known=latest_only,
                 )
+                self._clear_risk_control_cooldown()
                 fetched_count = len(posts)
                 skipped_historical = sum(
                     1 for item in posts
@@ -636,6 +686,9 @@ class MonitorService:
         now: Optional[int] = None,
     ) -> dict:
         async with self._lock:
+            cooldown_remaining = self._risk_control_cooldown_remaining()
+            if cooldown_remaining:
+                return {"status": "deferred", "reason": "risk_control_cooldown", "retry_after_seconds": cooldown_remaining}
             if self._crawler_is_busy():
                 return {"status": "skipped", "reason": "crawler already running"}
 
@@ -679,6 +732,7 @@ class MonitorService:
                             share_count=metrics.get("share_count", 0),
                             captured_at=now,
                         )
+                        self._clear_risk_control_cooldown()
                         completed += 1
                         result = account_results.setdefault(job.sec_user_id or "unassigned", {"completed": 0, "retried": 0, "failed": 0})
                         result["completed"] += 1
@@ -706,10 +760,13 @@ class MonitorService:
                             "warning",
                         )
                     except Exception as exc:
+                        risk_cooldown = 0
+                        if self._is_risk_control_error(exc):
+                            risk_cooldown = await self._start_risk_control_cooldown(str(exc))
                         retry_job = await monitor_repository.mark_job_retry(
                             job_id=job.id,
                             error=str(exc),
-                            retry_delay_seconds=config.RISK_CONTROL_RETRY_DELAY_SECONDS,
+                            retry_delay_seconds=risk_cooldown or config.RISK_CONTROL_RETRY_DELAY_SECONDS,
                         )
                         if retry_job and retry_job.status == "failed":
                             failed += 1
@@ -719,6 +776,8 @@ class MonitorService:
                             retried += 1
                             result = account_results.setdefault(job.sec_user_id or "unassigned", {"completed": 0, "retried": 0, "failed": 0})
                             result["retried"] += 1
+                        if risk_cooldown:
+                            break
 
             await crawler_manager.add_log(
                 f"[Monitor] Snapshot cycle result: completed={completed}, retried={retried}, "

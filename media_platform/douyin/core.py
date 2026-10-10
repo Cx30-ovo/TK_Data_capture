@@ -111,16 +111,19 @@ class DouYinCrawler(AbstractCrawler):
                     browser_context=self.browser_context,
                     urls=self.cookie_urls,
                 )
-            crawler_type_var.set(config.CRAWLER_TYPE)
-            if config.CRAWLER_TYPE == "search":
-                # Search for notes and retrieve their comment information.
-                await self.search()
-            elif config.CRAWLER_TYPE == "detail":
-                # Get the information and comments of the specified post
-                await self.get_specified_awemes()
-            elif config.CRAWLER_TYPE == "creator":
-                # Get the information and comments of the specified creator
-                await self.get_creators_and_videos()
+            try:
+                crawler_type_var.set(config.CRAWLER_TYPE)
+                if config.CRAWLER_TYPE == "search":
+                    # Search for notes and retrieve their comment information.
+                    await self.search()
+                elif config.CRAWLER_TYPE == "detail":
+                    # Get the information and comments of the specified post
+                    await self.get_specified_awemes()
+                elif config.CRAWLER_TYPE == "creator":
+                    # Get the information and comments of the specified creator
+                    await self.get_creators_and_videos()
+            finally:
+                await self.dy_client.close_browser_pages()
 
             utils.logger.info("[DouYinCrawler.start] Douyin Crawler finished ...")
 

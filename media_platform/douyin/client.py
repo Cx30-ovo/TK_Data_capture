@@ -20,6 +20,7 @@
 import asyncio
 import copy
 import json
+import re
 import urllib.parse
 from typing import TYPE_CHECKING, Any, Callable, Dict, Union, Optional
 
@@ -39,9 +40,15 @@ if TYPE_CHECKING:
 from .exception import *
 from .field import *
 from .help import *
+from .browser_session import DouyinBrowserSession
 
 
 class DouYinClient(AbstractApiClient, ProxyRefreshMixin):
+
+    BROWSER_SESSION_ENDPOINTS = frozenset({
+        "/aweme/v1/web/aweme/detail/",
+        "/aweme/v1/web/aweme/post/",
+    })
 
     def __init__(
         self,
@@ -66,8 +73,30 @@ class DouYinClient(AbstractApiClient, ProxyRefreshMixin):
         ]
         self.playwright_page = playwright_page
         self.cookie_dict = cookie_dict
+        self._sync_session_headers()
+        self._browser_session = DouyinBrowserSession(playwright_page)
         # Initialize proxy pool (from ProxyRefreshMixin)
         self.init_proxy_pool(proxy_ip_pool)
+
+    def _sync_session_headers(self):
+        """Use only identifiers from the actual logged-in browser session."""
+        uifid = self.cookie_dict.get("UIFID") or self.cookie_dict.get("UIFID_TEMP")
+        if uifid:
+            self.headers["uifid"] = uifid
+        else:
+            self.headers.pop("uifid", None)
+
+    async def _prepare_request_headers(self, headers: Optional[Dict]) -> Dict:
+        if self.playwright_page is not None:
+            await self.update_cookies(self.playwright_page.context)
+        prepared = copy.copy(headers if headers is not None else self.headers)
+        # Endpoint-specific header copies must not retain pre-login cookies.
+        for key in ("Cookie", "uifid"):
+            if key in self.headers:
+                prepared[key] = self.headers[key]
+            else:
+                prepared.pop(key, None)
+        return prepared
 
     async def __process_req_params(
         self,
@@ -110,6 +139,21 @@ class DouYinClient(AbstractApiClient, ProxyRefreshMixin):
             "msToken": local_storage.get("xmst"),
         }
         params.update(common_params)
+        chrome_version = re.search(r"Chrome/([\d.]+)", headers.get("User-Agent", ""))
+        if chrome_version:
+            params["browser_version"] = chrome_version.group(1)
+            params["engine_version"] = chrome_version.group(1)
+        if uri in self.BROWSER_SESSION_ENDPOINTS:
+            session_params = {
+                "uifid": self.cookie_dict.get("UIFID") or self.cookie_dict.get("UIFID_TEMP"),
+                "verifyFp": self.cookie_dict.get("s_v_web_id"),
+                "fp": self.cookie_dict.get("s_v_web_id"),
+            }
+            for key, value in session_params.items():
+                if value:
+                    params[key] = value
+                else:
+                    params.pop(key, None)
         query_string = urllib.parse.urlencode(params)
 
         # 20240927 a-bogus update (JS version)
@@ -117,35 +161,68 @@ class DouYinClient(AbstractApiClient, ProxyRefreshMixin):
         if request_method == "POST":
             post_data = params
 
-        if "/v1/web/general/search" not in uri:
+        if (
+            "/v1/web/general/search" not in uri
+            and not self._uses_browser_session(request_method, f"{self._host}{uri}")
+        ):
             a_bogus = await get_a_bogus(uri, query_string, post_data, headers["User-Agent"], self.playwright_page)
             params["a_bogus"] = a_bogus
+
+    def _uses_browser_session(self, method: str, url: str) -> bool:
+        target = urllib.parse.urlsplit(url)
+        return (
+            method.upper() == "GET"
+            and target.scheme == "https"
+            and target.netloc == "www.douyin.com"
+            and target.path in self.BROWSER_SESSION_ENDPOINTS
+            and self.playwright_page is not None
+            and self.proxy is None
+        )
 
     async def request(self, method, url, **kwargs):
         # Check whether the proxy has expired before each request
         await self._refresh_proxy_if_expired()
 
+        if self._uses_browser_session(method, url):
+            # Read the site's own page-load request, including its SDK validation.
+            # A rejection is returned directly: never issue a second HTTP request.
+            return await self._request_in_browser(url, **kwargs)
+
         async with make_async_client(proxy=self.proxy) as client:
             response = await client.request(method, url, timeout=self.timeout, **kwargs)
+        return self._decode_response(response.status_code, response.text)
+
+    @staticmethod
+    def _decode_response(status: int, body: str):
+        if status >= 400 or body == "blocked" or not body:
+            detail = body[:200] or "request blocked: empty response"
+            raise DataFetchError(f"HTTP {status}: {detail}")
         try:
-            if response.text == "" or response.text == "blocked":
-                utils.logger.error(f"request params incrr, response.text: {response.text}")
-                raise Exception("account blocked")
-            return response.json()
-        except Exception as e:
-            raise DataFetchError(f"{e}, {response.text}")
+            return json.loads(body)
+        except (ValueError, TypeError) as exc:
+            raise DataFetchError(f"Invalid JSON response (HTTP {status}): {body[:200]}") from exc
+
+    async def _request_in_browser(self, url: str, **kwargs):
+        result = await asyncio.wait_for(
+            self._browser_session.request(url, kwargs.get("params") or {}, self.timeout),
+            timeout=self.timeout + self._browser_session.MIN_PAGE_INTERVAL_SECONDS + 5,
+        )
+        return self._decode_response(result["status"], result["body"])
+
+    async def close_browser_pages(self):
+        await self._browser_session.close()
 
     async def get(self, uri: str, params: Optional[Dict] = None, headers: Optional[Dict] = None):
         """
         GET请求
         """
+        headers = await self._prepare_request_headers(headers)
         await self.__process_req_params(uri, params, headers)
-        headers = headers or self.headers
         return await self.request(method="GET", url=f"{self._host}{uri}", params=params, headers=headers)
 
     async def post(self, uri: str, data: dict, headers: Optional[Dict] = None):
+        headers = await self._prepare_request_headers(headers)
         await self.__process_req_params(uri, data, headers)
-        headers = headers or self.headers
         return await self.request(method="POST", url=f"{self._host}{uri}", data=data, headers=headers)
 
     async def pong(self, browser_context: BrowserContext) -> bool:
@@ -166,6 +243,7 @@ class DouYinClient(AbstractApiClient, ProxyRefreshMixin):
         )
         self.headers["Cookie"] = cookie_str
         self.cookie_dict = cookie_dict
+        self._sync_session_headers()
 
     async def search_info_by_keyword(
         self,

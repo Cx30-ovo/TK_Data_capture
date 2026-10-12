@@ -8,6 +8,7 @@ import { MonitorHealth } from '@/components/monitor/MonitorHealth'
 import { MonitorAlerts, type AlertViewFilter } from '@/components/monitor/MonitorAlerts'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { monitorApi } from '@/lib/api'
+import { MonitorExecutionPanel } from './MonitorExecutionPanel'
 
 
 type Tone = 'neutral' | 'ok' | 'warning' | 'error' | 'info'
@@ -83,7 +84,6 @@ export function MonitorOpsCenter({ target }: { target?: MonitorOpsTarget }) {
   const pendingCount = jobs.pending || 0
   const failedCount = jobs.failed || 0
   const missedCount = jobs.missed || 0
-  const abnormalCount = failedCount + missedCount
   const unreadCount = health?.metrics.unread_alerts || 0
   const overallStatus = health?.overall_status || 'warning'
   const statusColor = overallStatus === 'ok'
@@ -124,12 +124,13 @@ export function MonitorOpsCenter({ target }: { target?: MonitorOpsTarget }) {
           <div className="workspace-status-card">
             <span className={`workspace-status-dot ${overallStatus === 'ok' ? 'bg-status-success' : overallStatus === 'error' ? 'bg-status-danger' : 'bg-status-warning'}`} />
             <div><div className="text-[10px] text-cyber-text-muted">{t('opsCenter.systemSummary')}</div><div className="mt-0.5 text-sm font-semibold text-cyber-text-primary">{t(`health.status.${overallStatus}`)}</div></div>
-            <div className="ml-auto text-right"><div className="text-[10px] text-cyber-text-muted">{t('opsCenter.attentionSummary')}</div><div className="mt-0.5 text-sm font-semibold numeric-value text-cyber-text-primary">{abnormalCount + unreadCount}</div></div>
+            <div className="ml-auto text-right"><div className="text-xs text-cyber-text-muted">{t('opsCenter.attentionSummary')}</div><div className="mt-0.5 text-sm font-semibold numeric-value text-cyber-text-primary">{failedCount + unreadCount}</div></div>
           </div>
         </div>
       </section>
 
-      <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
+      <MonitorExecutionPanel />
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-3 xl:grid-cols-5">
         <MetricButton
           active={section === 'tasks' && taskStatus === 'pending'}
           icon={ListChecks}
@@ -140,13 +141,22 @@ export function MonitorOpsCenter({ target }: { target?: MonitorOpsTarget }) {
           onClick={() => openTasks('pending')}
         />
         <MetricButton
-          active={section === 'tasks' && taskStatus === 'abnormal'}
+          active={section === 'tasks' && taskStatus === 'failed'}
           icon={AlertTriangle}
-          label={t('opsCenter.metrics.abnormal')}
-          value={String(abnormalCount)}
-          detail={t('opsCenter.metrics.abnormalDetail', { failed: failedCount, missed: missedCount })}
-          tone={abnormalCount > 0 ? 'error' : 'ok'}
-          onClick={() => openTasks('abnormal')}
+          label={t('opsCenter.metrics.failed')}
+          value={String(failedCount)}
+          detail={t('opsCenter.metrics.failedDetail')}
+          tone={failedCount > 0 ? 'error' : 'ok'}
+          onClick={() => openTasks('failed')}
+        />
+        <MetricButton
+          active={section === 'tasks' && taskStatus === 'missed'}
+          icon={Activity}
+          label={t('opsCenter.metrics.missed')}
+          value={String(missedCount)}
+          detail={t('opsCenter.metrics.missedDetail')}
+          tone={missedCount > 0 ? 'neutral' : 'ok'}
+          onClick={() => openTasks('missed')}
         />
         <MetricButton
           active={section === 'alerts'}

@@ -22,6 +22,7 @@ import os
 import random
 from asyncio import Task
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlsplit
 
 from playwright.async_api import (
     BrowserContext,
@@ -37,6 +38,7 @@ from proxy.proxy_ip_pool import IpInfoModel, create_ip_pool
 from store import douyin as douyin_store
 from tools import utils
 from tools.cdp_browser import CDPBrowserManager, safe_page_goto
+from tools.douyin_browser_coordinator import DouyinTabLease
 from var import crawler_type_var, source_keyword_var
 
 from .client import DouYinClient
@@ -65,6 +67,11 @@ class DouYinCrawler(AbstractCrawler):
         self.ip_proxy_pool = None  # Proxy IP pool for automatic proxy refresh
 
     async def start(self) -> None:
+        # Pagination and detail navigation must not interleave with API monitors.
+        async with DouyinTabLease():
+            await self._start_with_tab_lease()
+
+    async def _start_with_tab_lease(self) -> None:
         playwright_proxy_format, httpx_proxy_format = None, None
         if config.ENABLE_IP_PROXY:
             self.ip_proxy_pool = await create_ip_pool(config.IP_PROXY_POOL_COUNT, enable_validate_ip=True)
@@ -127,17 +134,31 @@ class DouYinCrawler(AbstractCrawler):
 
             utils.logger.info("[DouYinCrawler.start] Douyin Crawler finished ...")
 
-    async def _get_or_create_context_page(self) -> Page:
-        """Reuse a stable MediaCrawler tab inside the shared browser context."""
+    async def _get_or_create_context_page(self, *, bootstrap: bool = False) -> Page:
+        """Reuse a Douyin tab; only service startup may bootstrap a missing tab.
+
+        A fresh Chrome uses chrome://newtab/, not about:blank. During startup
+        that empty landing page is safe to reuse. Other websites, including the
+        WebUI, must never be commandeered by collection or startup.
+        """
         pages = self.browser_context.pages
-        for page in pages:
+        douyin_pages = [page for page in pages if (
+            (host := urlsplit(page.url).hostname or "") == "douyin.com" or host.endswith(".douyin.com")
+        )]
+        empty_urls = {"", "about:blank"}
+        if bootstrap:
+            empty_urls.update({"chrome://newtab", "chrome://newtab/", "chrome://new-tab-page/"})
+        candidates = douyin_pages or [page for page in pages if page.url in empty_urls]
+        if pages and not candidates and not bootstrap:
+            raise DataFetchError("请先在专用 Chrome 中打开抖音页签，不会跳转 WebUI 或其他页面")
+        for page in candidates:
             try:
                 if await page.evaluate("() => window.name") == "MediaCrawler":
                     return page
             except Exception:
                 continue
 
-        page = pages[0] if pages else await self.browser_context.new_page()
+        page = candidates[0] if candidates else await self.browser_context.new_page()
         try:
             await page.evaluate("() => { window.name = 'MediaCrawler'; }")
         except Exception:
@@ -370,7 +391,9 @@ class DouYinCrawler(AbstractCrawler):
                 await douyin_store.save_creator(user_id, creator=creator_info)
 
             # Get all video information of the creator
-            all_video_list = await self.dy_client.get_all_user_aweme_posts(sec_user_id=user_id, callback=self.fetch_creator_video_detail)
+            # Finish pagination before detail navigation reuses the same Douyin tab.
+            all_video_list = await self.dy_client.get_all_user_aweme_posts(sec_user_id=user_id)
+            await self.fetch_creator_video_detail(all_video_list)
 
             video_ids = [
                 video_item.get("aweme_id")

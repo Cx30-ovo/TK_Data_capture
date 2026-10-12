@@ -1,4 +1,38 @@
 {
+  "execution": {
+    "title": "Collection control",
+    "loading": "Connecting to collection control…",
+    "unavailable": "Collection control unavailable. Check the backend.",
+    "refresh": "Reconnect",
+    "lockHint": "The Douyin tab is shared safely; tasks cannot navigate it at the same time.",
+    "stop": "Stop safely",
+    "stopping": "Stopping…",
+    "pause": "Pause monitoring",
+    "resume": "Resume monitoring",
+    "stopAccepted": "Monitoring paused. The current request will finish and save before stopping.",
+    "resumed": "Monitoring resumed. Risk-control cooldown still applies.",
+    "allAccounts": "Account monitoring",
+    "progress": "Collection progress",
+    "indeterminate": "Processing; total is not yet known",
+    "noTotal": "Total unknown",
+    "staleConnection": "Connection lost. Showing the last known status; check the backend.",
+    "scanCount": "{{pages}} pages · {{count}} posts scanned · {{saved}} saved",
+    "jobCount": "{{done}} / {{total}} processed · {{completed}} successful",
+    "elapsed": "{{seconds}}s elapsed",
+    "currentPost": "Current post: {{id}}",
+    "safeStopHint": "Stopping waits for the current request and save. Unstarted jobs remain pending.",
+    "scanResult": "Last result: {{saved}} saved · {{posts}} new posts · {{jobs}} new jobs",
+    "snapshotResult": "Last result: {{completed}} successful · {{retried}} retried · {{failed}} failed · {{skipped}} skipped",
+    "cooldown": "Risk-control cooldown: about {{minutes}} minutes left. Resuming does not bypass it.",
+    "kind": { "discovery": "Discovery progress", "snapshots": "Snapshot progress" },
+    "state": {
+      "idle": "Idle", "running": "Running", "waiting_tab": "Waiting for tab",
+      "stopping": "Stopping safely", "paused": "Monitoring paused", "deferred": "Cooling down",
+      "completed": "Completed", "stopped": "Stopped", "skipped": "Not executed",
+      "partial": "Partially completed", "error": "Needs attention", "crawler": "Crawler running"
+    },
+    "phase": { "connecting": "Connecting browser", "waiting_tab": "Waiting for another task to release the tab", "scanning": "Scanning recent posts", "saving": "Saving scanned posts", "collecting": "Collecting current snapshot", "finished": "Finished" }
+  },
   "section": {
     "targetMatrix": {
       "title": "TARGET_MATRIX",
@@ -177,6 +211,7 @@
     "failed": "Failed to save monitor account",
     "discover": "DISCOVER NOW",
     "discoverDone": "Latest-post check complete: {{posts}} new, {{jobs}} jobs created",
+    "cooldownActive": "Douyin has restricted requests. Discovery and snapshots are deferred; retry in about {{minutes}} minutes. Avoid repeated attempts.",
     "discoverFailed": "Discovery failed",
     "runSnapshots": "RUN DUE SNAPSHOTS",
     "snapshotDone": "Snapshots complete: {{completed}} done, {{skipped}} terminated, {{retried}} retried, {{failed}} failed",
@@ -244,10 +279,10 @@
     "shares": "Shares"
   },
   "dataCenter": {
-    "title": "Douyin monitor data",
+    "title": "Content performance",
     "workspaceLabel": "Data analytics workspace",
     "description": "Inspect engagement trends and data quality by post, stage and sampling status",
-    "redesignedDescription": "Post performance, content insights and live trend analysis",
+    "redesignedDescription": "Review post performance and analyze title and cover patterns",
     "attentionPosts": "Needs attention",
     "modules": {
       "label": "Monitor data modules",
@@ -671,7 +706,7 @@
     "reanalyze": "Analyze again",
     "analyzing": "Analyzing all valid covers",
     "metricRule": "Python computes interactions and statistics; the title model only provides brief semantic summaries.",
-    "coverRule": "Cover performance = 40% visual quality + 60% account-level interaction percentile",
+    "coverRule": "Visual quality and historical performance are shown separately.",
     "singleAccountRequired": "Select one account before generating a content performance report.",
     "notConfigured": "No model provider is configured. Complete the environment setup first.",
     "insufficient": "The selected period needs at least three posts.",
@@ -807,7 +842,7 @@
     "mixInsight": "The largest weighted contribution in the breakout sample is {{metric}}. This is score composition, not an interaction rate.",
     "noHitMix": "No breakout sample is available for interaction-mix analysis",
     "coverTitle": "Cover performance analysis",
-    "coverDescription": "The vision model evaluates every valid cover; Python combines visual quality with interaction percentiles.",
+    "coverDescription": "Visual features and historical interactions.",
     "coverNotConfigured": "No vision model is configured. Title analysis remains available; set VISION_AI_MODEL to process every valid cover in scope.",
     "coverNoSamples": "No valid cover is available in the selected scope.",
     "coverOverview": "Cover analysis overview",
@@ -832,7 +867,7 @@
     "coverDistributionHint": "Select a score range to view its posts, sorted by cover performance score.",
     "coverViewWorks": "View posts",
     "coverWorksDialogTitle": "{{label}} posts",
-    "coverWorksDialogDescription": "{{count}} posts, sorted by cover performance score from high to low",
+    "coverWorksDialogDescription": "{{count}} works",
     "coverSearchLabel": "Search posts",
     "coverSearchPlaceholder": "Enter a post title or post ID",
     "coverSearchClear": "Clear search",
@@ -875,7 +910,7 @@
     "coverCandidateReferenceScore": "Reference score",
     "coverCandidateConfidence": "Confidence",
     "coverCandidateReferenceBasis": "{{total}} historical · {{similar}} similar",
-    "coverCandidateEstimatedData": "Historical estimate",
+    "coverCandidateEstimatedData": "Historical performance reference",
     "coverCandidateEstimateHint": "Similar covers and factor history",
     "coverCandidateScoreHint": "40% visual + 60% historical estimate",
     "coverCandidateVisualPercentile": "Above {{value}}% of historical covers",
@@ -948,7 +983,9 @@
     "coverHit": "Breakout sample",
     "coverNormal": "Regular sample",
     "emptyTitle": "Generate the first content performance report",
-    "emptyDescription": "The system computes title-length and keyword metrics, then evaluates every valid cover in the selected scope."
+    "emptyDescription": "The system computes title-length and keyword metrics, then evaluates every valid cover in the selected scope.",
+    "rawInteractionFormula": "Raw interactions: likes + comments + saves + shares",
+    "coverCandidateHistorySamples": "Historical samples"
   },
   "lifecycleReport": {
     "title": "AI lifecycle report",
@@ -1167,12 +1204,16 @@
       "unread": "Unread alerts",
       "unreadDetail": "Issue groups needing attention",
       "system": "System status",
-      "systemDetail": "Browser, database and loop"
+      "systemDetail": "Browser, database and loop",
+      "failed": "Failed tasks",
+      "failedDetail": "Requires action or retry",
+      "missed": "Missed schedule",
+      "missedDetail": "Collection window has passed"
     }
   },
   "tasks": {
     "title": "JOB CENTER",
-    "description": "Pending, abnormal and terminated jobs",
+    "description": "Schedules, results and failure reasons",
     "total": "{{count}} jobs",
     "searchPlaceholder": "Search title or post ID",
     "sortBy": "Sort jobs",
@@ -1226,6 +1267,9 @@
       "post_not_found": "Post not found",
       "post_deleted": "Post deleted",
       "parse_error": "Parse error",
+      "invalid_response": "Incomplete response",
+      "tab_changed": "Douyin tab changed",
+      "browser_busy": "Douyin tab busy",
       "unknown": "Unknown error"
     },
     "status": {
@@ -1233,10 +1277,10 @@
       "pending": "Pending",
       "running": "Running",
       "done": "Done",
-      "skipped": "Terminated",
+      "skipped": "Skipped",
       "abnormal": "Abnormal",
       "failed": "Failed",
-      "missed": "Missed"
+      "missed": "Missed schedule"
     }
   },
   "alerts": {
@@ -1331,16 +1375,16 @@
       "monitor_loop": "Monitor loop",
       "account": "Monitored account",
       "discovery": "Discovery freshness",
-      "disk": "Disk space"
-      ,"backup": "Automatic backup"
+      "disk": "Disk space",
+      "backup": "Automatic backup"
     },
     "metrics": {
       "unreadAlerts": "Unread alerts",
       "dbSize": "Database size",
       "diskFree": "Disk free",
       "lastSnapshot": "Last snapshot",
-      "nextSnapshot": "Next snapshot"
-      ,"lastBackup": "Last backup",
+      "nextSnapshot": "Next snapshot",
+      "lastBackup": "Last backup",
       "backupCount": "Backup count"
     }
   },

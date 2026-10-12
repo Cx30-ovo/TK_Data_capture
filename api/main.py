@@ -40,6 +40,7 @@ from .services import scheduler_service
 from .services.maintenance_service import maintenance_service
 from .services.crawler_manager import crawler_manager
 from database import db
+from tools import utils
 
 # Project root directory (used for running subprocesses like uv run main.py)
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -48,17 +49,21 @@ PROJECT_ROOT = Path(__file__).parent.parent
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await db.init_db("sqlite")
-    await scheduler_service.start()
-    await monitor_service.start()
-    await maintenance_service.start()
+    # Bootstrap the dedicated Douyin tab before any automatic collection starts.
+    # Otherwise the monitor can encounter Chrome's new-tab page first and pause
+    # itself as if the required Douyin tab had been closed by the user.
     if config.START_BROWSER_ON_SERVICE_START:
         try:
             await monitor_service.ensure_browser_ready()
         except Exception as exc:
+            utils.logger.warning(f"[Monitor] Failed to prepare dedicated browser: {exc}")
             await crawler_manager.add_log(
                 f"[Monitor] Failed to prepare dedicated browser: {exc}",
                 "warning",
             )
+    await scheduler_service.start()
+    await monitor_service.start()
+    await maintenance_service.start()
     try:
         yield
     finally:

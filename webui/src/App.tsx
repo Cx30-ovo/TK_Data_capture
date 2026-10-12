@@ -1,9 +1,8 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Toaster } from 'sonner'
-import { Activity, BarChart3, Download, LayoutDashboard, Settings2 } from 'lucide-react'
+import { Activity, BarChart3, Download, LayoutDashboard, Settings2, Radar } from 'lucide-react'
 import { Sidebar } from '@/components/layout/Sidebar'
-import { ConsoleDrawer } from '@/components/layout/ConsoleDrawer'
 import { GlobalStatusBar } from '@/components/layout/GlobalStatusBar'
 import type { MonitorOpsTarget } from '@/components/monitor/MonitorOpsCenter'
 import { EnvironmentCheck, isEnvChecked } from '@/components/env/EnvironmentCheck'
@@ -16,16 +15,18 @@ const MonitorOverview = lazy(() => import('@/components/monitor/MonitorOverview'
 const MonitorDataCenter = lazy(() => import('@/components/monitor/MonitorDataCenter').then((module) => ({ default: module.MonitorDataCenter })))
 const MonitorOpsCenter = lazy(() => import('@/components/monitor/MonitorOpsCenter').then((module) => ({ default: module.MonitorOpsCenter })))
 const MonitorExport = lazy(() => import('@/components/monitor/MonitorExport').then((module) => ({ default: module.MonitorExport })))
+const MonitorHotRank = lazy(() => import('@/components/monitor/MonitorHotRank').then((module) => ({ default: module.MonitorHotRank })))
 
-type AppTab = 'overview' | 'data' | 'ops' | 'export' | 'config'
+type AppTab = 'overview' | 'data' | 'hot' | 'ops' | 'export' | 'config'
 const NAV_TRIGGER_CLASS = 'app-nav-item min-w-0 cursor-pointer flex-col gap-0.5 px-1 py-1.5 text-[11px] sm:flex-row sm:gap-2 sm:px-2 sm:py-2 sm:text-xs lg:gap-3 lg:px-3 lg:py-2.5 lg:text-sm'
 
 function getInitialTab(): AppTab {
   const params = new URLSearchParams(window.location.search)
   const value = params.get('tab')
   const module = params.get('module')
+  if (module === 'hot' && (!value || value === 'data')) return 'hot'
   if (!value && (module === 'overview' || module === 'topics' || module === 'lifecycle' || module === 'strategy' || module === 'hot')) return 'data'
-  return value === 'data' || value === 'ops' || value === 'export' || value === 'config' ? value : 'overview'
+  return value === 'data' || value === 'hot' || value === 'ops' || value === 'export' || value === 'config' ? value : 'overview'
 }
 
 function App() {
@@ -129,10 +130,18 @@ function App() {
                 <BarChart3 className="h-4 w-4" aria-hidden="true" />
                 {t('tabs.monitorData')}
               </TabsTrigger>
+              <TabsTrigger value="hot" className={NAV_TRIGGER_CLASS}>
+                <Radar className="h-4 w-4" aria-hidden="true" />
+                {t('tabs.hot')}
+              </TabsTrigger>
               <TabsTrigger value="ops" className={NAV_TRIGGER_CLASS}>
                 <Activity className="h-4 w-4" aria-hidden="true" />
                 {t('tabs.ops')}
               </TabsTrigger>
+            </TabsList>
+          )}
+          utilityNavigation={(
+            <TabsList className="app-navigation-list h-auto w-full justify-start border-0 bg-transparent p-0">
               <TabsTrigger value="export" className={NAV_TRIGGER_CLASS}>
                 <Download className="h-4 w-4" aria-hidden="true" />
                 {t('tabs.export')}
@@ -171,6 +180,11 @@ function App() {
                   <MonitorOpsCenter target={opsTarget} />
                 </Suspense>
               </TabsContent>
+              <TabsContent value="hot" className="mt-0 md:col-span-2 xl:col-span-12">
+                <Suspense fallback={<StatePanel variant="loading" title={t('action.loading')} />}>
+                  <MonitorHotRank />
+                </Suspense>
+              </TabsContent>
               <TabsContent value="export" className="mt-0 md:col-span-2 xl:col-span-12">
                 <Suspense fallback={<StatePanel variant="loading" title={t('action.loading')} />}>
                   <MonitorExport />
@@ -185,8 +199,6 @@ function App() {
           </main>
         </div>
       </Tabs>
-
-      <ConsoleDrawer />
 
       {/* Toast notifications - Theme-aware style */}
       <Toaster

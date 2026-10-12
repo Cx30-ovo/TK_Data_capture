@@ -51,8 +51,9 @@ class FakeFetcher:
 
 
 class FakePage:
-    def __init__(self, name=""):
+    def __init__(self, name="", url="about:blank"):
         self.name = name
+        self.url = url
 
     async def evaluate(self, script):
         if "window.name = 'MediaCrawler'" in script:
@@ -436,6 +437,26 @@ async def test_douyin_reuses_marked_context_page():
     page = await crawler._get_or_create_context_page()
     assert page is blank_page
     assert blank_page.name == "MediaCrawler"
+
+
+@pytest.mark.asyncio
+async def test_douyin_prefers_existing_douyin_tab_over_webui():
+    crawler = DouYinCrawler()
+    webui = FakePage("MediaCrawler", "http://localhost:5173/")
+    douyin = FakePage("", "https://www.douyin.com/user/test")
+    crawler.browser_context = FakeBrowserContext([webui, douyin])
+    assert await crawler._get_or_create_context_page() is douyin
+    assert not crawler.browser_context.created
+
+
+@pytest.mark.asyncio
+async def test_douyin_does_not_navigate_unrelated_tabs():
+    from media_platform.douyin.exception import DataFetchError
+    crawler = DouYinCrawler()
+    crawler.browser_context = FakeBrowserContext([FakePage("MediaCrawler", "http://localhost:5173/")])
+    with pytest.raises(DataFetchError, match="不会跳转 WebUI"):
+        await crawler._get_or_create_context_page()
+    assert not crawler.browser_context.created
 
 
 class FakeDouyinClient:

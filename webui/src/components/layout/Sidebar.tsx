@@ -7,13 +7,16 @@ import { useCrawlerStatus } from '@/hooks/useCrawler'
 import { LanguageSwitch } from './LanguageSwitch'
 import { ThemeToggle } from './ThemeToggle'
 import { MonitorAccountSelector } from '@/components/monitor/MonitorAccountSelector'
+import { ConsoleDrawer } from './ConsoleDrawer'
 
 
 export function Sidebar({
   navigation,
+  utilityNavigation,
   onCreateMonitor,
 }: {
   navigation: ReactNode
+  utilityNavigation: ReactNode
   onCreateMonitor: () => void
 }) {
   const { t } = useTranslation()
@@ -59,7 +62,10 @@ export function Sidebar({
       </button>
 
       <nav className="mt-3 min-h-0 flex-1 lg:mt-4 lg:overflow-y-auto" aria-label={t('sidebar.primaryNavigation')}>
+        <div className="app-nav-group-label">{t('sidebar.businessNavigation')}</div>
         {navigation}
+        <div className="app-nav-group-label app-nav-group-label-system">{t('sidebar.systemNavigation')}</div>
+        {utilityNavigation}
       </nav>
 
       <div className="app-sidebar-tools mt-3 flex items-center gap-2 border-t border-cyber-border-subtle pt-3 lg:mt-4 lg:block lg:space-y-3">
@@ -85,6 +91,7 @@ export function Sidebar({
           <span className="ml-auto">{t('sidebar.api')} v1.0.0</span>
         </div>
       </div>
+      <div className="mt-3 shrink-0"><ConsoleDrawer /></div>
     </aside>
   )
 }

@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { monitorApi, type MonitorAccount } from '@/lib/api'
 import { useMonitorAccountStore } from '@/store/monitorAccountStore'
+import { MonitorExecutionPanel, useMonitorExecution } from './MonitorExecutionPanel'
 
 
 function parseSecUserId(value: string): string {
@@ -38,6 +39,8 @@ interface MonitorPanelProps {
 export function MonitorPanel({ embedded = false, onDirtyChange, onValidChange, saveHandlerRef }: MonitorPanelProps) {
   const { t } = useTranslation('config')
   const queryClient = useQueryClient()
+  const { data: executionStatus } = useMonitorExecution()
+  const collectionBusy = executionStatus?.paused || executionStatus?.execution?.active || executionStatus?.crawler_running || Boolean(executionStatus?.retry_after_seconds)
   const activeAccountId = useMonitorAccountStore((state) => state.activeAccountId)
   const setActiveAccountId = useMonitorAccountStore((state) => state.setActiveAccountId)
   const { data: accounts = [] } = useQuery({
@@ -137,13 +140,22 @@ export function MonitorPanel({ embedded = false, onDirtyChange, onValidChange, s
     mutationFn: (accountId: number) => monitorApi.discoverAccount(accountId),
     onSuccess: (response) => {
       const result = response.data
-      toast.success(t('monitor.discoverDone', {
+      const summary = t('monitor.discoverDone', {
         existing: result.existing ?? 0,
         posts: result.created_posts ?? 0,
         jobs: result.created_jobs ?? 0,
         covers: result.updated_covers ?? 0,
         skipped: result.skipped_historical ?? 0,
-      }))
+      })
+      if (result.status === 'deferred') {
+        toast.warning(t('monitor.cooldownActive', { minutes: Math.max(1, Math.ceil(Number(result.retry_after_seconds || 0) / 60)) }))
+      } else if (result.status === 'partial' || result.status === 'blocked' || result.status === 'error' || result.status === 'stopped') {
+        toast.warning(`${result.reason || t('monitor.discoverFailed')} · ${summary}`)
+      } else if (result.status === 'skipped') {
+        toast.info(result.reason || t('monitor.discoverFailed'))
+      } else {
+        toast.success(summary)
+      }
       refreshAccounts()
     },
     onError: (error: unknown) => toast.error(`${t('monitor.discoverFailed')}: ${apiErrorMessage(error)}`),
@@ -153,12 +165,21 @@ export function MonitorPanel({ embedded = false, onDirtyChange, onValidChange, s
     mutationFn: () => monitorApi.runDueSnapshots(),
     onSuccess: (response) => {
       const result = response.data
-      toast.success(t('monitor.snapshotDone', {
+      const summary = t('monitor.snapshotDone', {
         completed: result.completed ?? 0,
         skipped: result.skipped ?? 0,
         retried: result.retried ?? 0,
         failed: result.failed ?? 0,
-      }))
+      })
+      if (result.status === 'deferred') {
+        toast.warning(t('monitor.cooldownActive', { minutes: Math.max(1, Math.ceil(Number(result.retry_after_seconds || 0) / 60)) }))
+      } else if (result.status === 'partial' || result.status === 'blocked' || result.status === 'error' || result.status === 'stopped') {
+        toast.warning(`${result.reason || t('monitor.snapshotFailed')} · ${summary}`)
+      } else if (result.status === 'skipped') {
+        toast.info(result.reason || t('monitor.snapshotFailed'))
+      } else {
+        toast.success(summary)
+      }
       refreshAccounts()
     },
     onError: (error: Error) => toast.error(`${t('monitor.snapshotFailed')}: ${error.message}`),
@@ -200,6 +221,7 @@ export function MonitorPanel({ embedded = false, onDirtyChange, onValidChange, s
 
   const content = (
     <div className={embedded ? 'space-y-4' : 'p-4 space-y-4'}>
+      <MonitorExecutionPanel />
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-2 text-xs font-medium text-cyber-text-primary"><UsersRound className="h-4 w-4 text-cyber-neon-cyan" />{t('monitor.accountList', { count: accounts.length })}</div>
         <span className={`rounded border px-2 py-1 text-[9px] ${isCreating ? 'border-cyber-neon-green/30 bg-cyber-neon-green/5 text-cyber-neon-green' : 'border-cyber-border-subtle bg-cyber-bg-tertiary/30 text-cyber-text-muted'}`}>
@@ -210,7 +232,7 @@ export function MonitorPanel({ embedded = false, onDirtyChange, onValidChange, s
               : t('monitor.selectAccount')}
         </span>
         <Button type="button" variant="outline" size="sm" onClick={startCreate} disabled={isBusy} className="h-8"><Plus className="h-3.5 w-3.5" />{t('monitor.addAccount')}</Button>
-        <Button type="button" variant="outline" size="sm" onClick={() => snapshotMutation.mutate()} disabled={isBusy} className="h-8"><Clock3 className="h-3.5 w-3.5" />{t('monitor.runSnapshots')}</Button>
+        <Button type="button" variant="outline" size="sm" onClick={() => snapshotMutation.mutate()} disabled={isBusy || collectionBusy} className="h-8"><Clock3 className="h-3.5 w-3.5" />{t('monitor.runSnapshots')}</Button>
       </div>
 
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-[280px_minmax(0,1fr)]">
@@ -230,7 +252,7 @@ export function MonitorPanel({ embedded = false, onDirtyChange, onValidChange, s
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {!embedded ? <Button type="button" size="sm" onClick={() => saveMutation.mutate()} disabled={isBusy || !accountValid} className="h-9"><Save className="h-4 w-4" />{saveMutation.isPending ? t('monitor.saving') : t('monitor.save')}</Button> : null}
-            <Button type="button" variant="outline" size="sm" onClick={() => editingId !== null && discoverMutation.mutate(editingId)} disabled={isBusy || isCreating || editingId === null || !activeAccount?.enabled} className="h-9"><RefreshCw className={`h-4 w-4 ${discoverMutation.isPending ? 'animate-spin' : ''}`} />{t('monitor.discover')}</Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => editingId !== null && discoverMutation.mutate(editingId)} disabled={isBusy || collectionBusy || isCreating || editingId === null || !activeAccount?.enabled} className="h-9"><RefreshCw className={`h-4 w-4 ${discoverMutation.isPending ? 'animate-spin' : ''}`} />{t('monitor.discover')}</Button>
             <Button type="button" variant="outline" size="sm" onClick={() => editingId !== null && window.confirm(t('monitor.confirmDelete', { name: activeAccount?.display_name || activeAccount?.sec_user_id })) && deleteMutation.mutate(editingId)} disabled={isBusy || editingId === null} className="h-9 text-cyber-neon-pink"><Trash2 className="h-4 w-4" />{t('monitor.delete')}</Button>
             <div className="ml-auto flex items-center gap-2 text-[10px] text-cyber-text-muted"><Clock3 className="h-3.5 w-3.5" />{status?.account?.last_discovered_at ? t('monitor.lastDiscovered', { time: new Date(status.account.last_discovered_at * 1000).toLocaleString() }) : t('monitor.notDiscovered')}</div>
           </div>

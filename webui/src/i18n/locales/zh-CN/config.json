@@ -1,4 +1,38 @@
 {
+  "execution": {
+    "title": "采集控制",
+    "loading": "正在连接采集控制…",
+    "unavailable": "暂时无法连接采集控制，请检查后端。",
+    "refresh": "重新连接",
+    "lockHint": "抖音页签统一协调，任务不会同时跳转页面。",
+    "stop": "安全停止",
+    "stopping": "正在停止…",
+    "pause": "暂停监控",
+    "resume": "恢复监控",
+    "stopAccepted": "已暂停自动监控；当前请求保存后停止。",
+    "resumed": "已恢复监控；风控冷却仍然有效。",
+    "allAccounts": "账号监控",
+    "progress": "采集进度",
+    "indeterminate": "正在处理，总量尚未确定",
+    "noTotal": "总量未定",
+    "staleConnection": "状态连接中断，当前显示上次状态；请检查后端连接。",
+    "scanCount": "已扫描 {{pages}} 页 · {{count}} 篇 · 已保存 {{saved}} 篇",
+    "jobCount": "已处理 {{done}} / {{total}} · 成功 {{completed}} 个",
+    "elapsed": "耗时 {{seconds}} 秒",
+    "currentPost": "当前作品：{{id}}",
+    "safeStopHint": "停止会等待当前请求及保存完成，未开始的任务保持待执行。",
+    "scanResult": "上次结果：保存 {{saved}} 篇 · 新增 {{posts}} 篇 · 创建 {{jobs}} 个任务",
+    "snapshotResult": "上次结果：成功 {{completed}} · 重试 {{retried}} · 失败 {{failed}} · 跳过 {{skipped}}",
+    "cooldown": "风控冷却中，约 {{minutes}} 分钟后允许请求；恢复监控不会跳过冷却。",
+    "kind": { "discovery": "作品发现进度", "snapshots": "快照执行进度" },
+    "state": {
+      "idle": "待命", "running": "执行中", "waiting_tab": "等待页签",
+      "stopping": "安全停止中", "paused": "监控已暂停", "deferred": "冷却中",
+      "completed": "已完成", "stopped": "已停止", "skipped": "未执行",
+      "partial": "部分完成", "error": "需处理", "crawler": "普通爬虫运行中"
+    },
+    "phase": { "connecting": "连接浏览器", "waiting_tab": "等待其他任务释放页签", "scanning": "扫描最新作品", "saving": "保存已扫描数据", "collecting": "采集当前快照", "finished": "处理结束" }
+  },
   "section": {
     "targetMatrix": {
       "title": "目标配置",
@@ -177,6 +211,7 @@
     "failed": "监控账号保存失败",
     "discover": "立即发现",
     "discoverDone": "最新作品检查完成：新增 {{posts}} 篇，生成 {{jobs}} 个任务",
+    "cooldownActive": "触发抖音风控，发现与快照暂缓；约 {{minutes}} 分钟后可重试，请勿连续点击。",
     "discoverFailed": "发现失败",
     "runSnapshots": "执行到期快照",
     "snapshotDone": "快照完成：成功 {{completed}}，终止 {{skipped}}，重试 {{retried}}，失败 {{failed}}",
@@ -244,10 +279,10 @@
     "shares": "分享"
   },
   "dataCenter": {
-    "title": "抖音监控数据",
+    "title": "内容表现",
     "workspaceLabel": "数据分析工作台",
     "description": "按作品、阶段和采样状态查看互动趋势与数据质量",
-    "redesignedDescription": "作品效果、内容表现与实时热点的综合分析",
+    "redesignedDescription": "查看作品表现，分析标题与封面规律",
     "attentionPosts": "需关注作品",
     "modules": {
       "label": "监控数据模块",
@@ -671,7 +706,7 @@
     "reanalyze": "重新分析",
     "analyzing": "正在分析全部有效封面",
     "metricRule": "互动数据与统计结果由 Python 计算，标题模型只做简短语义归纳。",
-    "coverRule": "封面表现分 = 视觉质量 40% + 同账号互动百分位 60%",
+    "coverRule": "视觉评价与历史互动表现分别展示，不合成综合分。",
     "singleAccountRequired": "请选择一个具体账号后再生成内容表现报告。",
     "notConfigured": "尚未配置可用的大模型服务，请先在环境配置中完成设置。",
     "insufficient": "当前时间范围的数据不足，至少需要 3 篇作品。",
@@ -807,7 +842,7 @@
     "mixInsight": "当前爆款样本的最大加权贡献来自“{{metric}}”；比例反映互动分构成，不代表互动率。",
     "noHitMix": "当前没有可用于互动构成分析的爆款样本",
     "coverTitle": "封面表现分析",
-    "coverDescription": "视觉模型评估全部有效封面，Python 结合互动百分位计算封面表现分。",
+    "coverDescription": "视觉模型读取封面特征，统计历史互动表现。",
     "coverNotConfigured": "尚未配置视觉模型。标题分析仍可使用；配置 VISION_AI_MODEL 后将处理筛选范围内全部有效封面。",
     "coverNoSamples": "当前筛选范围没有可分析的有效封面。",
     "coverOverview": "封面分析概览",
@@ -832,7 +867,7 @@
     "coverDistributionHint": "点击评分区间查看具体作品，明细按封面表现分从高到低排列。",
     "coverViewWorks": "查看作品",
     "coverWorksDialogTitle": "{{label}}作品",
-    "coverWorksDialogDescription": "共 {{count}} 篇，按封面表现分从高到低排列",
+    "coverWorksDialogDescription": "共 {{count}} 篇作品",
     "coverSearchLabel": "搜索作品",
     "coverSearchPlaceholder": "输入作品标题或作品 ID",
     "coverSearchClear": "清空搜索",
@@ -875,7 +910,7 @@
     "coverCandidateReferenceScore": "参考评分",
     "coverCandidateConfidence": "可信度",
     "coverCandidateReferenceBasis": "历史 {{total}} 篇 · 相似 {{similar}} 篇",
-    "coverCandidateEstimatedData": "历史表现估计",
+    "coverCandidateEstimatedData": "历史表现参考",
     "coverCandidateEstimateHint": "相似封面与因素历史表现",
     "coverCandidateScoreHint": "视觉 40% + 历史估计 60%",
     "coverCandidateVisualPercentile": "超过历史 {{value}}% 的封面",
@@ -948,7 +983,9 @@
     "coverHit": "爆款样本",
     "coverNormal": "普通样本",
     "emptyTitle": "生成第一份内容表现报告",
-    "emptyDescription": "系统将计算标题长度和高频关键词，并调用视觉模型分析筛选范围内全部有效封面。"
+    "emptyDescription": "系统将计算标题长度和高频关键词，并调用视觉模型分析筛选范围内全部有效封面。",
+    "rawInteractionFormula": "原始互动量：点赞 + 评论 + 收藏 + 分享",
+    "coverCandidateHistorySamples": "历史样本"
   },
   "lifecycleReport": {
     "title": "生命周期 AI 研报",
@@ -1167,12 +1204,16 @@
       "unread": "未读告警",
       "unreadDetail": "需要处理的问题组",
       "system": "系统状态",
-      "systemDetail": "浏览器、数据库与循环"
+      "systemDetail": "浏览器、数据库与循环",
+      "failed": "失败任务",
+      "failedDetail": "需要处理或重试",
+      "missed": "已错过",
+      "missedDetail": "已过采集窗口"
     }
   },
   "tasks": {
     "title": "任务中心",
-    "description": "待执行、异常与已终止任务",
+    "description": "查看计划、执行结果与失败原因",
     "total": "共 {{count}} 个任务",
     "searchPlaceholder": "搜索作品标题或作品 ID",
     "sortBy": "排序方式",
@@ -1226,6 +1267,9 @@
       "post_not_found": "作品不存在",
       "post_deleted": "作品已删除",
       "parse_error": "数据解析失败",
+      "invalid_response": "返回数据不完整",
+      "tab_changed": "抖音页签切换",
+      "browser_busy": "抖音页签忙碌",
       "unknown": "未知错误"
     },
     "status": {
@@ -1233,10 +1277,10 @@
       "pending": "待执行",
       "running": "执行中",
       "done": "已完成",
-      "skipped": "已终止",
+      "skipped": "已跳过",
       "abnormal": "异常",
       "failed": "失败",
-      "missed": "错过"
+      "missed": "已错过"
     }
   },
   "alerts": {
@@ -1331,16 +1375,16 @@
       "monitor_loop": "监控循环",
       "account": "监控账号",
       "discovery": "发现任务新鲜度",
-      "disk": "磁盘空间"
-      ,"backup": "自动备份"
+      "disk": "磁盘空间",
+      "backup": "自动备份"
     },
     "metrics": {
       "unreadAlerts": "未读告警",
       "dbSize": "数据库大小",
       "diskFree": "可用磁盘",
       "lastSnapshot": "最近快照",
-      "nextSnapshot": "下次快照"
-      ,"lastBackup": "最近备份",
+      "nextSnapshot": "下次快照",
+      "lastBackup": "最近备份",
       "backupCount": "备份数量"
     }
   },

@@ -106,6 +106,7 @@ async def test_risk_control_stops_the_current_snapshot_batch():
         patch.object(module.crawler_manager, "add_log", AsyncMock()),
         patch.object(service, "_crawler_is_busy", return_value=False),
         patch.object(module.monitor_repository, "list_due_jobs", AsyncMock(return_value=jobs)),
+        patch.object(module.monitor_repository, "get_monitored_account", AsyncMock(return_value=None)),
         patch.object(module.monitor_repository, "mark_job_running", AsyncMock(return_value=jobs[0])) as running,
         patch.object(module.monitor_repository, "mark_job_retry", AsyncMock(return_value=SimpleNamespace(status="retry"))) as retry,
     ):

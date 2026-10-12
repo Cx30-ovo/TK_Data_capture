@@ -296,7 +296,7 @@ function ContentPerformance({ current, accountId }: { current: AIAnalysisRespons
   const coverCoverage = validCoverCount > 0 ? analyzedCoverCount / validCoverCount : 0
   const kpis = [
     { label: t('titleStrategy.totalWorks'), value: formatNumber(result.overview.total_works), exactValue: formatNumber(result.overview.total_works), evidence: result.meta.period, status: t('titleStrategy.kpiRealData'), icon: FileText, tone: 'text-blue-700 bg-blue-50 border-blue-100', statusTone: 'border-blue-200 bg-blue-50 text-blue-700' },
-    { label: t('titleStrategy.hitThreshold'), value: formatCompactNumber(result.overview.hit_threshold, i18n.language), exactValue: formatNumber(result.overview.hit_threshold), evidence: t('titleStrategy.weightedScoreFormula'), status: t('titleStrategy.kpiDynamicThreshold'), icon: Target, tone: 'text-rose-700 bg-rose-50 border-rose-100', statusTone: 'border-rose-200 bg-rose-50 text-rose-700' },
+    { label: t('titleStrategy.hitThreshold'), value: formatCompactNumber(result.overview.hit_threshold, i18n.language), exactValue: formatNumber(result.overview.hit_threshold), evidence: result.meta.interaction_formula || t('titleStrategy.weightedScoreFormula'), status: t('titleStrategy.kpiDynamicThreshold'), icon: Target, tone: 'text-rose-700 bg-rose-50 border-rose-100', statusTone: 'border-rose-200 bg-rose-50 text-rose-700' },
     { label: t('titleStrategy.bestRange'), value: bestLengthGroup ? formatLengthGroup(bestLengthGroup.len_group) : '—', exactValue: bestLengthGroup?.len_group || '—', evidence: bestLengthGroup ? t('titleStrategy.bestRangeEvidence', { count: bestLengthGroup.count, median: formatNumber(bestLengthGroup.median_interaction), hitRate: formatPercent(bestLengthGroup.hit_rate) }) : t('titleStrategy.sampleInsufficient'), status: bestLengthGroup && bestLengthGroup.count >= 30 ? t('titleStrategy.kpiStableSample') : t('titleStrategy.sampleInsufficient'), icon: TextCursorInput, tone: 'text-amber-700 bg-amber-50 border-amber-100', statusTone: 'border-amber-200 bg-amber-50 text-amber-700' },
     { label: t('titleStrategy.coverAnalyzed'), value: formatPercent(coverCoverage), exactValue: `${analyzedCoverCount} / ${validCoverCount}`, evidence: t('titleStrategy.coverCoverageEvidence', { analyzed: analyzedCoverCount, valid: validCoverCount, failed: failedCoverCount }), status: failedCoverCount > 0 ? t('titleStrategy.kpiCoverPartial', { count: failedCoverCount }) : t('titleStrategy.kpiCoverComplete'), icon: Image, tone: 'text-violet-700 bg-violet-50 border-violet-100', statusTone: failedCoverCount > 0 ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700' },
   ]
@@ -313,11 +313,11 @@ function ContentPerformance({ current, accountId }: { current: AIAnalysisRespons
           <TabsTrigger value="covers" className="min-h-11 cursor-pointer gap-2 px-4 py-2 text-sm"><Image aria-hidden="true" className="h-4 w-4" />{t('titleStrategy.sectionCovers')}<span className="rounded bg-violet-50 px-1.5 py-0.5 font-mono text-[10px] text-violet-700">{cover?.sample_count || 0}</span></TabsTrigger>
         </TabsList>
 
-        <TabsContent value="titles" className="mt-0 space-y-4">
+        <TabsContent value="titles" className="mt-0"><Tabs defaultValue="length" className="space-y-3"><TabsList className="h-auto gap-1"><TabsTrigger value="length" className="min-h-11 px-4">{t('titleStrategy.lengthTitle')}</TabsTrigger><TabsTrigger value="keywords" className="min-h-11 px-4">{t('titleStrategy.keywordTitle')}</TabsTrigger></TabsList><TabsContent value="length" className="mt-0">
           <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <LengthPerformanceChart rows={result.title_length_analysis.groups} overallMedian={result.overview.interaction_median || 0} />
           </article>
-          <KeywordPerformanceChart rows={result.top_keywords} />
+          </TabsContent><TabsContent value="keywords" className="mt-0"><KeywordPerformanceChart rows={result.top_keywords} /></TabsContent></Tabs>
         </TabsContent>
 
         <TabsContent value="covers" className="mt-0">
@@ -330,7 +330,7 @@ function ContentPerformance({ current, accountId }: { current: AIAnalysisRespons
 
 
 function ContentKpiCard({ icon: Icon, label, value, exactValue, evidence, status, tone, statusTone }: { icon: typeof FileText; label: string; value: string; exactValue: string; evidence: string; status: string; tone: string; statusTone: string }) {
-  return <article className="flex min-h-[148px] flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-2.5"><span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg border ${tone}`}><Icon aria-hidden="true" className="h-4 w-4" /></span><span className="truncate text-xs font-medium text-slate-600">{label}</span></div><Badge variant="outline" className={`shrink-0 px-2 py-0.5 text-[9px] font-medium ${statusTone}`}>{status}</Badge></div><div className="mt-3 text-2xl font-semibold tracking-tight text-slate-950" title={exactValue}>{value}</div><p className="mt-2 line-clamp-2 text-[11px] leading-5 text-slate-500" title={evidence}>{evidence || '—'}</p></article>
+  return <article className="flex min-h-[110px] flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-center justify-between gap-3"><div className="flex min-w-0 items-center gap-2.5"><span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg border ${tone}`}><Icon aria-hidden="true" className="h-4 w-4" /></span><span className="truncate text-xs font-medium text-slate-600">{label}</span></div><Badge variant="outline" className={`shrink-0 px-2 py-0.5 text-[9px] font-medium ${statusTone}`}>{status}</Badge></div><div className="mt-3 text-2xl font-semibold tracking-tight text-slate-950" title={exactValue}>{value}</div><p className="mt-2 line-clamp-2 text-[11px] leading-5 text-slate-500" title={evidence}>{evidence || '—'}</p></article>
 }
 
 
@@ -363,13 +363,10 @@ function CoverAnalysisPanel({ data, accountId, resultId }: { data?: AICoverAnaly
       </section>
 
       {hasScores ? <>
-        <section className="grid gap-3 lg:grid-cols-3" aria-label={t('titleStrategy.coverScoreOverview')}>
+        <section className="grid gap-3 lg:grid-cols-2" aria-label={t('titleStrategy.coverScoreOverview')}>
           <ScoreCard icon={Palette} label={t('titleStrategy.visualScore')} value={stats.average_visual_score} description={t('titleStrategy.visualScoreHint')} tone="blue" />
           <ScoreCard icon={TrendingUp} label={t('titleStrategy.dataScore')} value={stats.average_data_score} description={t('titleStrategy.dataScoreHint')} tone="emerald" />
-          <ScoreCard icon={CircleGauge} label={t('titleStrategy.coverPerformanceScore')} value={stats.average_cover_score} description={stats.score_formula || t('titleStrategy.coverScoreFormula')} tone="violet" />
         </section>
-
-        <CoverScoreDistribution rows={stats.score_distribution || []} records={data.score_records || []} />
       </> : null}
 
       <CoverFactorAnalysis groups={groups} statistics={stats} records={data.score_records || []} hasScores={hasScores} />
@@ -531,21 +528,20 @@ function CandidateCoverResultView({ result }: { result: AICoverCandidateResult }
       <article className={`rounded-xl border p-4 ${decisionTone}`}>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div><div className="text-xs font-medium opacity-75">{t('titleStrategy.coverCandidateDecisionLabel')}</div><div className="mt-1 text-xl font-semibold">{t(`titleStrategy.coverCandidateDecision.${result.decision}`)}</div></div>
-          <div className="text-right"><div className="font-mono text-3xl font-semibold">{formatScore(result.feasibility_score)}</div><div className="text-[10px] opacity-70">{t('titleStrategy.coverCandidateReferenceScore')}</div></div>
+          <div className="text-right"><div className="font-mono text-3xl font-semibold">{result.reference_count}</div><div className="text-xs opacity-70">{t('titleStrategy.coverCandidateHistorySamples')}</div></div>
         </div>
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] opacity-80"><span>{t('titleStrategy.coverCandidateConfidence')}：{t(`titleStrategy.coverCandidateConfidenceValue.${result.confidence}`)}</span><span>{t('titleStrategy.coverCandidateReferenceBasis', { total: result.reference_count, similar: result.similar_count })}</span></div>
       </article>
 
-      <div className="grid gap-2 sm:grid-cols-3">
+      <div className="grid gap-2 sm:grid-cols-2">
         <CandidateScoreTile label={t('titleStrategy.visualScore')} value={result.visual_quality_score} baseline={result.benchmark.average_visual_score} hint={t('titleStrategy.coverCandidateVisualPercentile', { value: formatScore(result.visual_percentile) })} tone="blue" />
         <CandidateScoreTile label={t('titleStrategy.coverCandidateEstimatedData')} value={result.estimated_data_score} baseline={result.benchmark.average_data_score} hint={t('titleStrategy.coverCandidateEstimateHint')} tone="emerald" />
-        <CandidateScoreTile label={t('titleStrategy.coverCandidateReferenceScore')} value={result.feasibility_score} baseline={result.benchmark.average_cover_score} hint={t('titleStrategy.coverCandidateScoreHint')} tone="violet" />
       </div>
 
       <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h3 className="text-xs font-semibold text-slate-800">{t('titleStrategy.coverCandidateFactors')}</h3>
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          {result.factor_evidence.map((row) => <div key={row.dimension} className="rounded-lg bg-slate-50 px-3 py-2"><div className="flex items-center justify-between gap-2"><span className="text-[11px] text-slate-500">{row.dimension_name}</span><span className="truncate text-xs font-semibold text-slate-800" title={row.label_names.join(' / ')}>{row.label_names.join(' / ')}</span></div><div className="mt-1 flex items-center justify-between gap-2 text-[10px]"><span className={row.delta_vs_overall == null ? 'text-slate-400' : row.delta_vs_overall >= 0 ? 'text-emerald-700' : 'text-rose-600'}>{row.delta_vs_overall == null ? t('titleStrategy.sampleInsufficient') : t('titleStrategy.coverCandidateFactorDelta', { value: `${row.delta_vs_overall >= 0 ? '+' : ''}${formatScore(row.delta_vs_overall)}` })}</span><span className="text-slate-400">n={row.sample_count}</span></div></div>)}
+          {result.factor_evidence.map((row) => <div key={row.dimension} className="rounded-lg bg-slate-50 px-3 py-2"><div className="flex items-center justify-between gap-2"><span className="text-[11px] text-slate-500">{row.dimension_name}</span><span className="truncate text-xs font-semibold text-slate-800" title={row.label_names.join(' / ')}>{row.label_names.join(' / ')}</span></div><div className="mt-1 flex items-center justify-between gap-2 text-[10px]"><span className={row.delta_vs_overall == null ? 'text-slate-400' : row.delta_vs_overall >= 0 ? 'text-emerald-700' : 'text-rose-600'}>{row.delta_vs_overall == null ? t('titleStrategy.sampleInsufficient') : t('titleStrategy.coverCandidateFactorDelta', { value: `${row.delta_vs_overall >= 0 ? '+' : ''}${formatScore(row.delta_vs_overall)}` })}</span><span className="text-slate-400">{row.sample_count} {t('titleStrategy.posts')}</span></div></div>)}
         </div>
       </article>
 
@@ -571,18 +567,6 @@ function CandidateScoreTile({ label, value, baseline, hint, tone }: { label: str
 
 
 const COVER_RECORD_PAGE_SIZE = 12
-
-
-function coverScoreMatchesBucket(score: number, label: string, index: number): boolean {
-  if (label === '优秀') return score >= 80
-  if (label === '良好') return score >= 65 && score < 80
-  if (label === '一般') return score >= 50 && score < 65
-  if (label === '偏弱') return score >= 0 && score < 50
-  if (index === 0) return score >= 80
-  if (index === 1) return score >= 65 && score < 80
-  if (index === 2) return score >= 50 && score < 65
-  return score >= 0 && score < 50
-}
 
 
 function formatCoverPublishTime(record: AICoverScoreRecord): string {
@@ -614,66 +598,6 @@ function CoverRecordImage({ record }: { record: AICoverScoreRecord }) {
       onError={() => setFailed(true)}
       className="aspect-video h-full w-full object-cover"
     />
-  )
-}
-
-
-function CoverScoreDistribution({ rows, records }: { rows: Array<{ label: string; count: number; ratio: number }>; records: AICoverScoreRecord[] }) {
-  const { t } = useTranslation('config')
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
-  const tones = [
-    { fill: 'bg-emerald-600', hover: 'hover:border-emerald-300 hover:bg-emerald-50/40', focus: 'focus-visible:ring-emerald-600' },
-    { fill: 'bg-blue-600', hover: 'hover:border-blue-300 hover:bg-blue-50/40', focus: 'focus-visible:ring-blue-600' },
-    { fill: 'bg-amber-500', hover: 'hover:border-amber-300 hover:bg-amber-50/40', focus: 'focus-visible:ring-amber-600' },
-    { fill: 'bg-slate-400', hover: 'hover:border-slate-300 hover:bg-slate-50', focus: 'focus-visible:ring-slate-500' },
-  ]
-  const selectedRow = selectedIndex === null ? null : rows[selectedIndex]
-  const bucketRecords = selectedRow
-    ? records
-      .filter((record) => coverScoreMatchesBucket(Number(record.cover_performance_score || 0), selectedRow.label, selectedIndex || 0))
-      .sort((left, right) => Number(right.cover_performance_score || 0) - Number(left.cover_performance_score || 0))
-    : []
-  const hasRecordDetails = records.length > 0
-
-  const selectBucket = (index: number) => {
-    if (!hasRecordDetails) return
-    setSelectedIndex(index)
-  }
-
-  return (
-    <>
-      <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-        <SectionTitle icon={Layers3} title={t('titleStrategy.coverDistribution')} description={t('titleStrategy.coverDistributionHint')} />
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {rows.map((row, index) => {
-            const tone = tones[index] || tones[tones.length - 1]
-            return (
-              <button
-                key={`${row.label}-${index}`}
-                type="button"
-                disabled={!hasRecordDetails}
-                onClick={() => selectBucket(index)}
-                aria-label={`${row.label}，${row.count} ${t('titleStrategy.posts')}，${formatPercent(row.ratio)}，${t('titleStrategy.coverViewWorks')}`}
-                className={`min-h-11 rounded-lg border border-slate-200 p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${hasRecordDetails ? `cursor-pointer ${tone.hover} ${tone.focus}` : 'cursor-not-allowed opacity-70'}`}
-              >
-                <div className="flex items-center justify-between gap-3 text-xs"><span className="font-semibold text-slate-800">{row.label}</span><span className="font-mono text-slate-500">{row.count} {t('titleStrategy.posts')}</span></div>
-                <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${tone.fill}`} style={{ width: `${Math.max(0, Math.min(100, row.ratio * 100))}%` }} /></div>
-                <div className="mt-3 flex items-center justify-between gap-3"><span className="font-mono text-xs text-slate-600">{formatPercent(row.ratio)}</span><span className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-700">{t('titleStrategy.coverViewWorks')}<ChevronRight aria-hidden="true" className="h-3.5 w-3.5" /></span></div>
-              </button>
-            )
-          })}
-        </div>
-        {!hasRecordDetails ? <div className="mt-4"><EmptyLine text={t('titleStrategy.coverNoRecords')} /></div> : null}
-      </article>
-
-      <CoverWorksDialog
-        open={selectedIndex !== null}
-        onOpenChange={(open) => { if (!open) setSelectedIndex(null) }}
-        title={t('titleStrategy.coverWorksDialogTitle', { label: selectedRow?.label || '' })}
-        description={t('titleStrategy.coverWorksDialogDescription', { count: bucketRecords.length })}
-        records={bucketRecords}
-      />
-    </>
   )
 }
 
@@ -728,7 +652,7 @@ function CoverWorksDialog({ open, onOpenChange, title, description, records }: {
                     <CoverRecordMetric label={t('titleStrategy.coverInteraction')} value={formatNumber(record.interaction)} />
                     <CoverRecordMetric label={t('titleStrategy.coverVisualShort')} value={formatScore(record.visual_quality_score)} />
                     <CoverRecordMetric label={t('titleStrategy.coverDataShort')} value={formatScore(record.data_performance_score)} />
-                    <CoverRecordMetric label={t('titleStrategy.coverPerformanceShort')} value={formatScore(record.cover_performance_score)} emphasized />
+                    <CoverRecordMetric label={t('titleStrategy.visualScore')} value={formatScore(record.visual_quality_score)} emphasized />
                   </div>
                   <div className="mt-auto pt-3">
                     {record.canonical_url ? <Button asChild variant="outline" size="sm" className="min-h-10 w-full cursor-pointer border-blue-200 text-blue-700 hover:bg-blue-50 focus-visible:ring-blue-600"><a href={record.canonical_url} target="_blank" rel="noreferrer noopener">{t('titleStrategy.coverOpenWork')}<ExternalLink aria-hidden="true" className="h-3.5 w-3.5" /></a></Button> : <Button type="button" variant="outline" size="sm" disabled className="min-h-10 w-full">{t('titleStrategy.coverNoLink')}</Button>}
@@ -765,19 +689,17 @@ function ScoreCard({ icon: Icon, label, value, description, tone }: { icon: type
 }
 
 
-type CoverFactorMetric = 'data' | 'visual' | 'performance'
+type CoverFactorMetric = 'data' | 'visual'
 
 
 function coverFactorValue(row: AICoverDimensionStat, metric: CoverFactorMetric): number {
   if (metric === 'visual') return Number(row.avg_visual_score || 0)
-  if (metric === 'performance') return Number(row.avg_cover_score || 0)
   return Number(row.avg_data_score || 0)
 }
 
 
 function coverRecordFactorValue(record: AICoverScoreRecord, metric: CoverFactorMetric): number {
   if (metric === 'visual') return Number(record.visual_quality_score || 0)
-  if (metric === 'performance') return Number(record.cover_performance_score || 0)
   return Number(record.data_performance_score || 0)
 }
 
@@ -804,13 +726,11 @@ function CoverFactorAnalysis({ groups, statistics, records, hasScores }: { group
   const [selectedRow, setSelectedRow] = useState<AICoverDimensionStat | null>(null)
   if (!hasScores) return <section className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3" aria-label={t('titleStrategy.coverTagDistribution')}>{groups.map((group) => <LegacyDimensionCard key={group.key} rows={group.rows.slice(0, 5)} />)}</section>
 
-  const metricLabel = metric === 'visual' ? t('titleStrategy.visualScore') : metric === 'performance' ? t('titleStrategy.coverPerformanceScore') : t('titleStrategy.dataScore')
+  const metricLabel = metric === 'visual' ? t('titleStrategy.visualScore') : t('titleStrategy.dataScore')
   const baseline = metric === 'visual'
     ? Number(statistics.average_visual_score || 0)
-    : metric === 'performance'
-      ? Number(statistics.average_cover_score || 0)
-      : Number(statistics.average_data_score || 0)
-  const metricSwatchClass = metric === 'visual' ? 'bg-blue-600' : metric === 'performance' ? 'bg-violet-600' : 'bg-emerald-600'
+    : Number(statistics.average_data_score || 0)
+  const metricSwatchClass = metric === 'visual' ? 'bg-blue-600' : 'bg-emerald-600'
   const selectedRecords = selectedRow
     ? records
       .filter((record) => recordMatchesDimension(record, selectedRow))
@@ -822,9 +742,9 @@ function CoverFactorAnalysis({ groups, statistics, records, hasScores }: { group
       <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-label={t('titleStrategy.coverTagDistribution')}>
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <SectionTitle icon={Layers3} title={t('titleStrategy.coverFactorTitle')} description={t('titleStrategy.coverFactorDescription')} />
-          <div className="inline-grid grid-cols-3 rounded-lg border border-slate-200 bg-slate-50 p-1" role="group" aria-label={t('titleStrategy.coverFactorMetricLabel')}>
-            {(['data', 'visual', 'performance'] as CoverFactorMetric[]).map((item) => {
-              const label = item === 'data' ? t('titleStrategy.coverFactorMetricData') : item === 'visual' ? t('titleStrategy.coverFactorMetricVisual') : t('titleStrategy.coverFactorMetricPerformance')
+          <div className="inline-grid grid-cols-2 rounded-lg border border-slate-200 bg-slate-50 p-1" role="group" aria-label={t('titleStrategy.coverFactorMetricLabel')}>
+            {(['data', 'visual'] as CoverFactorMetric[]).map((item) => {
+              const label = item === 'data' ? t('titleStrategy.coverFactorMetricData') : t('titleStrategy.coverFactorMetricVisual')
               return <button key={item} type="button" aria-pressed={metric === item} onClick={() => setMetric(item)} className={`min-h-10 cursor-pointer rounded-md px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 ${metric === item ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>{label}</button>
             })}
           </div>
@@ -866,8 +786,8 @@ function DimensionCard({ rows, metric, baseline, canViewWorks, onSelect }: { row
   })
   const leader = sortedRows.find((row) => coverFactorSampleStatus(row) === 'stable')
   const pages = Array.from({ length: Math.max(1, Math.ceil(sortedRows.length / 5)) }, (_, index) => sortedRows.slice(index * 5, index * 5 + 5))
-  const fillClass = metric === 'visual' ? 'bg-blue-600' : metric === 'performance' ? 'bg-violet-600' : 'bg-emerald-600'
-  const accentTextClass = metric === 'visual' ? 'text-blue-700' : metric === 'performance' ? 'text-violet-700' : 'text-emerald-700'
+  const fillClass = metric === 'visual' ? 'bg-blue-600' : 'bg-emerald-600'
+  const accentTextClass = metric === 'visual' ? 'text-blue-700' : 'text-emerald-700'
 
   const scrollToPage = (page: number) => {
     const element = scrollRef.current
@@ -914,7 +834,7 @@ function DimensionCard({ rows, metric, baseline, canViewWorks, onSelect }: { row
   }
 
   return (
-    <article className="flex h-[430px] min-w-0 flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <article className="flex h-[330px] min-w-0 flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex min-h-8 shrink-0 items-start justify-between gap-3">
         <h3 className="text-sm font-semibold text-slate-900">{rows[0].dimension_name}</h3>
         {leader ? <Badge variant="outline" className="max-w-[62%] border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700"><span className="truncate">{t('titleStrategy.coverFactorLeader', { label: leader.label_name })}</span></Badge> : null}

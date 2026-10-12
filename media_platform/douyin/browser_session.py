@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from urllib.parse import parse_qs, urlsplit
 
 from .exception import DataFetchError
+from tools.douyin_browser_coordinator import DouyinTabLease
 
 
 @dataclass
@@ -25,7 +26,7 @@ class DouyinBrowserSession:
         self.last_page_request_at = 0
 
     async def request(self, url, params, timeout):
-        async with self.lock:
+        async with self.lock, DouyinTabLease():
             loop = asyncio.get_running_loop()
             remaining = self.MIN_PAGE_INTERVAL_SECONDS - (loop.time() - self.last_page_request_at)
             if remaining > 0:
@@ -48,8 +49,25 @@ class DouyinBrowserSession:
             and parse_qs(target.query).get(key) == [value]
         )
 
+    async def _work_page(self):
+        """Reuse an existing Douyin tab; never commandeer the WebUI or open a tab."""
+        pages = [self.source_page, *self.source_page.context.pages]
+        for page in pages:
+            host = urlsplit(page.url).hostname or ""
+            if not page.is_closed() and (host == "douyin.com" or host.endswith(".douyin.com")):
+                return page
+        raise DataFetchError("请先在专用 Chrome 中打开抖音页签，再开始采集")
+
+    def _clear_creator_pages(self):
+        for state in self.creator_pages.values():
+            if state.response_handler is not None:
+                state.page.remove_listener("response", state.response_handler)
+        self.creator_pages.clear()
+
     async def _detail(self, aweme_id, timeout):
-        page = await self.source_page.context.new_page()
+        page = await self._work_page()
+        # A detail navigation invalidates the shared tab's creator pagination.
+        self._clear_creator_pages()
         try:
             async with page.expect_response(
                 lambda r: self.matches_response(r, "/aweme/v1/web/aweme/detail/", "aweme_id", aweme_id),
@@ -58,14 +76,25 @@ class DouyinBrowserSession:
                 await page.goto(f"https://www.douyin.com/video/{aweme_id}",
                                 wait_until="domcontentloaded", timeout=timeout * 1000)
             response = await response_info.value
-            return {"status": response.status, "body": await response.text()}
-        finally:
-            await page.close()
+        except Exception as exc:
+            if page.is_closed() or urlsplit(page.url).path not in (f"/video/{aweme_id}", "/"):
+                raise DataFetchError("抖音页签已切换或关闭，请重新开始采集") from exc
+            raise
+        return {"status": response.status, "body": await response.text()}
 
     async def _posts(self, sec_user_id, cursor, timeout):
         state = self.creator_pages.get(sec_user_id)
+        if state is not None and (
+            state.page.is_closed() or urlsplit(state.page.url).path != f"/user/{sec_user_id}"
+            or (cursor == "0" and "0" not in state.responses)
+        ):
+            self._clear_creator_pages()
+            state = None
         if state is None:
-            page = await self.source_page.context.new_page()
+            if cursor != "0":
+                raise DataFetchError("抖音页签已切换，分页状态失效，请重新开始发现")
+            page = await self._work_page()
+            self._clear_creator_pages()
             state = CreatorPage(page)
             self.creator_pages[sec_user_id] = state
 
@@ -79,19 +108,21 @@ class DouyinBrowserSession:
                 state.changed.set()
 
             state.response_handler = receive
-            self.source_page.context.on("response", receive)
+            page.on("response", receive)
             try:
                 await page.goto(f"https://www.douyin.com/user/{sec_user_id}",
                                 wait_until="domcontentloaded", timeout=timeout * 1000)
             except BaseException:
                 self.creator_pages.pop(sec_user_id, None)
-                self.source_page.context.remove_listener("response", receive)
-                await page.close()
+                page.remove_listener("response", receive)
                 raise
 
         deadline = asyncio.get_running_loop().time() + timeout
         scroll_attempts = 0
         while cursor not in state.responses:
+            if state.page.is_closed() or urlsplit(state.page.url).path != f"/user/{sec_user_id}":
+                self._clear_creator_pages()
+                raise DataFetchError("抖音页签已切换或关闭，请重新开始发现")
             remaining = deadline - asyncio.get_running_loop().time()
             if remaining <= 0:
                 raise DataFetchError("Creator browser page timed out before providing the requested posts")
@@ -110,10 +141,5 @@ class DouyinBrowserSession:
         return {"status": response.status, "body": await response.text()}
 
     async def close(self):
-        for state in self.creator_pages.values():
-            if state.response_handler is not None:
-                self.source_page.context.remove_listener("response", state.response_handler)
-        pages = [state.page for state in self.creator_pages.values()]
-        self.creator_pages.clear()
-        if pages:
-            await asyncio.gather(*(page.close() for page in pages), return_exceptions=True)
+        # These are user/browser-owned tabs. Only release our listeners/state.
+        self._clear_creator_pages()

@@ -113,3 +113,89 @@ async def test_launched_browser_uses_discovered_websocket_url(monkeypatch):
     playwright.chromium.connect_over_cdp.assert_awaited_once_with(
         "ws://localhost:9223/devtools/browser/generated-id"
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("force,auto_close", [(False, False), (True, False), (False, True)])
+async def test_cleanup_preserves_borrowed_context_and_other_cdp_clients(monkeypatch, force, auto_close):
+    monkeypatch.setattr(config, "CDP_CONNECT_EXISTING", False)
+    monkeypatch.setattr(config, "AUTO_CLOSE_BROWSER", auto_close)
+    shared_context = MagicMock()
+    shared_context.close = AsyncMock()
+    shared_context.pages = [MagicMock()]
+    other_browser = MagicMock()
+    other_browser.is_connected.return_value = True
+    browser = MagicMock()
+    browser.contexts = [shared_context]
+    browser.close = AsyncMock()
+    browser.is_connected.return_value = True
+    manager = CDPBrowserManager()
+    manager.browser = browser
+    manager.browser_context = await manager._create_browser_context()
+    manager.launcher = MagicMock(browser_process=None)
+    manager._clear_recorded_port = MagicMock()
+
+    await manager.cleanup(force=force)
+
+    shared_context.close.assert_not_awaited()
+    shared_context.pages[0].close.assert_not_called()
+    browser.close.assert_awaited_once()
+    other_browser.close.assert_not_called()
+    manager.launcher.cleanup.assert_not_called()
+    manager._clear_recorded_port.assert_not_called()
+    assert manager.browser is None
+    assert manager.browser_context is None
+    await manager.cleanup(force=force)
+    browser.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_closes_only_a_context_created_by_this_manager(monkeypatch):
+    monkeypatch.setattr(config, "CDP_CONNECT_EXISTING", False)
+    monkeypatch.setattr(config, "AUTO_CLOSE_BROWSER", False)
+    owned_context = MagicMock()
+    owned_context.close = AsyncMock()
+    browser = MagicMock()
+    browser.contexts = []
+    browser.new_context = AsyncMock(return_value=owned_context)
+    browser.close = AsyncMock()
+    browser.is_connected.return_value = True
+    manager = CDPBrowserManager()
+    manager.browser = browser
+    manager.browser_context = await manager._create_browser_context()
+    assert manager._owns_browser_context
+
+    await manager.cleanup()
+
+    owned_context.close.assert_awaited_once()
+    browser.close.assert_awaited_once()
+    assert not manager._owns_browser_context
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("force,auto_close", [(True, False), (False, True)])
+async def test_explicit_shutdown_only_terminates_owned_browser_process(monkeypatch, force, auto_close):
+    monkeypatch.setattr(config, "CDP_CONNECT_EXISTING", False)
+    monkeypatch.setattr(config, "AUTO_CLOSE_BROWSER", auto_close)
+    manager = CDPBrowserManager()
+    manager.launcher = MagicMock(browser_process=MagicMock())
+    manager._clear_recorded_port = MagicMock()
+    await manager.cleanup(force=force)
+    manager.launcher.cleanup.assert_called_once()
+    manager._clear_recorded_port.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_disconnect_failure_still_releases_references_without_closing_shared_context(monkeypatch):
+    monkeypatch.setattr(config, "AUTO_CLOSE_BROWSER", False)
+    context = MagicMock()
+    context.close = AsyncMock()
+    manager = CDPBrowserManager()
+    manager.browser_context = context
+    manager.browser = MagicMock()
+    manager.browser.is_connected.return_value = True
+    manager.browser.close = AsyncMock(side_effect=RuntimeError("connection closed"))
+    await manager.cleanup()
+    context.close.assert_not_awaited()
+    assert manager.browser is None
+    assert manager.browser_context is None

@@ -83,6 +83,8 @@ class CDPBrowserManager:
         self.launcher = BrowserLauncher()
         self.browser: Optional[Browser] = None
         self.browser_context: Optional[BrowserContext] = None
+        # A CDP browser's existing context belongs to Chrome, not this task.
+        self._owns_browser_context = False
         self.debug_port: Optional[int] = None
         self._cleanup_registered = False
         normalized_profile = str(profile_platform or "").strip().lower()
@@ -533,6 +535,7 @@ class CDPBrowserManager:
         if contexts:
             # Use existing first context
             browser_context = contexts[0]
+            self._owns_browser_context = False
             utils.logger.info("[CDPBrowserManager] Using existing browser context")
         else:
             # Create new context
@@ -554,6 +557,7 @@ class CDPBrowserManager:
                 )
 
             browser_context = await self.browser.new_context(**context_options)
+            self._owns_browser_context = True
             utils.logger.info("[CDPBrowserManager] Created new browser context")
 
         return browser_context
@@ -603,18 +607,15 @@ class CDPBrowserManager:
             force: Whether to force cleanup browser process (ignoring AUTO_CLOSE_BROWSER config)
         """
         try:
-            # Close browser context
+            # Never close Chrome's shared persistent context. Browser.close()
+            # below disconnects this CDP client; callers close their own pages.
             if self.browser_context:
                 try:
-                    # Check if context is already closed
-                    # Try to get page list, if fails means already closed
-                    try:
-                        pages = self.browser_context.pages
-                        if pages is not None:
-                            await self.browser_context.close()
-                            utils.logger.info("[CDPBrowserManager] Browser context closed")
-                    except:
-                        utils.logger.debug("[CDPBrowserManager] Browser context already closed")
+                    if self._owns_browser_context:
+                        await self.browser_context.close()
+                        utils.logger.info("[CDPBrowserManager] Owned browser context closed")
+                    else:
+                        utils.logger.info("[CDPBrowserManager] Shared browser context preserved")
                 except Exception as context_error:
                     # Only log warning if error is not due to already being closed
                     error_msg = str(context_error).lower()
@@ -626,6 +627,7 @@ class CDPBrowserManager:
                         utils.logger.debug(f"[CDPBrowserManager] Browser context already closed: {context_error}")
                 finally:
                     self.browser_context = None
+                    self._owns_browser_context = False
 
             # Disconnect browser
             if self.browser:
@@ -649,7 +651,7 @@ class CDPBrowserManager:
                     self.browser = None
 
             # Close browser process (skip if connected to existing browser - we didn't launch it)
-            if config.CDP_CONNECT_EXISTING:
+            if config.CDP_CONNECT_EXISTING or not (self.launcher and self.launcher.browser_process):
                 utils.logger.info(
                     "[CDPBrowserManager] Connected to existing browser, skipping process cleanup"
                 )

@@ -8,11 +8,12 @@
     "error": "ERROR"
   },
   "tabs": {
-    "overview": "Overview",
-    "config": "Configuration",
-    "monitorData": "Monitor Data",
+    "overview": "Operations",
+    "config": "System Settings",
+    "monitorData": "Content Performance",
+    "hot": "Content Radar",
     "ops": "Tasks & Alerts",
-    "export": "Export & Reports"
+    "export": "Export Center"
   },
   "skipToContent": "Skip to main content",
   "consoleDrawer": {
@@ -36,6 +37,8 @@
     "subtitle": "Douyin account monitor",
     "createMonitorTask": "New monitor task",
     "primaryNavigation": "Primary navigation",
+    "businessNavigation": "Workspaces",
+    "systemNavigation": "System tools",
     "repository": "View repository",
     "api": "API",
     "local": "LOCAL",

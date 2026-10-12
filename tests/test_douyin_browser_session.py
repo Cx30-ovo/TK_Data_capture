@@ -2,6 +2,7 @@ import json
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import parse_qs, urlsplit
+from types import SimpleNamespace
 
 from media_platform.douyin import browser_session as helper
 from media_platform.douyin import client as module
@@ -81,10 +82,14 @@ class SessionSyncTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(match(foreign, "/aweme/v1/web/aweme/detail/", "aweme_id", "123"))
         self.assertTrue(match(shard, "/aweme/v1/web/aweme/detail/", "aweme_id", "123"))
 
-    async def test_failed_detail_load_closes_only_its_owned_page(self):
+    async def test_failed_detail_load_keeps_existing_douyin_tab(self):
         source = MagicMock()
+        source.url = "about:blank"
         page = MagicMock()
+        page.url = "https://www.douyin.com/"
+        page.is_closed.return_value = False
         page.close = AsyncMock()
+        source.context.pages = [page]
         source.context.new_page = AsyncMock(return_value=page)
         waiter = MagicMock()
         waiter.__aenter__ = AsyncMock(side_effect=TimeoutError("page timed out"))
@@ -92,20 +97,26 @@ class SessionSyncTests(unittest.IsolatedAsyncioTestCase):
         session = helper.DouyinBrowserSession(source)
         with self.assertRaises(TimeoutError):
             await session._detail("123", 1)
-        page.close.assert_awaited_once()
+        page.close.assert_not_awaited()
+        source.context.new_page.assert_not_awaited()
         source.close.assert_not_called()
 
     async def test_creator_pagination_reuses_the_sites_page(self):
         source, page = MagicMock(), MagicMock()
+        source.url = "about:blank"
+        page.url = "https://www.douyin.com/"
+        page.is_closed.return_value = False
+        source.context.pages = [page]
         page.close = AsyncMock()
         source.context.new_page = AsyncMock(return_value=page)
         callbacks = {}
-        source.context.on.side_effect = lambda event, callback: callbacks.update({event: callback})
+        page.on.side_effect = lambda event, callback: callbacks.update({event: callback})
         async def emit(cursor):
             response = MagicMock(url=f"https://www.douyin.com/aweme/v1/web/aweme/post/?sec_user_id=test-user&max_cursor={cursor}", status=200)
             response.text = AsyncMock(return_value=json.dumps({"cursor": cursor}))
             callbacks["response"](response)
         async def load(*args, **kwargs):
+            page.url = args[0]
             await emit("0")
         async def scroll(*args, **kwargs):
             return {"x": 100, "y": 100}
@@ -120,9 +131,72 @@ class SessionSyncTests(unittest.IsolatedAsyncioTestCase):
         second = await session._posts("test-user", "100", 1)
         self.assertEqual(json.loads(first["body"])["cursor"], "0")
         self.assertEqual(json.loads(second["body"])["cursor"], "100")
-        source.context.new_page.assert_awaited_once()
+        source.context.new_page.assert_not_awaited()
         await session.close()
-        page.close.assert_awaited_once()
+        page.close.assert_not_awaited()
+        page.remove_listener.assert_called_once()
+
+    async def test_missing_douyin_tab_does_not_create_or_navigate_webui(self):
+        source = MagicMock(url="http://localhost:5173/")
+        source.is_closed.return_value = False
+        source.context.pages = [source]
+        source.goto = AsyncMock()
+        source.context.new_page = AsyncMock()
+        session = helper.DouyinBrowserSession(source)
+        with self.assertRaisesRegex(module.DataFetchError, "请先"):
+            await session._detail("123", 1)
+        source.goto.assert_not_awaited()
+        source.context.new_page.assert_not_awaited()
+
+    async def test_switching_to_detail_releases_creator_listener_without_closing_tab(self):
+        page = MagicMock(url="https://www.douyin.com/user/test-user")
+        page.is_closed.return_value = False
+        page.context.pages = [page]
+        page.goto = AsyncMock()
+        page.close = AsyncMock()
+        response = MagicMock(status=200)
+        response.text = AsyncMock(return_value='{"aweme_detail":{"aweme_id":"123"}}')
+        waiter = MagicMock()
+        waiter.value = AsyncMock(return_value=response)()
+        waiter.__aenter__ = AsyncMock(return_value=waiter)
+        waiter.__aexit__ = AsyncMock(return_value=False)
+        page.expect_response.return_value = waiter
+        session = helper.DouyinBrowserSession(page)
+        handler = MagicMock()
+        session.creator_pages["test-user"] = helper.CreatorPage(page, response_handler=handler)
+        await session._detail("123", 1)
+        page.remove_listener.assert_called_once_with("response", handler)
+        self.assertEqual(session.creator_pages, {})
+        page.close.assert_not_awaited()
+
+    async def test_creator_finishes_pagination_before_navigating_to_details(self):
+        from media_platform.douyin import core as core_module
+        crawler = core_module.DouYinCrawler()
+        events = []
+        posts = [{"aweme_id": "one"}, {"aweme_id": "two"}]
+
+        async def collect(*args, **kwargs):
+            self.assertNotIn("callback", kwargs)
+            events.append("pagination")
+            return posts
+
+        async def details(items):
+            self.assertEqual(items, posts)
+            events.append("details")
+
+        crawler.dy_client = SimpleNamespace(
+            get_user_info=AsyncMock(return_value={}),
+            get_all_user_aweme_posts=AsyncMock(side_effect=collect),
+        )
+        crawler.fetch_creator_video_detail = AsyncMock(side_effect=details)
+        crawler.batch_get_note_comments = AsyncMock()
+        crawler._is_in_collection_time_range = MagicMock(return_value=True)
+        with patch.object(core_module.config, "DY_CREATOR_ID_LIST", ["test-user"]), patch.object(
+            core_module, "parse_creator_info_from_url", return_value=SimpleNamespace(sec_user_id="test-user")
+        ):
+            await crawler.get_creators_and_videos()
+        self.assertEqual(events, ["pagination", "details"])
+        crawler.batch_get_note_comments.assert_awaited_once_with(["one", "two"])
 
     async def test_proxy_keeps_its_existing_transport(self):
         client, page = self.make_client(proxy="http://test-proxy")

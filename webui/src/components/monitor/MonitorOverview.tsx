@@ -235,83 +235,20 @@ export function MonitorOverview({ onOpenTasks, onOpenAlerts, onOpenData, onOpenC
 
   const openEvent = (event: TimelineEvent) => {
     if (event.kind === 'post' || event.kind === 'snapshot') onOpenData(event.awemeId)
-    if (event.kind === 'job') onOpenTasks('abnormal', event.jobId)
+    if (event.kind === 'job') onOpenTasks('all', event.jobId)
     if (event.kind === 'alert') onOpenAlerts(event.alertId)
   }
 
   const openIssue = (issue: OverviewIssue) => {
-    if (issue.kind === 'job') onOpenTasks(issue.jobStatus || 'abnormal', issue.jobId)
+    if (issue.kind === 'job') onOpenTasks(issue.jobStatus || 'failed', issue.jobId)
     if (issue.kind === 'alert') onOpenAlerts(issue.alertId)
   }
 
   return (
     <div className="space-y-3 animate-slide-up">
-      <section className="overview-banner" aria-labelledby="overview-banner-title">
-        <div className="overview-banner-grid" aria-hidden="true" />
-        <div className="relative z-10 grid min-h-[var(--banner-min-height)] items-stretch lg:grid-cols-[minmax(0,1.2fr)_minmax(22rem,0.8fr)]">
-          <div className="flex flex-col justify-center px-6 py-7 sm:px-8 lg:py-8">
-            <div className="overview-banner-kicker">
-              <span className="h-1.5 w-1.5 rounded-full bg-[var(--banner-brand)]" />
-              {t('overview.bannerKicker')}
-            </div>
-            <h1 id="overview-banner-title" className="overview-banner-title mt-4">
-              {t('overview.bannerTitle')}
-            </h1>
-            <p className="overview-banner-copy mt-3">
-              {t('overview.bannerDescription')}
-            </p>
-            <div className="mt-6 flex flex-wrap items-center gap-3">
-              <Button type="button" size="lg" onClick={onOpenConfig} className="h-11 px-5">
-                <Play className="h-4 w-4" />
-                {t('button.initiateScan')}
-              </Button>
-              <span className="inline-flex items-center gap-2 text-xs text-cyber-text-muted">
-                <span className="status-dot status-dot-online" />
-                {t('overview.bannerLive')}
-              </span>
-            </div>
-          </div>
-
-          <div className="relative flex items-center justify-center px-5 pb-6 pt-2 lg:py-6">
-            <div className="overview-signal-card">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-xs font-semibold text-cyber-text-primary">{t('overview.bannerSignal')}</div>
-                  <div className="mt-1 text-[11px] text-cyber-text-muted">{t('overview.bannerSignalHint')}</div>
-                </div>
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-status-success/25 bg-status-success/10 px-2 py-1 text-[10px] font-medium text-status-success">
-                  <span className="h-1.5 w-1.5 rounded-full bg-status-success" />
-                  LIVE
-                </span>
-              </div>
-
-              <div className="overview-signal-wave mt-4" aria-hidden="true">
-                {[30, 44, 38, 58, 46, 70, 62, 84, 68, 92, 76, 100].map((height, index) => (
-                  <span
-                    key={`${height}-${index}`}
-                    className={`overview-signal-bar ${index % 4 === 0 ? 'bg-[var(--banner-tech)]' : 'bg-[var(--banner-brand)]'}`}
-                    style={{ height: `${height}%`, opacity: 0.35 + index * 0.045 }}
-                  />
-                ))}
-              </div>
-
-              <div className="mt-4 grid grid-cols-3 gap-2">
-                <div className="rounded-md border border-cyber-border-subtle bg-cyber-bg-tertiary/35 p-2.5">
-                  <div className="text-[10px] text-cyber-text-muted">{t('overview.todayNewPosts')}</div>
-                  <div className="mt-1 text-lg font-semibold numeric-value text-cyber-text-primary">{data?.today_new_posts ?? 0}</div>
-                </div>
-                <div className="rounded-md border border-cyber-border-subtle bg-cyber-bg-tertiary/35 p-2.5">
-                  <div className="text-[10px] text-cyber-text-muted">{t('tasks.status.failed')}</div>
-                  <div className={`mt-1 text-lg font-semibold numeric-value ${failedJobs.length > 0 ? 'text-status-danger' : 'text-status-success'}`}>{failedJobs.length}</div>
-                </div>
-                <div className="rounded-md border border-cyber-border-subtle bg-cyber-bg-tertiary/35 p-2.5">
-                  <div className="text-[10px] text-cyber-text-muted">{t('overview.nextSnapshot')}</div>
-                  <div className="mt-1 text-sm font-semibold text-cyber-text-primary">{data?.next_snapshot?.stage || '-'}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+      <section className="overview-panel flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+        <div><h1 className="text-xl font-semibold text-cyber-text-primary">{t('overview.title')}</h1><p className="mt-1 text-xs text-cyber-text-muted">{t('overview.optimizedDescription')}</p></div>
+        <Button type="button" onClick={onOpenConfig} className="min-h-11"><Play aria-hidden="true" className="h-4 w-4" />{t('button.initiateScan')}</Button>
       </section>
 
       <section className="overview-panel overflow-hidden">
@@ -320,7 +257,7 @@ export function MonitorOverview({ onOpenTasks, onOpenAlerts, onOpenData, onOpenC
             <Radar className="h-4 w-4 text-status-info" />
           </div>
           <div className="min-w-0">
-            <h1 className="overview-panel-title">{t('overview.title')}</h1>
+            <h2 className="overview-panel-title">{t('overview.title')}</h2>
             <div className="overview-panel-description">{t('overview.optimizedDescription')}</div>
           </div>
           <div className="ml-auto flex items-center gap-3">

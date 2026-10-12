@@ -16,6 +16,27 @@ from ..services.analytics_service import analytics_service
 router = APIRouter(prefix="/monitor", tags=["monitor"])
 
 
+@router.get("/execution")
+async def get_monitor_execution():
+    return monitor_service.execution_status()
+
+
+@router.post("/execution/stop")
+async def stop_monitor_execution(run_id: Optional[str] = None):
+    result = monitor_service.request_safe_stop(run_id)
+    if result["status"] == "stale":
+        raise HTTPException(status_code=409, detail=result["reason"])
+    return result
+
+
+@router.post("/execution/resume")
+async def resume_monitor_execution():
+    result = monitor_service.resume_monitoring()
+    if result["status"] == "busy":
+        raise HTTPException(status_code=409, detail=result["reason"])
+    return result
+
+
 def _serialize_account(account) -> dict:
     return {
         "id": account.id,

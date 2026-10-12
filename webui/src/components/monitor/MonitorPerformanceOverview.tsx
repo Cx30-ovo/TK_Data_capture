@@ -1,37 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Activity, ArrowDown, ArrowUp, ArrowUpDown, BarChart3, Bookmark, CalendarRange, ChevronLeft, ChevronRight, Clock3, Crosshair, ExternalLink, Flame, Gauge, Heart, ImageIcon, MessageSquare, Search, Share2, Sparkles, TrendingUp } from 'lucide-react'
+import { Activity, ArrowDown, ArrowUp, ArrowUpDown, BarChart3, Bookmark, ChevronLeft, ChevronRight, Clock3, ExternalLink, Flame, Gauge, Heart, ImageIcon, MessageSquare, Search, Share2, TrendingUp } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { MonitorDashboardPost, MonitorSnapshot } from '@/lib/api'
-import { classifyTheme, firstSeenDelayHours, latestSnapshot, mean, median, THEME_COLORS } from '@/lib/monitorMetrics'
+import { firstSeenDelayHours, latestSnapshot, mean, median } from '@/lib/monitorMetrics'
 
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value)
-}
-
-
-function logTicks(maxValue: number): number[] {
-  const max = Math.max(1, maxValue)
-  const ticks: number[] = []
-  for (let value = 1; value <= max; value *= 10) {
-    ticks.push(value)
-    if (ticks.length >= 5) break
-  }
-  if (ticks[ticks.length - 1] !== max) ticks.push(max)
-  return ticks
-}
-
-
-function formatCompactNumber(value: number): string {
-  if (value >= 100000000) return `${(value / 100000000).toFixed(1)}亿`
-  if (value >= 100000) return `${(value / 10000).toFixed(1)}万`
-  if (value >= 1000) return `${(value / 1000).toFixed(1)}k`
-  return String(Math.round(value))
 }
 
 
@@ -61,10 +41,7 @@ function stageBadgeClass(stage?: string): string {
 
 
 type OverviewSort = 'publishDesc' | 'publishAsc' | 'likesDesc' | 'likesAsc' | 'collectionsDesc' | 'collectionsAsc' | 'commentsDesc' | 'commentsAsc' | 'sharesDesc' | 'sharesAsc' | 'interactionDesc' | 'interactionAsc' | 'growthDesc' | 'growthAsc'
-type QuadrantKey = 'highHigh' | 'highLow' | 'lowHigh' | 'lowLow'
-type QuadrantTimeRange = '24h' | '7d' | '30d' | 'all'
 type LifecycleStage = 'latest' | '24h' | '72h' | '7d'
-type InteractionMode = 'raw' | 'weighted'
 type PerformanceState = 'all' | 'comparable' | 'burst' | 'zero' | 'notReached' | 'missing' | 'deleted'
 type CoverFilter = 'all' | 'withCover' | 'withoutCover'
 
@@ -84,9 +61,8 @@ function stageSnapshot(post: MonitorDashboardPost, stage: LifecycleStage): Monit
 }
 
 
-function interactionScore(snapshot: MonitorSnapshot | undefined, mode: InteractionMode): number {
+function interactionScore(snapshot: MonitorSnapshot | undefined): number {
   if (!snapshot) return 0
-  if (mode === 'weighted') return snapshot.liked_count + snapshot.comment_count * 2 + snapshot.collected_count * 2 + snapshot.share_count * 3
   return snapshot.liked_count + snapshot.comment_count + snapshot.collected_count + snapshot.share_count
 }
 
@@ -98,20 +74,6 @@ function percentile(values: number[], ratio: number): number {
   const lower = Math.floor(position)
   const upper = Math.ceil(position)
   return sorted[lower] + (sorted[upper] - sorted[lower]) * (position - lower)
-}
-
-
-function pearsonCorrelation(points: Array<[number, number]>): number | null {
-  if (points.length < 3) return null
-  const xs = points.map(([x]) => Math.log10(x + 1))
-  const ys = points.map(([, y]) => Math.log10(y + 1))
-  const meanX = mean(xs)
-  const meanY = mean(ys)
-  const numerator = points.reduce((sum, _point, index) => sum + (xs[index] - meanX) * (ys[index] - meanY), 0)
-  const denominatorX = Math.sqrt(xs.reduce((sum, value) => sum + (value - meanX) ** 2, 0))
-  const denominatorY = Math.sqrt(ys.reduce((sum, value) => sum + (value - meanY) ** 2, 0))
-  const denominator = denominatorX * denominatorY
-  return denominator > 0 ? numerator / denominator : null
 }
 
 
@@ -183,22 +145,17 @@ export function MonitorPerformanceOverview({ posts, focusAwemeId, focusToken }: 
   const [overviewSearch, setOverviewSearch] = useState('')
   const [overviewSort, setOverviewSort] = useState<OverviewSort>('publishDesc')
   const [lifecycleStage, setLifecycleStage] = useState<LifecycleStage>('latest')
-  const [interactionMode, setInteractionMode] = useState<InteractionMode>('raw')
   const [performanceState, setPerformanceState] = useState<PerformanceState>('all')
   const [coverFilter, setCoverFilter] = useState<CoverFilter>('all')
   const [overviewPage, setOverviewPage] = useState(1)
   const [detailPost, setDetailPost] = useState<MonitorDashboardPost>()
   const [detailCoverFailed, setDetailCoverFailed] = useState(false)
   const [highlightedAwemeId, setHighlightedAwemeId] = useState<string>()
-  const [activeQuadrantPostId, setActiveQuadrantPostId] = useState<string>()
-  const [selectedQuadrantKey, setSelectedQuadrantKey] = useState<QuadrantKey>()
-  const [highlightedTheme, setHighlightedTheme] = useState<string>()
-  const [quadrantTimeRange, setQuadrantTimeRange] = useState<QuadrantTimeRange>('all')
   const handledFocusToken = useRef<number | undefined>()
   const analysisRows = posts.map((post) => {
     const snapshot = stageSnapshot(post, lifecycleStage)
     const state = lifecycleState(post, lifecycleStage, snapshot)
-    return { post, snapshot, state, score: snapshot && state === 'comparable' ? interactionScore(snapshot, interactionMode) : null }
+    return { post, snapshot, state, score: snapshot && state === 'comparable' ? interactionScore(snapshot) : null }
   })
   const comparableRows = analysisRows.filter((row) => row.state === 'comparable' && row.snapshot && row.score !== null)
   const interactions = comparableRows.map((row) => Number(row.score))
@@ -237,14 +194,14 @@ export function MonitorPerformanceOverview({ posts, focusAwemeId, focusToken }: 
   const growthForPost = (post: MonitorDashboardPost) => {
     const snapshot24h = stageSnapshot(post, '24h')
     const snapshot72h = stageSnapshot(post, '72h')
-    return snapshot24h && snapshot72h ? interactionScore(snapshot72h, interactionMode) - interactionScore(snapshot24h, interactionMode) : null
+    return snapshot24h && snapshot72h ? interactionScore(snapshot72h) - interactionScore(snapshot24h) : null
   }
   const overviewRows = useMemo(() => {
     const keyword = overviewSearch.trim().toLowerCase()
     const rows = posts.map((post) => {
       const snapshot = stageSnapshot(post, lifecycleStage)
       const state = lifecycleState(post, lifecycleStage, snapshot)
-      const total = snapshot && state === 'comparable' ? interactionScore(snapshot, interactionMode) : null
+      const total = snapshot && state === 'comparable' ? interactionScore(snapshot) : null
       const growth = growthForPost(post)
       return { post, snapshot, state, total, growth }
     })
@@ -275,7 +232,7 @@ export function MonitorPerformanceOverview({ posts, focusAwemeId, focusToken }: 
         const difference = metricValue(right, metric) - metricValue(left, metric)
         return overviewSort.endsWith('Asc') ? -difference : difference
       })
-  }, [burstThreshold, coverFilter, interactionMode, lifecycleStage, overviewSearch, overviewSort, performanceState, posts])
+  }, [burstThreshold, coverFilter, lifecycleStage, overviewSearch, overviewSort, performanceState, posts])
   const metricMaximums = useMemo(() => ({
     likes: Math.max(1, percentile(overviewRows.map((row) => row.snapshot?.liked_count || 0), 0.95)),
     collections: Math.max(1, percentile(overviewRows.map((row) => row.snapshot?.collected_count || 0), 0.95)),
@@ -297,7 +254,7 @@ export function MonitorPerformanceOverview({ posts, focusAwemeId, focusToken }: 
     })
   }
 
-  useEffect(() => setOverviewPage(1), [coverFilter, interactionMode, lifecycleStage, overviewSearch, overviewSort, performanceState])
+  useEffect(() => setOverviewPage(1), [coverFilter, lifecycleStage, overviewSearch, overviewSort, performanceState])
 
   useEffect(() => setDetailCoverFailed(false), [detailPost?.aweme_id, detailPost?.cover_url])
 
@@ -319,91 +276,10 @@ export function MonitorPerformanceOverview({ posts, focusAwemeId, focusToken }: 
     }
   }, [focusAwemeId, focusToken])
 
-  const quadrantPosts = useMemo(() => {
-    const comparablePosts = posts.filter((post) => lifecycleState(post, lifecycleStage, stageSnapshot(post, lifecycleStage)) === 'comparable')
-    if (quadrantTimeRange === 'all') return comparablePosts
-    const rangeHours = quadrantTimeRange === '24h' ? 24 : quadrantTimeRange === '7d' ? 24 * 7 : 24 * 30
-    const cutoff = Date.now() / 1000 - rangeHours * 60 * 60
-    return comparablePosts.filter((post) => post.create_time >= cutoff)
-  }, [lifecycleStage, posts, quadrantTimeRange])
-  const scoreForPost = (post: MonitorDashboardPost) => interactionScore(stageSnapshot(post, lifecycleStage), interactionMode)
-  const quadrantInteractions = quadrantPosts.map(scoreForPost)
-
   const meanMedianRatio = middle > 0 ? average / middle : 0
   const topTenInteraction = [...comparableRows].sort((left, right) => Number(right.score) - Number(left.score)).slice(0, 10).reduce((sum, row) => sum + Number(row.score), 0)
   const totalInteraction = interactions.reduce((sum, value) => sum + value, 0)
   const concentration = totalInteraction > 0 ? topTenInteraction / totalInteraction * 100 : 0
-  const maxLikes = Math.max(...quadrantPosts.map((post) => stageSnapshot(post, lifecycleStage)?.liked_count || 0), 1)
-  const maxComments = Math.max(...quadrantPosts.map((post) => stageSnapshot(post, lifecycleStage)?.comment_count || 0), 1)
-  const medianLikes = median(quadrantPosts.map((post) => stageSnapshot(post, lifecycleStage)?.liked_count || 0))
-  const medianComments = median(quadrantPosts.map((post) => stageSnapshot(post, lifecycleStage)?.comment_count || 0))
-  const likesCommentsCorrelation = pearsonCorrelation(quadrantPosts.map((post) => {
-    const snapshot = stageSnapshot(post, lifecycleStage)
-    return [snapshot?.liked_count || 0, snapshot?.comment_count || 0]
-  }))
-  const correlationKey = likesCommentsCorrelation == null
-    ? 'noData'
-    : likesCommentsCorrelation >= 0.7
-      ? 'strongPositive'
-      : likesCommentsCorrelation >= 0.4
-        ? 'moderatePositive'
-        : likesCommentsCorrelation >= 0.2
-          ? 'weakPositive'
-          : likesCommentsCorrelation <= -0.2
-            ? 'negative'
-            : 'none'
-  const logMaxLikes = Math.log10(maxLikes + 1)
-  const logMaxComments = Math.log10(maxComments + 1)
-  const plotMinimum = 6
-  const plotMaximum = 96
-  const plotSpan = plotMaximum - plotMinimum
-  const xPosition = (likes: number) => plotMinimum + Math.log10(likes + 1) / logMaxLikes * plotSpan
-  const yPosition = (comments: number) => plotMinimum + Math.log10(comments + 1) / logMaxComments * plotSpan
-  const medianX = xPosition(medianLikes)
-  const medianY = yPosition(medianComments)
-  const xTicks = logTicks(maxLikes)
-  const yTicks = logTicks(maxComments)
-  const topRightExtreme = [...quadrantPosts]
-    .filter((post) => (stageSnapshot(post, lifecycleStage)?.liked_count || 0) >= medianLikes && (stageSnapshot(post, lifecycleStage)?.comment_count || 0) >= medianComments)
-    .sort((left, right) => scoreForPost(right) - scoreForPost(left))[0]
-  const bottomRightExtreme = [...quadrantPosts]
-    .filter((post) => (stageSnapshot(post, lifecycleStage)?.liked_count || 0) >= medianLikes && (stageSnapshot(post, lifecycleStage)?.comment_count || 0) < medianComments)
-    .sort((left, right) => (stageSnapshot(right, lifecycleStage)?.liked_count || 0) - (stageSnapshot(left, lifecycleStage)?.liked_count || 0))[0]
-  const visibleThemes = [...new Set(quadrantPosts.map(classifyTheme))]
-  const quadrants = useMemo(() => [
-    { key: 'highHigh' as const, label: t('performance.quadrants.highHigh'), posts: quadrantPosts.filter((post) => (stageSnapshot(post, lifecycleStage)?.liked_count || 0) >= medianLikes && (stageSnapshot(post, lifecycleStage)?.comment_count || 0) >= medianComments) },
-    { key: 'highLow' as const, label: t('performance.quadrants.highLow'), posts: quadrantPosts.filter((post) => (stageSnapshot(post, lifecycleStage)?.liked_count || 0) >= medianLikes && (stageSnapshot(post, lifecycleStage)?.comment_count || 0) < medianComments) },
-    { key: 'lowHigh' as const, label: t('performance.quadrants.lowHigh'), posts: quadrantPosts.filter((post) => (stageSnapshot(post, lifecycleStage)?.liked_count || 0) < medianLikes && (stageSnapshot(post, lifecycleStage)?.comment_count || 0) >= medianComments) },
-    { key: 'lowLow' as const, label: t('performance.quadrants.lowLow'), posts: quadrantPosts.filter((post) => (stageSnapshot(post, lifecycleStage)?.liked_count || 0) < medianLikes && (stageSnapshot(post, lifecycleStage)?.comment_count || 0) < medianComments) },
-  ], [lifecycleStage, medianComments, medianLikes, quadrantPosts, t])
-  const quadrantMeta = [
-    { key: 'highHigh' as const, label: t('performance.quadrants.highHigh'), description: t('performance.quadrantDescriptions.highHigh'), icon: Sparkles, tone: 'success' },
-    { key: 'highLow' as const, label: t('performance.quadrants.highLow'), description: t('performance.quadrantDescriptions.highLow'), icon: Heart, tone: 'info' },
-    { key: 'lowHigh' as const, label: t('performance.quadrants.lowHigh'), description: t('performance.quadrantDescriptions.lowHigh'), icon: MessageSquare, tone: 'purple' },
-    { key: 'lowLow' as const, label: t('performance.quadrants.lowLow'), description: t('performance.quadrantDescriptions.lowLow'), icon: Gauge, tone: 'muted' },
-  ]
-  const quadrantKeyForPost = (post: MonitorDashboardPost): QuadrantKey => {
-    const snapshot = stageSnapshot(post, lifecycleStage)
-    const highLikes = (snapshot?.liked_count || 0) >= medianLikes
-    const highComments = (snapshot?.comment_count || 0) >= medianComments
-    if (highLikes && highComments) return 'highHigh'
-    if (highLikes) return 'highLow'
-    if (highComments) return 'lowHigh'
-    return 'lowLow'
-  }
-  const maxPointInteraction = Math.max(...quadrantInteractions, 1)
-  const activeQuadrantPost = quadrantPosts.find((post) => post.aweme_id === activeQuadrantPostId) || topRightExtreme || quadrantPosts[0]
-  const activeQuadrantSnapshot = activeQuadrantPost ? stageSnapshot(activeQuadrantPost, lifecycleStage) : undefined
-  const activeQuadrantTheme = activeQuadrantPost ? classifyTheme(activeQuadrantPost) : undefined
-  const activeQuadrantKey = activeQuadrantPost ? quadrantKeyForPost(activeQuadrantPost) : undefined
-  const activeQuadrantMeta = quadrantMeta.find((item) => item.key === activeQuadrantKey)
-  const corePercent = quadrantPosts.length ? quadrants[0].posts.length / quadrantPosts.length * 100 : 0
-  const potentialPercent = quadrantPosts.length ? quadrants[2].posts.length / quadrantPosts.length * 100 : 0
-  const activeQuadrantScore = activeQuadrantPost ? scoreForPost(activeQuadrantPost) : 0
-  const activeInteractionPercentile = quadrantInteractions.length
-    ? quadrantInteractions.filter((value) => value <= activeQuadrantScore).length / quadrantInteractions.length * 100
-    : 0
-
   const kpis = [
     { label: t('performance.comparablePosts'), value: formatNumber(comparableRows.length), icon: BarChart3, tone: 'text-cyber-neon-cyan' },
     { label: t('performance.medianInteraction'), value: formatNumber(middle), icon: Gauge, tone: 'text-cyber-neon-purple' },
@@ -418,10 +294,9 @@ export function MonitorPerformanceOverview({ posts, focusAwemeId, focusToken }: 
   return (
     <div className="flex flex-col space-y-3">
       <section className="overview-panel p-3" aria-label={t('performance.comparisonSettings')}>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[1fr_1fr_auto] xl:items-end">
+        <div className="grid gap-3 md:grid-cols-[minmax(16rem,0.7fr)_minmax(0,1.3fr)] md:items-end">
           <div className="grid gap-1 text-xs font-medium text-cyber-text-secondary"><span id="performance-lifecycle-label">{t('performance.lifecycleLabel')}</span><Select value={lifecycleStage} onValueChange={(value) => setLifecycleStage(value as LifecycleStage)}><SelectTrigger aria-labelledby="performance-lifecycle-label" className="h-10"><SelectValue /></SelectTrigger><SelectContent>{(['24h', '72h', '7d', 'latest'] as const).map((stage) => <SelectItem key={stage} value={stage}>{t(`performance.lifecycle.${stage}`)}</SelectItem>)}</SelectContent></Select></div>
-          <div className="grid gap-1 text-xs font-medium text-cyber-text-secondary"><span id="performance-interaction-mode-label">{t('performance.interactionModeLabel')}</span><Select value={interactionMode} onValueChange={(value) => setInteractionMode(value as InteractionMode)}><SelectTrigger aria-labelledby="performance-interaction-mode-label" className="h-10"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="raw">{t('performance.interactionMode.raw')}</SelectItem><SelectItem value="weighted">{t('performance.interactionMode.weighted')}</SelectItem></SelectContent></Select></div>
-          <p className="rounded-lg border border-cyber-border-subtle bg-cyber-bg-tertiary/35 px-3 py-2 text-xs leading-5 text-cyber-text-muted">{t(interactionMode === 'weighted' ? 'performance.weightedFormula' : 'performance.rawFormula')}</p>
+          <p className="rounded-lg border border-cyber-border-subtle bg-cyber-bg-tertiary/35 px-3 py-2 text-xs leading-5 text-cyber-text-muted">{t('performance.rawFormula')}</p>
         </div>
       </section>
       <section className={`rounded-lg border p-4 ${meanMedianRatio >= 1.5 ? 'border-cyber-neon-orange/35 bg-cyber-neon-orange/5' : 'border-cyber-neon-cyan/30 bg-cyber-neon-cyan/5'}`}>
@@ -448,13 +323,13 @@ export function MonitorPerformanceOverview({ posts, focusAwemeId, focusToken }: 
       <div className="flex flex-wrap gap-x-5 gap-y-2 rounded-lg border border-cyber-border-subtle bg-cyber-bg-panel px-4 py-3 text-xs text-cyber-text-secondary"><span>{t('performance.allPosts')}: <b className="numeric-value text-cyber-text-primary">{posts.length}</b></span><span>{t('performance.notReached')}: <b className="numeric-value text-status-info">{notReachedCount}</b></span><span>{t('performance.missingSnapshot')}: <b className="numeric-value text-status-warning">{missingCount}</b></span><span>{t('performance.zeroInteraction')}: <b className="numeric-value text-cyber-text-primary">{zeroRows.length}</b></span><span>{t('performance.deletedPosts')}: <b className="numeric-value text-status-danger">{deletedCount}</b></span><span>{t('performance.firstSeenDelay')}: <b className="numeric-value text-cyber-text-primary">{formatNumber(median(delays))}h</b></span></div>
 
       <section className="overview-panel post-overview-panel order-3 overflow-hidden">
-        <div className="overview-panel-header min-h-0 flex-col items-stretch gap-3 py-3 xl:flex-row xl:items-end xl:justify-between">
+        <div className="overview-panel-header min-h-0 flex-col items-stretch gap-3 py-3 2xl:flex-row 2xl:items-end 2xl:justify-between">
           <div className="flex min-w-0 items-center gap-3">
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-primary/20 bg-primary/10 text-primary"><BarChart3 aria-hidden="true" className="h-4 w-4" /></span>
             <div className="min-w-0"><div className="overview-panel-title">{t('performance.postOverview')}</div><div className="overview-panel-description">{t('performance.postOverviewHint')}</div></div>
             <div className="ml-auto flex shrink-0 flex-col items-end gap-1 xl:ml-2"><Badge variant="secondary">{t('performance.postOverviewCount', { count: overviewRows.length })}</Badge><span className="hidden text-[10px] text-cyber-text-muted sm:block">{t('performance.metricScaleHint')}</span></div>
           </div>
-          <div className="grid gap-2 sm:grid-cols-2 xl:min-w-[760px] xl:grid-cols-4">
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
             <label className="grid gap-1 text-[11px] font-medium text-cyber-text-secondary">
               {t('performance.searchLabel')}
               <span className="relative"><Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-cyber-text-muted" /><Input type="search" aria-label={t('performance.searchLabel')} value={overviewSearch} onChange={(event) => setOverviewSearch(event.target.value)} placeholder={t('performance.postSearchPlaceholder')} className="h-9 pl-9 text-xs" /></span>
@@ -474,7 +349,7 @@ export function MonitorPerformanceOverview({ posts, focusAwemeId, focusToken }: 
               <caption className="sr-only">{t('performance.tableCaption')}</caption>
               <colgroup><col className="w-[34%]" /><col className="w-[11%]" /><col className="w-[11%]" /><col className="w-[11%]" /><col className="w-[11%]" /><col className="w-[11%]" /><col className="w-[11%]" /></colgroup>
               <thead className="sticky top-0 z-20 text-left backdrop-blur">
-                <tr><SortableHeader label={t('performance.postAndPublish')} active={overviewSort.startsWith('publish')} direction={overviewSort.endsWith('Asc') ? 'asc' : 'desc'} sticky icon={Clock3} onClick={() => toggleOverviewSort('publish')} /><SortableHeader label={t('monitorDashboard.metricLikes')} active={overviewSort.startsWith('likes')} direction={overviewSort.endsWith('Asc') ? 'asc' : 'desc'} numeric icon={Heart} toneClass="text-status-info" onClick={() => toggleOverviewSort('likes')} /><SortableHeader label={t('monitorDashboard.metricCollections')} active={overviewSort.startsWith('collections')} direction={overviewSort.endsWith('Asc') ? 'asc' : 'desc'} numeric icon={Bookmark} toneClass="text-status-purple" onClick={() => toggleOverviewSort('collections')} /><SortableHeader label={t('monitorDashboard.metricComments')} active={overviewSort.startsWith('comments')} direction={overviewSort.endsWith('Asc') ? 'asc' : 'desc'} numeric icon={MessageSquare} toneClass="text-cyber-neon-pink" onClick={() => toggleOverviewSort('comments')} /><SortableHeader label={t('monitorDashboard.metricShares')} active={overviewSort.startsWith('shares')} direction={overviewSort.endsWith('Asc') ? 'asc' : 'desc'} numeric icon={Share2} toneClass="text-status-warning" onClick={() => toggleOverviewSort('shares')} /><SortableHeader label={t(interactionMode === 'weighted' ? 'performance.weightedInteraction' : 'performance.totalInteraction')} active={overviewSort.startsWith('interaction')} direction={overviewSort.endsWith('Asc') ? 'asc' : 'desc'} numeric icon={Activity} toneClass="text-status-success" onClick={() => toggleOverviewSort('interaction')} /><SortableHeader label={t('performance.growth24to72')} active={overviewSort.startsWith('growth')} direction={overviewSort.endsWith('Asc') ? 'asc' : 'desc'} numeric icon={TrendingUp} toneClass="text-primary" onClick={() => toggleOverviewSort('growth')} /></tr>
+                <tr><SortableHeader label={t('performance.postAndPublish')} active={overviewSort.startsWith('publish')} direction={overviewSort.endsWith('Asc') ? 'asc' : 'desc'} sticky icon={Clock3} onClick={() => toggleOverviewSort('publish')} /><SortableHeader label={t('monitorDashboard.metricLikes')} active={overviewSort.startsWith('likes')} direction={overviewSort.endsWith('Asc') ? 'asc' : 'desc'} numeric icon={Heart} toneClass="text-status-info" onClick={() => toggleOverviewSort('likes')} /><SortableHeader label={t('monitorDashboard.metricCollections')} active={overviewSort.startsWith('collections')} direction={overviewSort.endsWith('Asc') ? 'asc' : 'desc'} numeric icon={Bookmark} toneClass="text-status-purple" onClick={() => toggleOverviewSort('collections')} /><SortableHeader label={t('monitorDashboard.metricComments')} active={overviewSort.startsWith('comments')} direction={overviewSort.endsWith('Asc') ? 'asc' : 'desc'} numeric icon={MessageSquare} toneClass="text-cyber-neon-pink" onClick={() => toggleOverviewSort('comments')} /><SortableHeader label={t('monitorDashboard.metricShares')} active={overviewSort.startsWith('shares')} direction={overviewSort.endsWith('Asc') ? 'asc' : 'desc'} numeric icon={Share2} toneClass="text-status-warning" onClick={() => toggleOverviewSort('shares')} /><SortableHeader label={t('performance.totalInteraction')} active={overviewSort.startsWith('interaction')} direction={overviewSort.endsWith('Asc') ? 'asc' : 'desc'} numeric icon={Activity} toneClass="text-status-success" onClick={() => toggleOverviewSort('interaction')} /><SortableHeader label={t('performance.growth24to72')} active={overviewSort.startsWith('growth')} direction={overviewSort.endsWith('Asc') ? 'asc' : 'desc'} numeric icon={TrendingUp} toneClass="text-primary" onClick={() => toggleOverviewSort('growth')} /></tr>
               </thead>
               <tbody>
                 {displayedRows.map(({ post, snapshot, state, total, growth }, index) => (
@@ -486,7 +361,7 @@ export function MonitorPerformanceOverview({ posts, focusAwemeId, focusToken }: 
                     <td data-numeric="true" className="post-overview-metric-cell px-3 py-3"><MetricValue label={t('monitorDashboard.metricCollections')} value={snapshot?.collected_count ?? null} max={metricMaximums.collections} textClass="text-status-purple" barClass="bg-status-purple" /></td>
                     <td data-numeric="true" className="post-overview-metric-cell px-3 py-3"><MetricValue label={t('monitorDashboard.metricComments')} value={snapshot?.comment_count ?? null} max={metricMaximums.comments} textClass="text-cyber-neon-pink" barClass="bg-cyber-neon-pink" /></td>
                     <td data-numeric="true" className="post-overview-metric-cell px-3 py-3"><MetricValue label={t('monitorDashboard.metricShares')} value={snapshot?.share_count ?? null} max={metricMaximums.shares} textClass="text-status-warning" barClass="bg-status-warning" /></td>
-                    <td data-numeric="true" className="post-overview-metric-cell post-overview-total-cell px-3 py-3"><MetricValue label={t(interactionMode === 'weighted' ? 'performance.weightedInteraction' : 'performance.totalInteraction')} value={total} max={metricMaximums.total} textClass="text-status-success" barClass="bg-status-success" /></td>
+                    <td data-numeric="true" className="post-overview-metric-cell post-overview-total-cell px-3 py-3"><MetricValue label={t('performance.totalInteraction')} value={total} max={metricMaximums.total} textClass="text-status-success" barClass="bg-status-success" /></td>
                     <td data-numeric="true" className="post-overview-metric-cell px-3 py-3"><MetricValue label={t('performance.growth24to72')} value={growth} max={metricMaximums.growth} textClass={Number(growth || 0) >= 0 ? 'text-primary' : 'text-status-danger'} barClass={Number(growth || 0) >= 0 ? 'bg-primary' : 'bg-status-danger'} /></td>
                   </tr>
                 ))}
@@ -495,7 +370,7 @@ export function MonitorPerformanceOverview({ posts, focusAwemeId, focusToken }: 
           </div>
         </div>
 
-        <div className="space-y-3 p-3 lg:hidden">
+        <div className="max-h-[540px] space-y-3 overflow-y-auto overscroll-contain p-3 lg:hidden" tabIndex={0} role="region" aria-label={t('performance.postOverview')}>
           {displayedRows.map(({ post, snapshot, state, total, growth }, index) => (
             <article key={post.aweme_id} data-aweme-id={post.aweme_id} data-selected={highlightedAwemeId === post.aweme_id ? 'true' : undefined} className="metric-surface-card post-overview-card p-3 data-[selected=true]:border-primary/50 data-[selected=true]:ring-2 data-[selected=true]:ring-primary/15">
               <div className="flex min-w-0 items-start gap-2"><span aria-hidden="true" className="post-overview-index font-mono">{String((currentPage - 1) * pageSize + index + 1).padStart(2, '0')}</span><PostCover post={post} /><button type="button" onClick={() => setDetailPost(post)} className="min-w-0 flex-1 cursor-pointer text-left text-sm font-semibold leading-5 text-cyber-text-primary hover:text-primary hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">{post.title || post.aweme_id}</button><span className={`status-chip shrink-0 ${stageBadgeClass(snapshot?.stage)}`}>{snapshot?.stage || t(`performance.rowState.${state}`)}</span></div>
@@ -505,7 +380,7 @@ export function MonitorPerformanceOverview({ posts, focusAwemeId, focusToken }: 
                 <div className="post-overview-mobile-metric"><dt className="mb-1 text-[11px] text-cyber-text-muted">{t('monitorDashboard.metricCollections')}</dt><dd><MetricValue label={t('monitorDashboard.metricCollections')} value={snapshot?.collected_count ?? null} max={metricMaximums.collections} textClass="text-status-purple" barClass="bg-status-purple" /></dd></div>
                 <div className="post-overview-mobile-metric"><dt className="mb-1 text-[11px] text-cyber-text-muted">{t('monitorDashboard.metricComments')}</dt><dd><MetricValue label={t('monitorDashboard.metricComments')} value={snapshot?.comment_count ?? null} max={metricMaximums.comments} textClass="text-cyber-neon-pink" barClass="bg-cyber-neon-pink" /></dd></div>
                 <div className="post-overview-mobile-metric"><dt className="mb-1 text-[11px] text-cyber-text-muted">{t('monitorDashboard.metricShares')}</dt><dd><MetricValue label={t('monitorDashboard.metricShares')} value={snapshot?.share_count ?? null} max={metricMaximums.shares} textClass="text-status-warning" barClass="bg-status-warning" /></dd></div>
-                <div className="post-overview-mobile-metric"><dt className="mb-1 text-[11px] text-cyber-text-muted">{t(interactionMode === 'weighted' ? 'performance.weightedInteraction' : 'performance.totalInteraction')}</dt><dd><MetricValue label={t(interactionMode === 'weighted' ? 'performance.weightedInteraction' : 'performance.totalInteraction')} value={total} max={metricMaximums.total} textClass="text-status-success" barClass="bg-status-success" /></dd></div>
+                <div className="post-overview-mobile-metric"><dt className="mb-1 text-[11px] text-cyber-text-muted">{t('performance.totalInteraction')}</dt><dd><MetricValue label={t('performance.totalInteraction')} value={total} max={metricMaximums.total} textClass="text-status-success" barClass="bg-status-success" /></dd></div>
                 <div className="post-overview-mobile-metric"><dt className="mb-1 text-[11px] text-cyber-text-muted">{t('performance.growth24to72')}</dt><dd><MetricValue label={t('performance.growth24to72')} value={growth} max={metricMaximums.growth} textClass="text-primary" barClass="bg-primary" /></dd></div>
               </dl>
             </article>
@@ -565,211 +440,6 @@ export function MonitorPerformanceOverview({ posts, focusAwemeId, focusToken }: 
 
       </div>
 
-      <section className="overview-panel order-4 overflow-hidden">
-        <div className="overview-panel-header min-h-0 flex-col items-stretch gap-3 py-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-primary/20 bg-primary/10 text-primary"><Crosshair aria-hidden="true" className="h-4 w-4" /></span>
-            <div className="min-w-0">
-              <div className="overview-panel-title">{t('performance.quadrantTitle')}</div>
-              <div className="overview-panel-description">{t('performance.quadrantHint')}</div>
-            </div>
-          </div>
-          <div className="flex flex-col gap-2 lg:items-end">
-            <div className="flex flex-wrap items-end gap-2">
-              <div className="grid gap-1 text-[10px] font-medium text-cyber-text-secondary">
-                <span id="quadrant-time-range-label" className="inline-flex items-center gap-1.5"><CalendarRange aria-hidden="true" className="h-3.5 w-3.5" />{t('performance.quadrantTimeFilter')}</span>
-                <Select value={quadrantTimeRange} onValueChange={(value) => {
-                  setQuadrantTimeRange(value as QuadrantTimeRange)
-                  setSelectedQuadrantKey(undefined)
-                  setHighlightedTheme(undefined)
-                  setActiveQuadrantPostId(undefined)
-                }}>
-                  <SelectTrigger aria-labelledby="quadrant-time-range-label" className="h-8 w-[168px] text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>{(['24h', '7d', '30d', 'all'] as const).map((range) => <SelectItem key={range} value={range}>{t(`dataCenter.timeRange.${range}`)}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-              <Badge variant="secondary">{t('performance.quadrantFilteredPosts', { count: quadrantPosts.length, total: comparableRows.length })}</Badge>
-              <Badge variant="outline">{t(`performance.lifecycle.${lifecycleStage}`)}</Badge>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Badge variant="outline">{t('performance.medianLikesLine', { value: formatNumber(medianLikes) })}</Badge>
-              <Badge variant="outline">{t('performance.medianCommentsLine', { value: formatNumber(medianComments) })}</Badge>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2 border-b border-cyber-border-subtle bg-cyber-bg-tertiary/15 p-3 xl:grid-cols-4">
-          {quadrantMeta.map((item) => {
-            const quadrant = quadrants.find((candidate) => candidate.key === item.key)
-            const count = quadrant?.posts.length || 0
-            const percent = quadrantPosts.length ? count / quadrantPosts.length * 100 : 0
-            return (
-              <button
-                key={item.key}
-                type="button"
-                aria-pressed={selectedQuadrantKey === item.key}
-                data-active={selectedQuadrantKey === item.key ? 'true' : 'false'}
-                data-tone={item.tone}
-                onClick={() => {
-                  const nextKey = selectedQuadrantKey === item.key ? undefined : item.key
-                  setSelectedQuadrantKey(nextKey)
-                  if (nextKey && quadrant?.posts[0]) setActiveQuadrantPostId(quadrant.posts[0].aweme_id)
-                }}
-                className="quadrant-summary-card"
-              >
-                <span className="quadrant-summary-icon"><item.icon aria-hidden="true" className="h-4 w-4" /></span>
-                <span className="min-w-0 flex-1 text-left">
-                  <span className="block text-xs font-semibold text-cyber-text-primary">{item.label}</span>
-                  <span className="mt-0.5 block text-[10px] leading-4 text-cyber-text-muted">{item.description}</span>
-                </span>
-                <span className="text-right">
-                  <span className="block text-base font-semibold numeric-value text-cyber-text-primary">{count}</span>
-                  <span className="block text-[10px] numeric-value text-cyber-text-muted">{percent.toFixed(1)}%</span>
-                </span>
-                <span aria-hidden="true" className="quadrant-summary-progress"><span style={{ width: `${percent}%` }} /></span>
-              </button>
-            )
-          })}
-        </div>
-
-        <div className="grid gap-3 p-3 xl:grid-cols-[minmax(0,1fr)_17rem]">
-          <div className="min-w-0">
-            <div className="quadrant-insight-strip">
-              <div className="quadrant-insight-item"><span>{t('performance.coreShare')}</span><b>{corePercent.toFixed(1)}%</b><small>{t('performance.coreShareHint', { count: quadrants[0].posts.length })}</small></div>
-              <div className="quadrant-insight-item"><span>{t('performance.potentialShare')}</span><b>{potentialPercent.toFixed(1)}%</b><small>{t('performance.potentialShareHint', { count: quadrants[2].posts.length })}</small></div>
-              <div className="quadrant-insight-item"><span>{t('performance.likesCommentsCorrelation')}</span><b>{likesCommentsCorrelation == null ? '—' : likesCommentsCorrelation.toFixed(2)}</b><small>{t(`performance.correlation.${correlationKey}`)}</small></div>
-              <span className="quadrant-bubble-legend">
-                <span>{t('performance.bubbleScale')}</span>
-                <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-primary/65" />
-                <span aria-hidden="true" className="h-3 w-3 rounded-full bg-primary/85" />
-              </span>
-            </div>
-            <p id="quadrant-chart-summary" className="sr-only">{t('performance.quadrantA11ySummary', { count: quadrantPosts.length, likes: formatNumber(medianLikes), comments: formatNumber(medianComments) })}</p>
-            <div role="group" aria-labelledby="quadrant-chart-summary" className="quadrant-chart">
-              <div className="quadrant-zone" data-zone="lowHigh" style={{ left: `${plotMinimum}%`, top: `${100 - plotMaximum}%`, width: `${medianX - plotMinimum}%`, height: `${plotMaximum - medianY}%` }}>
-                <span className="quadrant-zone-label">{quadrants[2].label}<b>{quadrants[2].posts.length}</b></span>
-              </div>
-              <div className="quadrant-zone" data-zone="highHigh" style={{ left: `${medianX}%`, top: `${100 - plotMaximum}%`, width: `${plotMaximum - medianX}%`, height: `${plotMaximum - medianY}%` }}>
-                <span className="quadrant-zone-label justify-end text-right">{quadrants[0].label}<b>{quadrants[0].posts.length}</b></span>
-              </div>
-              <div className="quadrant-zone items-end" data-zone="lowLow" style={{ left: `${plotMinimum}%`, top: `${100 - medianY}%`, width: `${medianX - plotMinimum}%`, height: `${medianY - plotMinimum}%` }}>
-                <span className="quadrant-zone-label">{quadrants[3].label}<b>{quadrants[3].posts.length}</b></span>
-              </div>
-              <div className="quadrant-zone items-end" data-zone="highLow" style={{ left: `${medianX}%`, top: `${100 - medianY}%`, width: `${plotMaximum - medianX}%`, height: `${medianY - plotMinimum}%` }}>
-                <span className="quadrant-zone-label justify-end text-right">{quadrants[1].label}<b>{quadrants[1].posts.length}</b></span>
-              </div>
-
-              {xTicks.map((tick, index) => (
-                <div key={`x-${tick}`} aria-hidden="true" className="quadrant-gridline quadrant-gridline-vertical" style={{ left: `${xPosition(tick)}%`, top: `${100 - plotMaximum}%`, height: `${plotSpan}%` }}>
-                  <span data-edge={index === 0 || index === xTicks.length - 1 ? 'true' : undefined}>{formatCompactNumber(tick)}</span>
-                </div>
-              ))}
-              {yTicks.map((tick, index) => (
-                <div key={`y-${tick}`} aria-hidden="true" className="quadrant-gridline quadrant-gridline-horizontal" style={{ left: `${plotMinimum}%`, bottom: `${yPosition(tick)}%`, width: `${plotSpan}%` }}>
-                  <span data-edge={index === 0 || index === yTicks.length - 1 ? 'true' : undefined}>{formatCompactNumber(tick)}</span>
-                </div>
-              ))}
-
-              <div aria-hidden="true" className="quadrant-median-line quadrant-median-line-vertical" style={{ left: `${medianX}%`, top: `${100 - plotMaximum}%`, height: `${plotSpan}%` }} />
-              <div aria-hidden="true" className="quadrant-median-line quadrant-median-line-horizontal" style={{ left: `${plotMinimum}%`, top: `${100 - medianY}%`, width: `${plotSpan}%` }} />
-              <span className="quadrant-median-chip hidden sm:inline-flex" style={{ left: `${medianX}%`, top: `${100 - plotMaximum + 2}%` }}>{t('performance.medianLikesLine', { value: formatNumber(medianLikes) })}</span>
-              <span className="quadrant-median-chip quadrant-median-chip-y hidden sm:inline-flex" style={{ right: `${100 - plotMaximum + 1}%`, top: `${100 - medianY}%` }}>{t('performance.medianCommentsLine', { value: formatNumber(medianComments) })}</span>
-
-              {quadrantPosts.map((post) => {
-                const snapshot = stageSnapshot(post, lifecycleStage)
-                const likes = snapshot?.liked_count || 0
-                const comments = snapshot?.comment_count || 0
-                const left = xPosition(likes)
-                const bottom = yPosition(comments)
-                const theme = classifyTheme(post)
-                const quadrantKey = quadrantKeyForPost(post)
-                const interaction = scoreForPost(post)
-                const pointSize = 7 + Math.sqrt(Math.log10(interaction + 1) / Math.log10(maxPointInteraction + 1)) * 8
-                const isExtreme = topRightExtreme?.aweme_id === post.aweme_id || bottomRightExtreme?.aweme_id === post.aweme_id
-                const isActive = activeQuadrantPost?.aweme_id === post.aweme_id
-                const isDimmed = Boolean((selectedQuadrantKey && selectedQuadrantKey !== quadrantKey) || (highlightedTheme && highlightedTheme !== theme))
-                const quadrantLabel = quadrantMeta.find((item) => item.key === quadrantKey)?.label || quadrantKey
-                return (
-                  <button
-                    key={post.aweme_id}
-                    type="button"
-                    aria-pressed={isActive}
-                    aria-label={t('performance.quadrantPointLabel', { title: post.title || post.aweme_id, likes: formatNumber(likes), comments: formatNumber(comments), quadrant: quadrantLabel })}
-                    title={`${post.title || post.aweme_id}\n${t('performance.likes')}: ${formatNumber(likes)}\n${t('performance.comments')}: ${formatNumber(comments)}`}
-                    data-active={isActive ? 'true' : 'false'}
-                    data-dimmed={isDimmed ? 'true' : 'false'}
-                    data-extreme={isExtreme ? 'true' : undefined}
-                    onMouseEnter={() => setActiveQuadrantPostId(post.aweme_id)}
-                    onFocus={() => setActiveQuadrantPostId(post.aweme_id)}
-                    onClick={() => setActiveQuadrantPostId(post.aweme_id)}
-                    className="quadrant-point"
-                    style={{ left: `${left}%`, bottom: `${bottom}%` }}
-                  >
-                    <span aria-hidden="true" className="quadrant-point-dot" style={{ width: `${pointSize}px`, height: `${pointSize}px`, background: THEME_COLORS[theme] || THEME_COLORS.other }} />
-                  </button>
-                )
-              })}
-              <span className="quadrant-axis-label quadrant-axis-label-x">{t('performance.likesAxis')} →</span>
-              <span className="quadrant-axis-label quadrant-axis-label-y">{t('performance.commentsAxis')} →</span>
-              {quadrantPosts.length === 0 ? <div className="quadrant-empty-state">{t('performance.noMatchingPosts')}</div> : null}
-            </div>
-
-            <div className="quadrant-theme-legend">
-              <div className="flex min-w-0 items-center gap-2 sm:mr-auto">
-                <span className="shrink-0 text-[10px] font-semibold text-cyber-text-secondary">{t('performance.themeLegend')}</span>
-                <span className="hidden truncate text-[10px] text-cyber-text-muted sm:block">{t('performance.themeLegendHint')}</span>
-              </div>
-              <button type="button" aria-pressed={!highlightedTheme} data-active={!highlightedTheme ? 'true' : 'false'} onClick={() => setHighlightedTheme(undefined)} className="quadrant-theme-button">{t('performance.allThemes')}</button>
-              {visibleThemes.map((theme) => (
-                <button key={theme} type="button" aria-pressed={highlightedTheme === theme} data-active={highlightedTheme === theme ? 'true' : 'false'} onClick={() => {
-                  const nextTheme = highlightedTheme === theme ? undefined : theme
-                  setHighlightedTheme(nextTheme)
-                  if (nextTheme) setActiveQuadrantPostId(quadrantPosts.find((post) => classifyTheme(post) === nextTheme)?.aweme_id)
-                }} className="quadrant-theme-button">
-                  <span aria-hidden="true" className="h-2 w-2 rounded-full" style={{ background: THEME_COLORS[theme] || THEME_COLORS.other }} />
-                  {t(`topics.themes.${theme}`)}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <aside className="quadrant-detail" aria-live="polite">
-            <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-primary"><Sparkles aria-hidden="true" className="h-3.5 w-3.5" />{t('performance.focusedPost')}</div>
-            {activeQuadrantPost && activeQuadrantMeta ? (
-              <>
-                <div className="mt-3 flex items-start gap-3">
-                  <PostCover post={activeQuadrantPost} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="secondary">{activeQuadrantMeta.label}</Badge>
-                      <span className="inline-flex items-center gap-1.5 text-[10px] text-cyber-text-muted"><span aria-hidden="true" className="h-2 w-2 rounded-full" style={{ background: THEME_COLORS[activeQuadrantTheme || 'other'] || THEME_COLORS.other }} />{t(`topics.themes.${activeQuadrantTheme || 'other'}`)}</span>
-                    </div>
-                    <h3 className="mt-2 line-clamp-3 text-sm font-semibold leading-5 text-cyber-text-primary">{activeQuadrantPost.title || activeQuadrantPost.aweme_id}</h3>
-                    <div className="mt-1 inline-flex items-center gap-1 text-[10px] text-cyber-text-muted"><Clock3 aria-hidden="true" className="h-3 w-3" />{formatPublishedAt(activeQuadrantPost.create_time)}</div>
-                  </div>
-                </div>
-                <div className="mt-4 grid grid-cols-3 gap-2">
-                  <div className="quadrant-detail-metric"><span>{t('performance.likes')}</span><b>{formatCompactNumber(activeQuadrantSnapshot?.liked_count || 0)}</b></div>
-                  <div className="quadrant-detail-metric"><span>{t('performance.comments')}</span><b>{formatCompactNumber(activeQuadrantSnapshot?.comment_count || 0)}</b></div>
-                  <div className="quadrant-detail-metric"><span>{t(interactionMode === 'weighted' ? 'performance.weightedInteraction' : 'performance.totalInteraction')}</span><b>{formatCompactNumber(scoreForPost(activeQuadrantPost))}</b></div>
-                </div>
-                <div className="mt-3 rounded-lg border border-cyber-border-subtle bg-cyber-bg-tertiary/30 p-3">
-                  <div className="flex items-center justify-between gap-2 text-[10px] text-cyber-text-muted"><span>{t('performance.interactionPercentile')}</span><b className="numeric-value text-primary">{activeInteractionPercentile.toFixed(0)}%</b></div>
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-cyber-bg-tertiary"><div className="h-full rounded-full bg-primary" style={{ width: `${activeInteractionPercentile}%` }} /></div>
-                </div>
-                <div className="mt-3 grid gap-2">
-                  <div className="quadrant-benchmark-row"><span>{t('performance.likes')}</span><b>{t('performance.medianMultiple', { value: ((activeQuadrantSnapshot?.liked_count || 0) / Math.max(medianLikes, 1)).toFixed(1) })}</b></div>
-                  <div className="quadrant-benchmark-row"><span>{t('performance.comments')}</span><b>{t('performance.medianMultiple', { value: ((activeQuadrantSnapshot?.comment_count || 0) / Math.max(medianComments, 1)).toFixed(1) })}</b></div>
-                </div>
-                <p className="mt-4 border-t border-cyber-border-subtle pt-3 text-[10px] leading-5 text-cyber-text-muted">{activeQuadrantMeta.description}</p>
-                <Button type="button" variant="outline" size="sm" onClick={() => setDetailPost(activeQuadrantPost)} className="mt-3 w-full">{t('performance.viewPostDetails')}</Button>
-              </>
-            ) : <div className="py-10 text-center text-xs text-cyber-text-muted">{t('performance.noMatchingPosts')}</div>}
-            <p className="mt-3 text-[10px] leading-4 text-cyber-text-muted">{t('performance.quadrantFocusHint')}</p>
-          </aside>
-        </div>
-      </section>
-
       <Dialog open={Boolean(detailPost)} onOpenChange={(open) => !open && setDetailPost(undefined)}>
         <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto border-cyber-border-subtle bg-cyber-bg-panel">
           <DialogHeader>
@@ -777,9 +447,9 @@ export function MonitorPerformanceOverview({ posts, focusAwemeId, focusToken }: 
             <DialogDescription className="text-left text-cyber-text-muted">{detailPost ? `${formatPublishedAt(detailPost.create_time)} · ID ${detailPost.aweme_id}` : ''}</DialogDescription>
           </DialogHeader>
           {detailPost ? <div className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-[13rem_minmax(0,1fr)]"><div className="aspect-video overflow-hidden rounded-lg border border-cyber-border-subtle bg-cyber-bg-tertiary">{detailPost.cover_url && !detailCoverFailed ? <img src={detailPost.cover_url} alt={t('performance.coverAlt', { title: detailPost.title || detailPost.aweme_id })} width={208} height={117} className="h-full w-full object-cover" decoding="async" referrerPolicy="no-referrer" onError={() => setDetailCoverFailed(true)} /> : <div className="grid h-full place-items-center gap-2 text-xs text-cyber-text-muted"><ImageIcon aria-hidden="true" className="h-6 w-6" /><span>{t('performance.noCover')}</span></div>}</div><div className="grid grid-cols-2 gap-2"><div className="metric-surface-card p-3"><span className="text-xs text-cyber-text-muted">{t('performance.currentState')}</span><b className="mt-2 block text-sm text-cyber-text-primary">{detailSnapshot?.stage || (detailState ? t(`performance.rowState.${detailState}`) : '—')}</b></div><div className="metric-surface-card p-3"><span className="text-xs text-cyber-text-muted">{t(interactionMode === 'weighted' ? 'performance.weightedInteraction' : 'performance.totalInteraction')}</span><b className="mt-2 block text-lg numeric-value text-status-success">{detailSnapshot ? formatNumber(interactionScore(detailSnapshot, interactionMode)) : '—'}</b></div><div className="metric-surface-card p-3"><span className="text-xs text-cyber-text-muted">{t('performance.growth24to72')}</span><b className="mt-2 block text-lg numeric-value text-primary">{detailGrowth == null ? '—' : formatNumber(detailGrowth)}</b></div><div className="metric-surface-card p-3"><span className="text-xs text-cyber-text-muted">{t('performance.firstSeenDelay')}</span><b className="mt-2 block text-lg numeric-value text-cyber-text-primary">{formatNumber(firstSeenDelayHours(detailPost))}h</b></div></div></div>
+            <div className="grid gap-4 sm:grid-cols-[13rem_minmax(0,1fr)]"><div className="aspect-video overflow-hidden rounded-lg border border-cyber-border-subtle bg-cyber-bg-tertiary">{detailPost.cover_url && !detailCoverFailed ? <img src={detailPost.cover_url} alt={t('performance.coverAlt', { title: detailPost.title || detailPost.aweme_id })} width={208} height={117} className="h-full w-full object-cover" decoding="async" referrerPolicy="no-referrer" onError={() => setDetailCoverFailed(true)} /> : <div className="grid h-full place-items-center gap-2 text-xs text-cyber-text-muted"><ImageIcon aria-hidden="true" className="h-6 w-6" /><span>{t('performance.noCover')}</span></div>}</div><div className="grid grid-cols-2 gap-2"><div className="metric-surface-card p-3"><span className="text-xs text-cyber-text-muted">{t('performance.currentState')}</span><b className="mt-2 block text-sm text-cyber-text-primary">{detailSnapshot?.stage || (detailState ? t(`performance.rowState.${detailState}`) : '—')}</b></div><div className="metric-surface-card p-3"><span className="text-xs text-cyber-text-muted">{t('performance.totalInteraction')}</span><b className="mt-2 block text-lg numeric-value text-status-success">{detailSnapshot ? formatNumber(interactionScore(detailSnapshot)) : '—'}</b></div><div className="metric-surface-card p-3"><span className="text-xs text-cyber-text-muted">{t('performance.growth24to72')}</span><b className="mt-2 block text-lg numeric-value text-primary">{detailGrowth == null ? '—' : formatNumber(detailGrowth)}</b></div><div className="metric-surface-card p-3"><span className="text-xs text-cyber-text-muted">{t('performance.firstSeenDelay')}</span><b className="mt-2 block text-lg numeric-value text-cyber-text-primary">{formatNumber(firstSeenDelayHours(detailPost))}h</b></div></div></div>
             {detailPost.canonical_url ? <a href={detailPost.canonical_url} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"><ExternalLink aria-hidden="true" className="h-4 w-4" />{t('performance.openPostAction')}</a> : <Badge variant="outline">{t('performance.noPostLink')}</Badge>}
-            <div><h3 className="text-sm font-semibold text-cyber-text-primary">{t('performance.snapshotHistory')}</h3>{detailSnapshots.length ? <div className="mt-2 overflow-x-auto rounded-lg border border-cyber-border-subtle"><table className="w-full min-w-[620px] text-xs"><thead className="bg-cyber-bg-tertiary/50 text-cyber-text-secondary"><tr><th className="px-3 py-2 text-left">{t('performance.latestStage')}</th><th className="px-3 py-2 text-right">{t('monitorDashboard.metricLikes')}</th><th className="px-3 py-2 text-right">{t('monitorDashboard.metricCollections')}</th><th className="px-3 py-2 text-right">{t('monitorDashboard.metricComments')}</th><th className="px-3 py-2 text-right">{t('monitorDashboard.metricShares')}</th><th className="px-3 py-2 text-right">{t(interactionMode === 'weighted' ? 'performance.weightedInteraction' : 'performance.totalInteraction')}</th></tr></thead><tbody className="divide-y divide-cyber-border-subtle">{detailSnapshots.map((snapshot) => <tr key={`${snapshot.stage}-${snapshot.captured_at}`}><td className="px-3 py-2 text-cyber-text-primary">{snapshot.stage}</td><td className="px-3 py-2 text-right numeric-value">{formatNumber(snapshot.liked_count)}</td><td className="px-3 py-2 text-right numeric-value">{formatNumber(snapshot.collected_count)}</td><td className="px-3 py-2 text-right numeric-value">{formatNumber(snapshot.comment_count)}</td><td className="px-3 py-2 text-right numeric-value">{formatNumber(snapshot.share_count)}</td><td className="px-3 py-2 text-right font-semibold numeric-value text-status-success">{formatNumber(interactionScore(snapshot, interactionMode))}</td></tr>)}</tbody></table></div> : <div className="mt-2 rounded-lg border border-dashed border-cyber-border-subtle px-4 py-8 text-center text-xs text-cyber-text-muted">{t('performance.noSnapshotHistory')}</div>}</div>
+            <div><h3 className="text-sm font-semibold text-cyber-text-primary">{t('performance.snapshotHistory')}</h3>{detailSnapshots.length ? <div className="mt-2 overflow-x-auto rounded-lg border border-cyber-border-subtle"><table className="w-full min-w-[620px] text-xs"><thead className="bg-cyber-bg-tertiary/50 text-cyber-text-secondary"><tr><th className="px-3 py-2 text-left">{t('performance.latestStage')}</th><th className="px-3 py-2 text-right">{t('monitorDashboard.metricLikes')}</th><th className="px-3 py-2 text-right">{t('monitorDashboard.metricCollections')}</th><th className="px-3 py-2 text-right">{t('monitorDashboard.metricComments')}</th><th className="px-3 py-2 text-right">{t('monitorDashboard.metricShares')}</th><th className="px-3 py-2 text-right">{t('performance.totalInteraction')}</th></tr></thead><tbody className="divide-y divide-cyber-border-subtle">{detailSnapshots.map((snapshot) => <tr key={`${snapshot.stage}-${snapshot.captured_at}`}><td className="px-3 py-2 text-cyber-text-primary">{snapshot.stage}</td><td className="px-3 py-2 text-right numeric-value">{formatNumber(snapshot.liked_count)}</td><td className="px-3 py-2 text-right numeric-value">{formatNumber(snapshot.collected_count)}</td><td className="px-3 py-2 text-right numeric-value">{formatNumber(snapshot.comment_count)}</td><td className="px-3 py-2 text-right numeric-value">{formatNumber(snapshot.share_count)}</td><td className="px-3 py-2 text-right font-semibold numeric-value text-status-success">{formatNumber(interactionScore(snapshot))}</td></tr>)}</tbody></table></div> : <div className="mt-2 rounded-lg border border-dashed border-cyber-border-subtle px-4 py-8 text-center text-xs text-cyber-text-muted">{t('performance.noSnapshotHistory')}</div>}</div>
           </div> : null}
         </DialogContent>
       </Dialog>

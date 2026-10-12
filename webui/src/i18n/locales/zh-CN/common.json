@@ -8,11 +8,12 @@
     "error": "错误"
   },
   "tabs": {
-    "overview": "概览",
-    "config": "采集配置",
-    "monitorData": "监控数据",
+    "overview": "运营总览",
+    "config": "系统设置",
+    "monitorData": "内容表现",
+    "hot": "内容雷达",
     "ops": "任务与告警",
-    "export": "导出报告"
+    "export": "导出中心"
   },
   "skipToContent": "跳到主要内容",
   "consoleDrawer": {
@@ -36,6 +37,8 @@
     "subtitle": "抖音单账号监控",
     "createMonitorTask": "新建监控任务",
     "primaryNavigation": "主导航",
+    "businessNavigation": "业务工作台",
+    "systemNavigation": "系统工具",
     "repository": "查看项目仓库",
     "api": "API",
     "local": "本地",

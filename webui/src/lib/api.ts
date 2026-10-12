@@ -147,6 +147,11 @@ export interface MonitorConfigPayload {
 export interface MonitorRunResult {
   status: string
   reason?: string
+  error_code?: string
+  message?: string
+  action?: string
+  retry_after?: number
+  retry_after_seconds?: number
   created_posts?: number
   created_jobs?: number
   existing?: number
@@ -157,6 +162,41 @@ export interface MonitorRunResult {
   deleted_posts?: number
   retried?: number
   failed?: number
+}
+
+export interface MonitorExecutionStatus {
+  paused: boolean
+  crawler_running: boolean
+  retry_after_seconds: number
+  execution: {
+    run_id: string
+    kind: 'discovery' | 'snapshots'
+    state: string
+    phase: string
+    active: boolean
+    stop_requested: boolean
+    account_name: string
+    current_post: string
+    elapsed_seconds: number
+    pages: number
+    scanned: number
+    saved: number
+    total: number | null
+    processed: number
+    completed: number
+    retried: number
+    failed: number
+    skipped: number
+    error: { error_code: string; message: string; action: string } | null
+    result: MonitorRunResult | null
+  } | null
+}
+
+export function collectionErrorMessage(error: unknown): string {
+  const detail = (error as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail
+  if (typeof detail === 'string') return detail
+  if (detail && typeof detail === 'object' && 'message' in detail) return String(detail.message)
+  return error instanceof Error ? error.message : String(error || '')
 }
 
 export interface MonitorSnapshot {
@@ -326,67 +366,6 @@ export interface GeneratedMonitorReport {
   download_url: string
 }
 
-export interface AnalyticsStageDelta {
-  stage: string
-  sample_count: number
-  liked_count: number
-  collected_count: number
-  comment_count: number
-  share_count: number
-}
-
-export interface AnalyticsGrowthRate {
-  aweme_id: string
-  title: string
-  metric: 'liked_count' | 'collected_count' | 'comment_count' | 'share_count'
-  from_stage: string
-  to_stage: string
-  delta: number
-  hours: number
-  per_hour: number
-  baseline_per_hour?: number
-  score?: number
-}
-
-export interface AnalyticsEngagementRate {
-  aweme_id: string
-  title: string
-  stage: string
-  interaction_total: number
-  like_rate: number
-  collect_rate: number
-  comment_rate: number
-  share_rate: number
-}
-
-export interface AnalyticsLeaderboardItem {
-  aweme_id: string
-  title: string
-  stage: string
-  liked_count: number
-  collected_count: number
-  comment_count: number
-  share_count: number
-  score: number
-}
-
-export interface AnalyticsHeatmapCell {
-  weekday: number
-  hour: number
-  post_count: number
-  avg_likes: number
-}
-
-export interface MonitorAnalytics {
-  generated_at: string
-  stage_deltas: AnalyticsStageDelta[]
-  growth_rates: AnalyticsGrowthRate[]
-  engagement_rates: AnalyticsEngagementRate[]
-  leaderboard: Record<string, AnalyticsLeaderboardItem[]>
-  heatmap: AnalyticsHeatmapCell[]
-  anomalies: AnalyticsGrowthRate[]
-}
-
 export type AIAnalysisType = 'topic' | 'lifecycle' | 'topic_ideas' | 'title_strategy'
 export type AIAnalysisStatus = 'done' | 'insufficient_data' | 'failed' | 'running' | 'pending'
 
@@ -410,60 +389,6 @@ export interface AIAnalysisProviderStatus {
   vision?: Omit<AIAnalysisProviderStatus, 'vision' | 'vision_scope' | 'vision_batch_size'>
   vision_scope?: 'all_valid_covers'
   vision_batch_size?: number
-}
-
-export interface AITopicCluster {
-  name: string
-  description: string
-  keywords: string[]
-  representative_insight: string
-  recommended_actions: string[]
-  confidence: number
-  posts: number
-  total_interaction: number
-  average_interaction: number
-  median_interaction: number
-  burst_rate: number
-  representative_posts: Array<{
-    aweme_id: string
-    title: string
-    interaction_total: number
-    create_time?: number
-  }>
-}
-
-export interface AITopicAnalysisResult {
-  summary: string
-  clusters: AITopicCluster[]
-  tag_groups: Array<{ name: string; tags: string[]; summary: string }>
-  recommendations: string[]
-  data_limits: string[]
-  source_post_count: number
-}
-
-export interface AILifecyclePostInsight {
-  aweme_id: string
-  title: string
-  lifecycle_type: string
-  metrics: Record<string, number | null>
-  pattern: string
-  evidence: string[]
-  possible_factors: string[]
-  confidence: number
-  source: 'model' | 'deterministic'
-}
-
-export interface AILifecycleAnalysisResult {
-  overall_summary: string
-  stage_observation: string
-  post_insights: AILifecyclePostInsight[]
-  content_patterns: string[]
-  anomaly_notes: string[]
-  recommendations: string[]
-  caveats: string[]
-  type_distribution: Record<string, number>
-  stage_summary: Array<{ stage: string; sample_count: number; average_interaction: number | null }>
-  source_post_count: number
 }
 
 export interface AITitleStrategyKeyword {
@@ -704,35 +629,6 @@ export interface AITitleStrategyResult {
   }
 }
 
-export interface AITopicIdea {
-  id: number
-  title: string
-  angle: string
-  format: string
-  audience: string
-  why_now: string
-  evidence: string[]
-  viral_reason: string
-  title_formula: string
-  title_variants: string[]
-  writing_notes: string
-  expected_performance: 'high' | 'medium' | 'low'
-  difficulty: 'high' | 'medium' | 'low'
-  risk_notes: string
-  priority: number
-}
-
-export interface AITopicIdeasResult {
-  summary: string
-  strategy_points: {
-    data_basis: string[]
-    exclusions: string[]
-    principles: string[]
-  }
-  ideas: AITopicIdea[]
-  avoid: string[]
-}
-
 export interface AIAnalysisResponse<T = Record<string, unknown>> {
   id: number | null
   analysis_type: AIAnalysisType
@@ -795,6 +691,9 @@ export const schedulerApi = {
 }
 
 export const monitorApi = {
+  getExecution: () => api.get<MonitorExecutionStatus>('/monitor/execution'),
+  stopExecution: (runId?: string) => api.post('/monitor/execution/stop', undefined, { params: { run_id: runId } }),
+  resumeExecution: () => api.post('/monitor/execution/resume'),
   getAccounts: (includeDisabled = true) =>
     api.get<{ accounts: MonitorAccount[] }>('/monitor/accounts', { params: { include_disabled: includeDisabled } }),
   createAccount: (payload: MonitorConfigPayload) => api.post<MonitorAccount>('/monitor/accounts', payload),
@@ -813,7 +712,7 @@ export const monitorApi = {
       timeout: 10 * 60 * 1000,
     }),
   runDueSnapshots: (limit = 50) =>
-    api.post<MonitorRunResult>('/monitor/snapshots/run-due', null, { params: { limit } }),
+    api.post<MonitorRunResult>('/monitor/snapshots/run-due', null, { params: { limit }, timeout: 10 * 60 * 1000 }),
   getDashboard: (limit?: number) =>
     api.get<MonitorDashboard>('/monitor/dashboard', { params: { ...(limit === undefined ? {} : { limit }), ...accountParams() } }),
   getOverview: () => api.get<MonitorOverview>('/monitor/overview', { params: accountParams() }),
@@ -845,18 +744,11 @@ export const monitorApi = {
     `/api/monitor/export/snapshots?aweme_ids=${encodeURIComponent(awemeIds.join(','))}&format=${format}${accountQueryString()}`,
   reportDownloadUrl: (name: string) => `/api/monitor/reports/download?name=${encodeURIComponent(name)}`,
   deleteReport: (name: string) => api.delete('/monitor/reports', { params: { name } }),
-  getAnalytics: (limit = 100) => api.get<MonitorAnalytics>('/monitor/analytics', { params: { limit, ...accountParams() } }),
   getAIStatus: () => api.get<AIAnalysisProviderStatus>('/monitor/ai/status'),
-  analyzeTopics: (payload: AIAnalysisRequest) =>
-    api.post<AIAnalysisResponse<AITopicAnalysisResult>>('/monitor/ai/analyze/topics', payload, { timeout: 300000 }),
-  analyzeLifecycle: (payload: AIAnalysisRequest) =>
-    api.post<AIAnalysisResponse<AILifecycleAnalysisResult>>('/monitor/ai/analyze/lifecycle', payload, { timeout: 300000 }),
   analyzeTitleStrategy: (payload: AIAnalysisRequest) =>
     api.post<AIAnalysisResponse<AITitleStrategyResult>>('/monitor/ai/analyze/title-strategy', payload, { timeout: 30 * 60 * 1000 }),
   analyzeCoverCandidate: (payload: { account_id: number; reference_result_id?: number; image_data_url: string }) =>
     api.post<AICoverCandidateResult>('/monitor/ai/analyze/cover-candidate', payload, { timeout: 5 * 60 * 1000 }),
-  analyzeTopicIdeas: (payload: { account_id: number; topic_result_id: number; force?: boolean }) =>
-    api.post<AIAnalysisResponse<AITopicIdeasResult>>('/monitor/ai/analyze/topic-ideas', payload, { timeout: 300000 }),
   getAIResults: (accountId?: number, analysisType?: AIAnalysisType, status?: AIAnalysisStatus, limit = 20) =>
     api.get<{ results: AIAnalysisResponse[] }>('/monitor/ai/results', {
       params: { account_id: accountId, analysis_type: analysisType, status, limit },

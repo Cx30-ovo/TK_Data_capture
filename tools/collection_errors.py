@@ -27,11 +27,11 @@ def classify_collection_error(exc):
         return CollectionFailure("login_required", "抖音登录已失效", "请在专用 Chrome 中登录抖音，然后恢复监控。")
     if type(exc).__name__ == "DouyinPostUnavailableError":
         return CollectionFailure("post_deleted", "作品已删除或不可用", "该作品的后续快照任务已终止。", False)
-    if any(token in text for token in ("页签", "分页状态", "tab changed")):
+    if code == "tab_changed" or any(token in text for token in ("页签", "分页状态", "tab changed")):
         return CollectionFailure("tab_changed", "抖音页签已切换或关闭", "请打开专用抖音页签；采集中不要手动跳转。")
     if any(token in text for token in ("target closed", "browser has been closed", "disconnected", "websocket", "cdp", "econnrefused")):
         return CollectionFailure("browser_disconnected", "专用浏览器连接断开", "请确认专用 Chrome 正在运行，再恢复监控。")
-    if any(token in text for token in ("timeout", "timed out", "connection", "err_network", "network", "网络")) or isinstance(exc, TimeoutError):
+    if code == "network_timeout" or any(token in text for token in ("timeout", "timed out", "connection", "err_network", "network", "网络", "超时")) or isinstance(exc, TimeoutError):
         return CollectionFailure("network_timeout", "网络请求失败或超时", "检查专用 Chrome 的网络和代理后重试。")
     if isinstance(exc, ValueError) or any(token in text for token in ("json", "decode", "missing required", "does not match")):
         return CollectionFailure("invalid_response", "返回数据不完整", "未写入异常数据，稍后重试。")

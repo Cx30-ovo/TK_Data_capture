@@ -25,5 +25,17 @@ class DataFetchError(RequestError):
     """something error when fetch"""
 
 
+class DouyinPageTimeoutError(DataFetchError):
+    """The site did not finish loading the requested page data."""
+
+    error_code = "network_timeout"
+
+
+class DouyinTabChangedError(DataFetchError):
+    """The browser tab no longer displays the requested collection target."""
+
+    error_code = "tab_changed"
+
+
 class IPBlockError(RequestError):
     """fetch so fast that the server block us ip"""

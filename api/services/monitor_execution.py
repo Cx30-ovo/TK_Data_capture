@@ -11,6 +11,7 @@ class MonitorExecution:
         self.state = "running"
         self.phase = "connecting"
         self.account_name = ""
+        self.sec_user_id = ""
         self.current_post = ""
         self.started_at = time.time()
         self.updated_at = self.started_at

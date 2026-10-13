@@ -39,6 +39,7 @@ from store import douyin as douyin_store
 from tools import utils
 from tools.cdp_browser import CDPBrowserManager, safe_page_goto
 from tools.douyin_browser_coordinator import DouyinTabLease
+from tools.douyin_collection_page import get_collection_page, is_collection_page
 from var import crawler_type_var, source_keyword_var
 
 from .client import DouYinClient
@@ -135,22 +136,21 @@ class DouYinCrawler(AbstractCrawler):
             utils.logger.info("[DouYinCrawler.start] Douyin Crawler finished ...")
 
     async def _get_or_create_context_page(self, *, bootstrap: bool = False) -> Page:
-        """Reuse a Douyin tab; only service startup may bootstrap a missing tab.
+        """Collect in the background; service startup prepares a user login tab.
 
         A fresh Chrome uses chrome://newtab/, not about:blank. During startup
         that empty landing page is safe to reuse. Other websites, including the
         WebUI, must never be commandeered by collection or startup.
         """
-        pages = self.browser_context.pages
+        if not bootstrap:
+            return await get_collection_page(self.browser_context)
+        pages = [page for page in self.browser_context.pages
+                 if not page.is_closed() and not await is_collection_page(page)]
         douyin_pages = [page for page in pages if (
             (host := urlsplit(page.url).hostname or "") == "douyin.com" or host.endswith(".douyin.com")
         )]
-        empty_urls = {"", "about:blank"}
-        if bootstrap:
-            empty_urls.update({"chrome://newtab", "chrome://newtab/", "chrome://new-tab-page/"})
+        empty_urls = {"", "about:blank", "chrome://newtab", "chrome://newtab/", "chrome://new-tab-page/"}
         candidates = douyin_pages or [page for page in pages if page.url in empty_urls]
-        if pages and not candidates and not bootstrap:
-            raise DataFetchError("请先在专用 Chrome 中打开抖音页签，不会跳转 WebUI 或其他页面")
         for page in candidates:
             try:
                 if await page.evaluate("() => window.name") == "MediaCrawler":

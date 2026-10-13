@@ -335,3 +335,88 @@ async def test_hot_rank_respects_shared_risk_cooldown_without_new_requests():
     with pytest.raises(module.MonitorHotRankError, match="风控"):
         await service.get_hot_rank(force=True, fetcher=fetcher)
     fetcher.fetch_hot_rank.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("backfill", [False, True])
+async def test_scheduled_discovery_stops_at_known_posts_except_cover_backfill(repository, backfill):
+    service = MonitorService()
+    service._crawler_is_busy = lambda: False
+    repository.list_post_ids.return_value = {"known"}
+    repository.list_post_ids_missing_cover = AsyncMock(return_value=set())
+    fetcher = DouyinMonitorFetcher()
+    fetcher._client = SimpleNamespace(get_user_aweme_posts=AsyncMock(side_effect=[
+        {"aweme_list": [post(1), {**post("known"), "is_top": 0}], "has_more": True, "max_cursor": "10"},
+        {"aweme_list": [post(2)], "has_more": False},
+    ]))
+    fetcher._open_browser = AsyncMock(return_value=fetcher)
+    fetcher._close_browser = AsyncMock()
+    result = await service.discover_account("account-one", fetcher=fetcher, backfill_covers=backfill)
+    assert result["status"] == "ok"
+    assert fetcher._client.get_user_aweme_posts.await_count == (2 if backfill else 1)
+    assert result["fetched"] == (3 if backfill else 2)
+
+
+@pytest.mark.asyncio
+async def test_known_pinned_post_does_not_hide_new_posts_on_next_page():
+    fetcher = DouyinMonitorFetcher()
+    fetcher._client = SimpleNamespace(get_user_aweme_posts=AsyncMock(side_effect=[
+        {"aweme_list": [{**post("pinned"), "is_top": 1, "create_time": 1}], "has_more": True, "max_cursor": "10"},
+        {"aweme_list": [post(1), post("known")], "has_more": True, "max_cursor": "20"},
+    ]))
+    posts = await fetcher.fetch_latest_posts("account-one", {"pinned", "known"},
+                                             published_since=int(time.time()) - 86400, stop_on_known=True)
+    assert [item["aweme_id"] for item in posts] == ["pinned", "1", "known"]
+    assert fetcher._client.get_user_aweme_posts.await_count == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("partial", [False, True])
+async def test_discovery_timeout_backoff_preserves_data_and_resets_on_success(repository, partial):
+    service = MonitorService()
+    service._crawler_is_busy = lambda: False
+    fetcher = FakeFetcher()
+    cause = TimeoutError("page timed out")
+    fetcher.fetch_latest_posts = AsyncMock(side_effect=PartialDiscoveryError(cause, [post(1)]) if partial else cause)
+    for delay in (120, 240, 480, 960, 1800, 1800):
+        result = await service.discover_account("account-one", fetcher=fetcher)
+        assert result["status"] == ("partial" if partial else "error")
+        assert result["error_code"] == "network_timeout"
+        assert result["retry_after_seconds"] == delay
+        assert not service._paused and service._risk_control_until == 0
+        repository.update_account_discovered_at.assert_not_awaited()
+        calls = fetcher.fetch_latest_posts.await_count
+        deferred = await service.discover_account("account-one", fetcher=fetcher)
+        assert deferred["status"] == "deferred"
+        assert 0 < deferred["retry_after_seconds"] <= delay
+        assert fetcher.fetch_latest_posts.await_count == calls
+        service._discovery_retries["account-one"]["until"] = time.time() - 1
+    assert repository.upsert_post.await_count == (6 if partial else 0)
+    fetcher.fetch_latest_posts.side_effect = None
+    fetcher.fetch_latest_posts.return_value = []
+    assert (await service.discover_account("account-one", fetcher=fetcher))["status"] == "ok"
+    assert "account-one" not in service._discovery_retries
+    repository.update_account_discovered_at.assert_awaited_once_with(1)
+    fetcher.fetch_latest_posts.side_effect = cause
+    assert (await service.discover_account("account-one", fetcher=fetcher))["retry_after_seconds"] == 120
+
+
+@pytest.mark.asyncio
+async def test_account_backoff_does_not_stop_other_accounts_or_snapshot_cycles(repository):
+    service = MonitorService()
+    service._crawler_is_busy = lambda: False
+    first = account()
+    first.last_discovered_at, first.discover_interval_minutes = 0, 5
+    second = SimpleNamespace(sec_user_id="account-two", display_name="另一账号", last_discovered_at=0,
+                             discover_interval_minutes=5)
+    repository.list_monitored_accounts = AsyncMock(return_value=[first, second])
+    service.run_due_snapshots = AsyncMock()
+    service.discover_account = AsyncMock()
+    await service._defer_discovery_retry(first.sec_user_id, classify_collection_error(TimeoutError()))
+    await service._run_cycle()
+    service.run_due_snapshots.assert_awaited_once()
+    service.discover_account.assert_awaited_once_with(sec_user_id="account-two")
+    service._discovery_retries[first.sec_user_id]["until"] = time.time() - 1
+    service.discover_account.reset_mock()
+    await service._run_cycle()
+    assert service.discover_account.await_count == 2

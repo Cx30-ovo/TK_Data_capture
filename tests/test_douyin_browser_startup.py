@@ -9,11 +9,13 @@ import config
 from api.services import monitor_service as module
 from api.services.monitor_service import MonitorService
 from media_platform.douyin.core import DouYinCrawler
-from media_platform.douyin.exception import DataFetchError
+from media_platform.douyin import core as core_module
+from tools.douyin_collection_page import COLLECTION_TAB_NAME
 
 
 def make_page(url, name=""):
     page = MagicMock(url=url)
+    page.is_closed.return_value = False
     page.evaluate = AsyncMock(return_value=name)
     page.goto = AsyncMock()
     page.bring_to_front = AsyncMock()
@@ -67,11 +69,23 @@ async def test_startup_prefers_existing_douyin_tab_and_keeps_its_account_page():
 
 
 @pytest.mark.asyncio
-async def test_collection_still_requires_existing_douyin_tab():
+async def test_collection_selects_background_tab_even_when_only_webui_is_open(monkeypatch):
     crawler, context = make_crawler([make_page("chrome://newtab/"), make_page("http://localhost:5173/")])
-    with pytest.raises(DataFetchError, match="不会跳转 WebUI"):
-        await crawler._get_or_create_context_page()
+    background = make_page("about:blank", COLLECTION_TAB_NAME)
+    select = AsyncMock(return_value=background)
+    monkeypatch.setattr(core_module, "get_collection_page", select)
+    assert await crawler._get_or_create_context_page() is background
+    select.assert_awaited_once_with(context)
     context.new_page.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_startup_does_not_promote_collection_tab_to_the_user_login_tab():
+    background = make_page("about:blank", COLLECTION_TAB_NAME)
+    crawler, context = make_crawler([background, make_page("http://localhost:5173/")])
+    assert await crawler._get_or_create_context_page(bootstrap=True) is context.new_page.return_value
+    background.goto.assert_not_awaited()
+    background.bring_to_front.assert_not_awaited()
 
 
 @pytest.mark.asyncio

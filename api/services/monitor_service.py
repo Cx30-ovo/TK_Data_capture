@@ -24,6 +24,8 @@ from .monitor_execution import MonitorExecution
 
 RISK_CONTROL_BASE_COOLDOWN_SECONDS = 30 * 60
 RISK_CONTROL_MAX_COOLDOWN_SECONDS = 6 * 60 * 60
+DISCOVERY_RETRY_BASE_SECONDS = 2 * 60
+DISCOVERY_RETRY_MAX_SECONDS = 30 * 60
 
 
 class MonitorBrowserNetworkError(RuntimeError):
@@ -81,6 +83,8 @@ def monitored_operation(kind):
                     cooldown = await self._start_risk_control_cooldown(failure.message)
                 elif failure.error_code in ("login_required", "tab_changed", "browser_disconnected"):
                     self._paused = True
+                elif kind == "discovery" and failure.error_code in ("network_timeout", "invalid_response"):
+                    cooldown = await self._defer_discovery_retry(execution.sec_user_id, failure)
                 result = {"status": "blocked" if failure.error_code == "risk_control" else "error", "reason": failure.message,
                           **failure.as_dict(), "retry_after_seconds": cooldown}
                 execution.update(state="error", phase="finished", error=failure.as_dict(), result=result)
@@ -349,9 +353,12 @@ class DouyinMonitorFetcher:
                     continue
                 normalized = self._normalize_post(item, sec_user_id)
                 normalized["is_known"] = aweme_id in known_ids
-                page_has_known = page_has_known or normalized["is_known"]
+                # Pinned posts precede the chronological feed and are not a
+                # boundary for newly published works further down the list.
+                is_pinned = _to_int(item.get("is_top")) > 0
+                page_has_known = page_has_known or (normalized["is_known"] and not is_pinned)
                 posts.append(normalized)
-                if normalized["create_time"] > 0:
+                if normalized["create_time"] > 0 and not is_pinned:
                     page_create_times.append(normalized["create_time"])
 
             pages += 1
@@ -455,6 +462,7 @@ class MonitorService:
         self._risk_control_until = 0.0
         self._execution = None
         self._paused = False
+        self._discovery_retries = {}
 
     def execution_status(self):
         return {"paused": self._paused, "crawler_running": self._crawler_is_busy(), "retry_after_seconds": self._risk_control_cooldown_remaining(),
@@ -521,6 +529,24 @@ class MonitorService:
     def _clear_risk_control_cooldown(self) -> None:
         self._risk_control_failures = 0
         self._risk_control_until = 0.0
+
+    def _discovery_retry_remaining(self, sec_user_id: str) -> int:
+        retry = self._discovery_retries.get(sec_user_id)
+        remaining = retry["until"] - time.time() if retry else 0
+        return max(1, int(remaining)) if remaining > 0 else 0
+
+    async def _defer_discovery_retry(self, sec_user_id: str, failure) -> int:
+        if not sec_user_id:
+            return 0
+        attempts = self._discovery_retries.get(sec_user_id, {}).get("attempts", 0) + 1
+        delay = min(DISCOVERY_RETRY_BASE_SECONDS * 2 ** min(attempts - 1, 4), DISCOVERY_RETRY_MAX_SECONDS)
+        self._discovery_retries[sec_user_id] = {"attempts": attempts, "until": time.time() + delay, "failure": failure}
+        account_name = self._execution.account_name if self._execution else sec_user_id
+        await crawler_manager.add_log(
+            f"[Monitor] [{account_name}] [{failure.error_code}] 发现将在 {delay // 60} 分钟后重试；其他账号与快照不受此重试间隔影响",
+            "warning",
+        )
+        return delay
 
     async def _resolve_account(self, account_id: Optional[int] = None, all_accounts: bool = False):
         if all_accounts:
@@ -599,6 +625,8 @@ class MonitorService:
             last_discovered_at = int(account.last_discovered_at or 0)
             if now - last_discovered_at < interval_seconds:
                 continue
+            if self._discovery_retry_remaining(account.sec_user_id):
+                continue
             await crawler_manager.add_log(
                 f"[Monitor] Multi-account discovery due for {account.display_name or account.sec_user_id}",
                 "info",
@@ -633,7 +661,12 @@ class MonitorService:
             if account is None:
                 return {"status": "skipped", "reason": "no enabled monitored account"}
             account_name = account.display_name or account.sec_user_id
-            self._progress(account_name=account_name)
+            self._progress(account_name=account_name, sec_user_id=account.sec_user_id)
+            retry_remaining = self._discovery_retry_remaining(account.sec_user_id)
+            if retry_remaining:
+                failure = self._discovery_retries[account.sec_user_id]["failure"]
+                return {"status": "deferred", "reason": "发现任务等待重试", **failure.as_dict(),
+                        "retry_after_seconds": retry_remaining}
 
             known_ids = await monitor_repository.list_post_ids(account.sec_user_id, account.platform)
             missing_cover_ids = (
@@ -670,7 +703,7 @@ class MonitorService:
                         known_ids=known_ids,
                         max_pages=page_limit,
                         published_since=new_post_cutoff,
-                        stop_on_known=latest_only,
+                        stop_on_known=latest_only or not backfill_covers,
                     )
                 except PartialDiscoveryError as exc:
                     posts = exc.posts
@@ -757,6 +790,7 @@ class MonitorService:
             # A stopped/partial scan must not claim the full discovery interval.
             if not discovery_error and not self._should_stop():
                 await monitor_repository.update_account_discovered_at(account.id)
+                self._discovery_retries.pop(account.sec_user_id, None)
             if created_posts > 0:
                 await self._create_alert(
                     alert_type="new_posts",
@@ -789,6 +823,8 @@ class MonitorService:
                     cooldown = await self._start_risk_control_cooldown(failure.message)
                 elif failure.error_code in ("login_required", "tab_changed", "browser_disconnected"):
                     self._paused = True
+                elif failure.error_code in ("network_timeout", "invalid_response"):
+                    cooldown = await self._defer_discovery_retry(account.sec_user_id, failure)
                 self._progress(error=failure.as_dict())
                 await crawler_manager.add_log(f"[Monitor] [{account_name}] [{failure.error_code}] {failure.message}；已保存部分数据", "warning")
                 result.update(status="partial", reason=failure.message, **failure.as_dict(), retry_after_seconds=cooldown)

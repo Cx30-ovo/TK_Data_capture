@@ -1,11 +1,16 @@
+import asyncio
 import json
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import parse_qs, urlsplit
 from types import SimpleNamespace
 
+import pytest
+
 from media_platform.douyin import browser_session as helper
 from media_platform.douyin import client as module
+from tools.collection_errors import classify_collection_error
+from tools.douyin_collection_page import COLLECTION_TAB_NAME
 
 
 class SessionSyncTests(unittest.IsolatedAsyncioTestCase):
@@ -82,12 +87,13 @@ class SessionSyncTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(match(foreign, "/aweme/v1/web/aweme/detail/", "aweme_id", "123"))
         self.assertTrue(match(shard, "/aweme/v1/web/aweme/detail/", "aweme_id", "123"))
 
-    async def test_failed_detail_load_keeps_existing_douyin_tab(self):
+    async def test_failed_detail_load_keeps_background_tab_for_reuse(self):
         source = MagicMock()
         source.url = "about:blank"
         page = MagicMock()
         page.url = "https://www.douyin.com/"
         page.is_closed.return_value = False
+        page.evaluate = AsyncMock(return_value=COLLECTION_TAB_NAME)
         page.close = AsyncMock()
         source.context.pages = [page]
         source.context.new_page = AsyncMock(return_value=page)
@@ -95,13 +101,13 @@ class SessionSyncTests(unittest.IsolatedAsyncioTestCase):
         waiter.__aenter__ = AsyncMock(side_effect=TimeoutError("page timed out"))
         page.expect_response.return_value = waiter
         session = helper.DouyinBrowserSession(source)
-        with self.assertRaises(TimeoutError):
+        with self.assertRaises(helper.DouyinPageTimeoutError):
             await session._detail("123", 1)
         page.close.assert_not_awaited()
         source.context.new_page.assert_not_awaited()
         source.close.assert_not_called()
 
-    async def test_creator_pagination_reuses_the_sites_page(self):
+    async def test_creator_pagination_reuses_the_background_page(self):
         source, page = MagicMock(), MagicMock()
         source.url = "about:blank"
         page.url = "https://www.douyin.com/"
@@ -119,7 +125,7 @@ class SessionSyncTests(unittest.IsolatedAsyncioTestCase):
             page.url = args[0]
             await emit("0")
         async def scroll(*args, **kwargs):
-            return {"x": 100, "y": 100}
+            return COLLECTION_TAB_NAME if args[0] == "() => window.name" else {"x": 100, "y": 100}
         async def wheel(*args, **kwargs):
             await emit("100")
         page.goto = AsyncMock(side_effect=load)
@@ -136,21 +142,24 @@ class SessionSyncTests(unittest.IsolatedAsyncioTestCase):
         page.close.assert_not_awaited()
         page.remove_listener.assert_called_once()
 
-    async def test_missing_douyin_tab_does_not_create_or_navigate_webui(self):
+    async def test_work_page_uses_background_selector_and_does_not_navigate_webui(self):
         source = MagicMock(url="http://localhost:5173/")
         source.is_closed.return_value = False
         source.context.pages = [source]
         source.goto = AsyncMock()
         source.context.new_page = AsyncMock()
         session = helper.DouyinBrowserSession(source)
-        with self.assertRaisesRegex(module.DataFetchError, "请先"):
-            await session._detail("123", 1)
+        background = MagicMock()
+        with patch.object(helper, "get_collection_page", AsyncMock(return_value=background)) as select:
+            self.assertIs(await session._work_page(), background)
+            select.assert_awaited_once_with(source.context)
         source.goto.assert_not_awaited()
         source.context.new_page.assert_not_awaited()
 
     async def test_switching_to_detail_releases_creator_listener_without_closing_tab(self):
         page = MagicMock(url="https://www.douyin.com/user/test-user")
         page.is_closed.return_value = False
+        page.evaluate = AsyncMock(return_value=COLLECTION_TAB_NAME)
         page.context.pages = [page]
         page.goto = AsyncMock()
         page.close = AsyncMock()
@@ -209,6 +218,97 @@ class SessionSyncTests(unittest.IsolatedAsyncioTestCase):
             result = await client.request("GET", "https://www.douyin.com/aweme/v1/web/aweme/detail/", params={})
         page.evaluate.assert_not_awaited()
         self.assertTrue(result["ok"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case,url,code", [
+    ("navigation_timeout", "https://www.douyin.com/user/test-user", "network_timeout"),
+    ("response_timeout", "https://www.douyin.com/video/123", "network_timeout"),
+    ("response_timeout", "https://www.douyin.com/jingxuan?modal_id=123", "network_timeout"),
+    ("switch", "https://www.douyin.com/video/456", "tab_changed"),
+    ("switch", "https://other.example/video/123", "tab_changed"),
+    ("close", "https://www.douyin.com/video/123", "tab_changed"),
+    ("abort", "https://www.douyin.com/jingxuan?modal_id=123", None),
+    ("abort", "https://www.douyin.com/video/456", "tab_changed"),
+    ("success", "https://www.douyin.com/note/123/", None),
+    ("success", "https://www.douyin.com/jingxuan/video/123", None),
+])
+async def test_detail_navigation_distinguishes_timeouts_redirects_and_tab_changes(case, url, code):
+    page = MagicMock(url="https://www.douyin.com/user/test-user")
+    page.context.pages = [page]
+    page.is_closed.return_value = False
+    page.evaluate = AsyncMock(return_value=COLLECTION_TAB_NAME)
+    page.close = AsyncMock()
+    page.context.new_page = AsyncMock()
+    waiter = MagicMock()
+    waiter.__aenter__ = AsyncMock(return_value=waiter)
+    response = MagicMock(status=200)
+    response.text = AsyncMock(return_value='{"aweme_detail":{"aweme_id":"123"}}')
+    waiter.value = asyncio.get_running_loop().create_future()
+    waiter.value.set_result(response)
+    page.expect_response.return_value = waiter
+
+    async def navigate(*args, **kwargs):
+        if case == "navigation_timeout":
+            raise helper.PlaywrightTimeoutError("navigation timed out")
+        page.url = "https://www.douyin.com/video/123" if case in ("switch", "close") else url
+        if case == "abort":
+            raise helper.PlaywrightError("net::ERR_ABORTED")
+
+    async def finish(*args):
+        if args[0] is not None:
+            return False
+        if case in ("response_timeout", "switch", "close"):
+            page.url = url
+            page.is_closed.return_value = case == "close"
+            raise helper.PlaywrightTimeoutError("response timed out")
+        return False
+
+    page.goto = AsyncMock(side_effect=navigate)
+    waiter.__aexit__ = AsyncMock(side_effect=finish)
+    session = helper.DouyinBrowserSession(page)
+    if code:
+        with pytest.raises(module.DataFetchError) as error:
+            await session._detail("123", 1)
+        assert classify_collection_error(error.value).error_code == code
+    else:
+        assert json.loads((await session._detail("123", 1))["body"])["aweme_detail"]["aweme_id"] == "123"
+    assert page.goto.await_args.kwargs["wait_until"] == "commit"
+    page.close.assert_not_awaited()
+    page.context.new_page.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", ["timeout", "cancel", "abort"])
+async def test_creator_failed_navigation_releases_listener_and_pagination_state(case):
+    page = MagicMock(url="https://www.douyin.com/video/123")
+    page.context.pages = [page]
+    page.is_closed.return_value = False
+    page.evaluate = AsyncMock(return_value=COLLECTION_TAB_NAME)
+    exception = {"timeout": helper.PlaywrightTimeoutError(""), "cancel": asyncio.CancelledError(),
+                 "abort": helper.PlaywrightError("net::ERR_ABORTED")}[case]
+    page.goto = AsyncMock(side_effect=exception)
+    page.close = AsyncMock()
+    session = helper.DouyinBrowserSession(page)
+    expected = {"timeout": helper.DouyinPageTimeoutError, "cancel": asyncio.CancelledError,
+                "abort": helper.DouyinTabChangedError}[case]
+    with pytest.raises(expected):
+        await session._posts("test-user", "0", 1)
+    assert session.creator_pages == {}
+    page.remove_listener.assert_called_once()
+    page.close.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_creator_pagination_timeout_does_not_pause_for_a_tab_change():
+    page = MagicMock(url="https://www.douyin.com/user/test-user/")
+    page.is_closed.return_value = False
+    session = helper.DouyinBrowserSession(page)
+    session.creator_pages["test-user"] = helper.CreatorPage(page)
+    with pytest.raises(helper.DouyinPageTimeoutError) as error:
+        await session._posts("test-user", "100", 0)
+    assert classify_collection_error(error.value).error_code == "network_timeout"
+    page.goto.assert_not_called()
 
 
 if __name__ == "__main__":

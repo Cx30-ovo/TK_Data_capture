@@ -55,6 +55,9 @@ class FakePage:
         self.name = name
         self.url = url
 
+    def is_closed(self):
+        return False
+
     async def evaluate(self, script):
         if "window.name = 'MediaCrawler'" in script:
             self.name = "MediaCrawler"
@@ -429,12 +432,12 @@ async def test_douyin_reuses_marked_context_page():
     marked_page = FakePage("MediaCrawler")
     crawler.browser_context = FakeBrowserContext([FakePage("other"), marked_page])
 
-    page = await crawler._get_or_create_context_page()
+    page = await crawler._get_or_create_context_page(bootstrap=True)
     assert page is marked_page
 
     blank_page = FakePage()
     crawler.browser_context = FakeBrowserContext([blank_page])
-    page = await crawler._get_or_create_context_page()
+    page = await crawler._get_or_create_context_page(bootstrap=True)
     assert page is blank_page
     assert blank_page.name == "MediaCrawler"
 
@@ -445,17 +448,21 @@ async def test_douyin_prefers_existing_douyin_tab_over_webui():
     webui = FakePage("MediaCrawler", "http://localhost:5173/")
     douyin = FakePage("", "https://www.douyin.com/user/test")
     crawler.browser_context = FakeBrowserContext([webui, douyin])
-    assert await crawler._get_or_create_context_page() is douyin
+    assert await crawler._get_or_create_context_page(bootstrap=True) is douyin
     assert not crawler.browser_context.created
 
 
 @pytest.mark.asyncio
-async def test_douyin_does_not_navigate_unrelated_tabs():
-    from media_platform.douyin.exception import DataFetchError
+async def test_douyin_collection_selects_background_instead_of_unrelated_tabs(monkeypatch):
+    from unittest.mock import AsyncMock
+    from media_platform.douyin import core as module
     crawler = DouYinCrawler()
     crawler.browser_context = FakeBrowserContext([FakePage("MediaCrawler", "http://localhost:5173/")])
-    with pytest.raises(DataFetchError, match="不会跳转 WebUI"):
-        await crawler._get_or_create_context_page()
+    background = FakePage("MediaCrawlerCollection")
+    select = AsyncMock(return_value=background)
+    monkeypatch.setattr(module, "get_collection_page", select)
+    assert await crawler._get_or_create_context_page() is background
+    select.assert_awaited_once_with(crawler.browser_context)
     assert not crawler.browser_context.created
 
 

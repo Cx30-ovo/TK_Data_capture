@@ -110,6 +110,16 @@ export interface MonitorAccount {
   last_discovered_at: number | null
   created_at: number
   updated_at: number
+  snapshots_paused?: boolean
+  posts?: number
+  today_new_posts?: number
+  due_jobs?: number
+  abnormal_jobs?: number
+  jobs?: Record<string, number>
+  retry_after_seconds?: number
+  next_discovery_at?: number | null
+  last_discovery_result?: MonitorRunResult | null
+  last_discovery_finished_at?: number | null
 }
 
 export interface MonitorAccountComparison {
@@ -141,6 +151,7 @@ export interface MonitorConfigPayload {
   display_name?: string
   profile_url: string
   enabled: boolean
+  snapshots_paused?: boolean
   discover_interval_minutes: number
 }
 
@@ -168,14 +179,25 @@ export interface MonitorExecutionStatus {
   paused: boolean
   crawler_running: boolean
   retry_after_seconds: number
+  recovery?: {
+    enabled: boolean
+    state: 'healthy' | 'waiting' | 'recovering' | 'login_required'
+    pending: boolean
+    attempts: number
+    retry_after_seconds: number
+    last_recovered_at: number | null
+    error: { error_code: string; message: string; action: string } | null
+  }
   execution: {
     run_id: string
+    started_at: number
     kind: 'discovery' | 'snapshots'
     state: string
     phase: string
     active: boolean
     stop_requested: boolean
     account_name: string
+    sec_user_id: string
     current_post: string
     elapsed_seconds: number
     pages: number
@@ -695,7 +717,9 @@ export const monitorApi = {
   stopExecution: (runId?: string) => api.post('/monitor/execution/stop', undefined, { params: { run_id: runId } }),
   resumeExecution: () => api.post('/monitor/execution/resume'),
   getAccounts: (includeDisabled = true) =>
-    api.get<{ accounts: MonitorAccount[] }>('/monitor/accounts', { params: { include_disabled: includeDisabled } }),
+    api.get<{ accounts: MonitorAccount[]; loop_running?: boolean }>('/monitor/accounts', { params: { include_disabled: includeDisabled } }),
+  updateAccountIntervals: (accountIds: number[], minutes: number) =>
+    api.put<{ updated: number }>('/monitor/accounts/batch/interval', { account_ids: accountIds, discover_interval_minutes: minutes }),
   createAccount: (payload: MonitorConfigPayload) => api.post<MonitorAccount>('/monitor/accounts', payload),
   updateAccount: (accountId: number, payload: Partial<MonitorConfigPayload>) =>
     api.put<MonitorAccount>('/monitor/accounts/' + accountId, payload),
@@ -717,12 +741,15 @@ export const monitorApi = {
     api.get<MonitorDashboard>('/monitor/dashboard', { params: { ...(limit === undefined ? {} : { limit }), ...accountParams() } }),
   getOverview: () => api.get<MonitorOverview>('/monitor/overview', { params: accountParams() }),
   getHotRank: (force = false) => api.get<DouyinHotRankResponse>('/monitor/hot-rank', { params: { force }, timeout: 120000 }),
-  getJobs: (status?: string, limit?: number) =>
-    api.get<MonitorJobsResponse>('/monitor/jobs', { params: { ...(status ? { status } : {}), ...(limit === undefined ? {} : { limit }), ...accountParams() } }),
+  getJobs: (status?: string, limit?: number, accountId?: number) =>
+    api.get<MonitorJobsResponse>('/monitor/jobs', { params: { ...(status ? { status } : {}), ...(limit === undefined ? {} : { limit }), ...(accountId === undefined ? accountParams() : { account_id: accountId }) } }),
   retryJob: (jobId: number) => api.post('/monitor/jobs/' + jobId + '/retry'),
-  retryFailedJobs: (jobIds?: number[]) =>
+  retryFailedJobs: (jobIds?: number[], accountId?: number) =>
     api.post<{ updated: number }>('/monitor/jobs/retry-failed', null, {
-      params: jobIds && jobIds.length > 0 ? { job_ids: jobIds.join(',') } : undefined,
+      params: {
+        ...(jobIds && jobIds.length > 0 ? { job_ids: jobIds.join(',') } : {}),
+        ...(accountId === undefined ? {} : { account_id: accountId }),
+      },
     }),
   getAlerts: (status?: string, limit = 200) =>
     api.get<{ alerts: MonitorAlert[]; unread: number }>('/monitor/alerts', { params: { status, limit, ...accountParams() } }),

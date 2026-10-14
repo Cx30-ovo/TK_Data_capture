@@ -181,7 +181,7 @@ class ReportService:
         period_snapshots = [snapshot for snapshot in snapshots if snapshot.captured_at >= start_ts]
         abnormal_jobs = [
             job for job in jobs
-            if job["status"] in ("failed", "missed") and job["due_at"] >= start_ts
+            if job["status"] == "failed" and job["due_at"] >= start_ts
         ]
 
         post_map = {post.aweme_id: post for post in posts}

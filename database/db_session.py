@@ -91,6 +91,9 @@ async def _migrate_monitor_columns(conn) -> None:
     migrations = {
         "douyin_monitored_accounts": {
             "display_name": "ALTER TABLE douyin_monitored_accounts ADD COLUMN display_name VARCHAR(255) NOT NULL DEFAULT ''",
+            "snapshots_paused": "ALTER TABLE douyin_monitored_accounts ADD COLUMN snapshots_paused BOOLEAN NOT NULL DEFAULT 0",
+            "last_discovery_result": "ALTER TABLE douyin_monitored_accounts ADD COLUMN last_discovery_result TEXT",
+            "last_discovery_finished_at": "ALTER TABLE douyin_monitored_accounts ADD COLUMN last_discovery_finished_at BIGINT",
         },
         "douyin_monitor_jobs": {
             "sec_user_id": "ALTER TABLE douyin_monitor_jobs ADD COLUMN sec_user_id VARCHAR(255) NOT NULL DEFAULT ''",

@@ -374,6 +374,7 @@ async def test_known_pinned_post_does_not_hide_new_posts_on_next_page():
 @pytest.mark.parametrize("partial", [False, True])
 async def test_discovery_timeout_backoff_preserves_data_and_resets_on_success(repository, partial):
     service = MonitorService()
+    service._recovery.enabled = False
     service._crawler_is_busy = lambda: False
     fetcher = FakeFetcher()
     cause = TimeoutError("page timed out")

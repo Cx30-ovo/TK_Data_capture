@@ -29,6 +29,17 @@ interface TimelineEvent {
   alertId?: number
 }
 
+interface TimelineEntry {
+  id: string
+  kind: EventKind
+  title: string
+  timestamp: number
+  events: TimelineEvent[]
+  awemeId?: string
+  jobId?: number
+  alertId?: number
+}
+
 interface OverviewIssue {
   id: string
   kind: IssueKind
@@ -145,6 +156,7 @@ export function MonitorOverview({ onOpenTasks, onOpenAlerts, onOpenData, onOpenC
   const posts = dashboard?.posts || []
   const alerts = alertData?.alerts || []
   const failedJobs = useMemo(() => abnormalJobs.filter((job) => job.status === 'failed'), [abnormalJobs])
+  const failedCount = jobCounts.failed ?? failedJobs.length
   const startOfDay = new Date().setHours(0, 0, 0, 0) / 1000
   const recentPost = posts.find((post) => post.first_seen_at >= startOfDay) || posts[0]
 
@@ -192,8 +204,37 @@ export function MonitorOverview({ onOpenTasks, onOpenAlerts, onOpenData, onOpenC
         alertId: alert.id,
       })
     })
-    return events.filter((event) => event.timestamp > 0).sort((left, right) => right.timestamp - left.timestamp).slice(0, 14)
+    return events.filter((event) => event.timestamp > 0).sort((left, right) => right.timestamp - left.timestamp)
   }, [alerts, abnormalJobs, posts, t])
+
+  const timelineEntries = useMemo(() => {
+    const entries = new Map<string, TimelineEntry>()
+    timelineEvents.forEach((event) => {
+      const isPostActivity = !!event.awemeId && (event.kind === 'post' || event.kind === 'snapshot')
+      const key = isPostActivity ? `post-${event.awemeId}` : `event-${event.id}`
+      const entry = entries.get(key)
+      if (entry) {
+        entry.events.push(event)
+        if (event.timestamp > entry.timestamp) {
+          entry.timestamp = event.timestamp
+          entry.title = event.title
+        }
+        if (event.kind === 'post') entry.kind = 'post'
+      } else {
+        entries.set(key, {
+          id: key,
+          kind: event.kind,
+          title: event.title,
+          timestamp: event.timestamp,
+          events: [event],
+          awemeId: event.awemeId,
+          jobId: event.jobId,
+          alertId: event.alertId,
+        })
+      }
+    })
+    return [...entries.values()].sort((left, right) => right.timestamp - left.timestamp).slice(0, 14)
+  }, [timelineEvents])
 
   const issues = useMemo(() => {
     const items: OverviewIssue[] = failedJobs.map((job) => ({
@@ -233,7 +274,7 @@ export function MonitorOverview({ onOpenTasks, onOpenAlerts, onOpenData, onOpenC
       .slice(0, 8)
   }, [alerts, failedJobs])
 
-  const openEvent = (event: TimelineEvent) => {
+  const openEvent = (event: TimelineEntry) => {
     if (event.kind === 'post' || event.kind === 'snapshot') onOpenData(event.awemeId)
     if (event.kind === 'job') onOpenTasks('all', event.jobId)
     if (event.kind === 'alert') onOpenAlerts(event.alertId)
@@ -279,9 +320,9 @@ export function MonitorOverview({ onOpenTasks, onOpenAlerts, onOpenData, onOpenC
           <MetricButton
             icon={CircleAlert}
             label={t('tasks.status.failed')}
-            value={String(failedJobs.length)}
-            detail={t('overview.failedMissed', { failed: failedJobs.length, missed: jobCounts.missed ?? 0 })}
-            tone={failedJobs.length > 0 ? 'error' : 'success'}
+            value={String(failedCount)}
+            detail={t('overview.failedMissed', { failed: failedCount, missed: jobCounts.missed ?? 0 })}
+            tone={failedCount > 0 ? 'error' : 'success'}
             onClick={() => onOpenTasks('failed')}
           />
           <MetricButton
@@ -315,12 +356,12 @@ export function MonitorOverview({ onOpenTasks, onOpenAlerts, onOpenData, onOpenC
               <h2 className="overview-panel-title">{t('overview.timelineTitle')}</h2>
               <div className="overview-panel-description">{t('overview.timelineDescription')}</div>
             </div>
-            <span className="ml-auto rounded-full border border-cyber-border-subtle bg-cyber-bg-panel px-2 py-0.5 text-[10px] numeric-value text-cyber-text-muted">{timelineEvents.length}</span>
+            <span className="ml-auto rounded-full border border-cyber-border-subtle bg-cyber-bg-panel px-2 py-0.5 text-[10px] numeric-value text-cyber-text-muted">{timelineEntries.length}</span>
           </header>
           <div className="overview-scroll p-3">
-            {timelineEvents.length > 0 ? (
+            {timelineEntries.length > 0 ? (
               <ol className="relative ml-2 border-l border-cyber-border-subtle pl-5">
-                {timelineEvents.map((event) => {
+                {timelineEntries.map((event) => {
                   const EventIcon = event.kind === 'post' ? PlusCircle : event.kind === 'snapshot' ? Camera : event.kind === 'job' ? CircleAlert : Bell
                   const eventColor = event.kind === 'post'
                     ? 'text-cyber-neon-purple'
@@ -330,18 +371,37 @@ export function MonitorOverview({ onOpenTasks, onOpenAlerts, onOpenData, onOpenC
                         ? 'text-cyber-neon-pink'
                         : 'text-cyber-neon-orange'
                   return (
-                    <li key={event.id} className="relative pb-2 last:pb-0">
+                    <li key={event.id} className="relative pb-1.5 last:pb-0">
                       <span className={`absolute -left-[27px] top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-cyber-bg-panel bg-cyber-bg-tertiary ${eventColor}`}>
                         <span className="h-1.5 w-1.5 rounded-full bg-current" />
                       </span>
-                      <button type="button" onClick={() => openEvent(event)} className="overview-event-row group w-full px-2 py-2.5 text-left transition-colors hover:bg-cyber-bg-tertiary/28">
-                        <div className="flex items-start gap-2">
-                          <EventIcon className={`mt-0.5 h-3.5 w-3.5 flex-shrink-0 ${eventColor}`} />
+                      <button type="button" onClick={() => openEvent(event)} className="overview-event-row group w-full rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-cyber-bg-tertiary/28 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">
+                        <div className="flex min-w-0 items-start gap-2.5">
+                          <EventIcon aria-hidden="true" className={`mt-0.5 h-3.5 w-3.5 flex-shrink-0 ${eventColor}`} />
                           <div className="min-w-0 flex-1">
-                            <div className="truncate text-xs font-medium text-cyber-text-primary">{event.title}</div>
-                            <div className="mt-0.5 line-clamp-1 text-[11px] text-cyber-text-muted">{event.detail}</div>
+                            <div className="flex min-w-0 items-start justify-between gap-3">
+                              <div className="min-w-0 flex-1 truncate text-xs font-medium text-cyber-text-primary">{event.title}</div>
+                              <time className="shrink-0 whitespace-nowrap pt-0.5 text-[10px] text-cyber-text-muted">{formatRelativeTime(event.timestamp, t)}</time>
+                            </div>
+                            {event.awemeId ? (
+                              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                                {event.events.slice(0, 3).map((item) => {
+                                  const ItemIcon = item.kind === 'post' ? PlusCircle : Camera
+                                  const itemTone = item.kind === 'post'
+                                    ? 'border-cyber-neon-purple/25 bg-cyber-neon-purple/10 text-cyber-neon-purple'
+                                    : 'border-status-success/25 bg-status-success/10 text-status-success'
+                                  return <span key={item.id} className={`inline-flex max-w-full items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium ${itemTone}`}>
+                                    <ItemIcon aria-hidden="true" className="h-3 w-3 shrink-0" />
+                                    <span className="truncate">{item.detail}</span>
+                                    <time className="shrink-0 opacity-75">{formatRelativeTime(item.timestamp, t)}</time>
+                                  </span>
+                                })}
+                                {event.events.length > 3 ? <span className="text-[10px] text-cyber-text-muted">+{event.events.length - 3}</span> : null}
+                              </div>
+                            ) : (
+                              <div className="mt-0.5 line-clamp-1 text-[11px] text-cyber-text-muted">{event.events[0]?.detail}</div>
+                            )}
                           </div>
-                          <span className="whitespace-nowrap pt-0.5 text-[10px] text-cyber-text-muted">{formatRelativeTime(event.timestamp, t)}</span>
                         </div>
                       </button>
                     </li>

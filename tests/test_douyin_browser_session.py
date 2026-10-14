@@ -11,6 +11,15 @@ from media_platform.douyin import browser_session as helper
 from media_platform.douyin import client as module
 from tools.collection_errors import classify_collection_error
 from tools.douyin_collection_page import COLLECTION_TAB_NAME
+from tools import douyin_collection_page as collection_module
+
+
+@pytest.fixture(autouse=True)
+def isolated_collection_target(tmp_path, monkeypatch):
+    # These session tests simulate page responses; CDP ownership is verified
+    # independently in test_douyin_collection_page.py.
+    monkeypatch.setattr(collection_module, "_TARGET_FILE", tmp_path / "target.json")
+    monkeypatch.setattr(collection_module, "_target_id", AsyncMock(return_value="collection"))
 
 
 class SessionSyncTests(unittest.IsolatedAsyncioTestCase):

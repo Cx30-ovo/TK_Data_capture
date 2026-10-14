@@ -14,12 +14,13 @@ export function MonitorAccountSelector() {
   const setActiveAccountId = useMonitorAccountStore((state) => state.setActiveAccountId)
   const { data } = useQuery({
     queryKey: ['monitorAccounts'],
-    queryFn: async () => (await monitorApi.getAccounts()).data.accounts,
+    queryFn: async () => (await monitorApi.getAccounts()).data,
     refetchInterval: 30000,
   })
-  const accounts = data || []
+  const accounts = data?.accounts || []
 
   useEffect(() => {
+    if (!data) return
     if (accounts.length === 0) {
       if (activeAccountId !== null) setActiveAccountId(null)
       return
@@ -29,7 +30,7 @@ export function MonitorAccountSelector() {
     if (!activeAccountIsValid) {
       setActiveAccountId((accounts.find((account) => account.enabled) || accounts[0]).id)
     }
-  }, [accounts, activeAccountId, setActiveAccountId])
+  }, [accounts, data, activeAccountId, setActiveAccountId])
 
   return (
     <div className="flex min-h-11 min-w-0 flex-1 items-center gap-1.5 rounded-md border border-cyber-border-subtle bg-cyber-bg-tertiary px-2 py-1 lg:min-h-0">
@@ -50,7 +51,7 @@ export function MonitorAccountSelector() {
           <SelectItem value="all">{t('monitor.allAccounts')}</SelectItem>
           {accounts.map((account) => (
             <SelectItem key={account.id} value={String(account.id)}>
-              {account.display_name || account.sec_user_id}{account.enabled ? '' : '（已停用）'}
+              {account.display_name || account.sec_user_id}{account.snapshots_paused ? `（${t('accountManager.state.paused')}）` : account.enabled ? '' : `（${t('accountManager.state.discoveryOff')}）`}
             </SelectItem>
           ))}
         </SelectContent>

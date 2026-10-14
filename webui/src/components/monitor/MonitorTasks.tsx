@@ -50,12 +50,13 @@ function ErrorCategoryTag({ category, label }: { category: string; label: string
 interface MonitorTasksProps {
   statusFilter: string
   onStatusFilterChange: (status: string) => void
+  accountId?: number
   focusJobId?: number
   focusToken?: number
 }
 
 
-export function MonitorTasks({ statusFilter, onStatusFilterChange, focusJobId, focusToken }: MonitorTasksProps) {
+export function MonitorTasks({ statusFilter, onStatusFilterChange, accountId, focusJobId, focusToken }: MonitorTasksProps) {
   const { t } = useTranslation('config')
   const queryClient = useQueryClient()
   const [searchText, setSearchText] = useState('')
@@ -66,12 +67,13 @@ export function MonitorTasks({ statusFilter, onStatusFilterChange, focusJobId, f
   const handledFocusToken = useRef<number | undefined>()
 
   const { data, isLoading } = useQuery({
-    queryKey: ['monitorJobs', statusFilter],
-    queryFn: async () => (await monitorApi.getJobs(statusFilter === 'all' ? undefined : statusFilter)).data,
+    queryKey: ['monitorJobs', statusFilter, accountId],
+    queryFn: async () => (await monitorApi.getJobs(statusFilter === 'all' ? undefined : statusFilter, undefined, accountId)).data,
     refetchInterval: 30000,
   })
 
   const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['monitorAccounts'] })
     queryClient.invalidateQueries({ queryKey: ['monitorJobs'] })
     queryClient.invalidateQueries({ queryKey: ['monitorOverview'] })
     queryClient.invalidateQueries({ queryKey: ['monitorDashboard'] })
@@ -92,7 +94,7 @@ export function MonitorTasks({ statusFilter, onStatusFilterChange, focusJobId, f
   })
 
   const batchRetryMutation = useMutation({
-    mutationFn: (jobIds: number[]) => monitorApi.retryFailedJobs(jobIds),
+    mutationFn: (jobIds: number[]) => monitorApi.retryFailedJobs(jobIds, accountId),
     onSuccess: (response) => {
       toast.success(t('tasks.batchRetrySuccess', { count: response.data.updated }))
       setSelectedJobIds([])

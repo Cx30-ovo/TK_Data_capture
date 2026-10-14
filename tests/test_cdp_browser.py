@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+import asyncio
+import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -113,6 +115,40 @@ async def test_launched_browser_uses_discovered_websocket_url(monkeypatch):
     playwright.chromium.connect_over_cdp.assert_awaited_once_with(
         "ws://localhost:9223/devtools/browser/generated-id"
     )
+
+
+@pytest.mark.asyncio
+async def test_websocket_discovery_bypasses_environment_proxy(monkeypatch):
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:1")
+    monkeypatch.setenv("NO_PROXY", "")
+    payload = json.dumps(
+        {"webSocketDebuggerUrl": "ws://localhost/devtools/browser/test"}
+    ).encode()
+
+    async def respond(reader, writer):
+        await reader.readuntil(b"\r\n\r\n")
+        writer.write(
+            b"HTTP/1.1 200 OK\r\n"
+            b"Content-Type: application/json\r\n"
+            + f"Content-Length: {len(payload)}\r\n".encode()
+            + b"Connection: close\r\n\r\n"
+            + payload
+        )
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+
+    server = await asyncio.start_server(respond, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    manager = CDPBrowserManager()
+
+    try:
+        assert await manager._get_browser_websocket_url(port) == (
+            "ws://localhost/devtools/browser/test"
+        )
+    finally:
+        server.close()
+        await server.wait_closed()
 
 
 @pytest.mark.asyncio

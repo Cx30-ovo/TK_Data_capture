@@ -12,6 +12,11 @@ from tools import douyin_collection_page as module
 from tools.douyin_browser_coordinator import DouyinTabLease
 
 
+@pytest.fixture(autouse=True)
+def isolated_target_registry(tmp_path, monkeypatch):
+    monkeypatch.setattr(module, "_TARGET_FILE", tmp_path / "collection-target.json")
+
+
 def page(url="https://www.douyin.com/", name="", target_id="user"):
     result = MagicMock(url=url, target_id=target_id)
     result.is_closed.return_value = False
@@ -58,6 +63,9 @@ def browser_context(pages, *, competing_page=False, attach=True):
                     callbacks["page"](collection)
                 return {"targetId": collection.target_id}
             if method == "Target.closeTarget":
+                for candidate in context.pages:
+                    if candidate.target_id == params["targetId"]:
+                        candidate.is_closed.return_value = True
                 return {"success": True}
             pytest.fail(f"Unexpected CDP command: {method}")
 
@@ -169,7 +177,7 @@ async def test_creation_timeout_removes_only_its_own_target():
     user = page()
     context = browser_context([user], attach=False)
     with pytest.raises(TimeoutError):
-        await module._create_background_page(context, timeout=0)
+        await module._create_background_page(context, timeout=0.01)
     assert ("Target.closeTarget", {"targetId": "collection-0"}) in context.commands
     user.close.assert_not_awaited()
     assert context.sessions[0].detach.await_count == 1
@@ -208,3 +216,48 @@ async def test_global_lease_prevents_two_connections_creating_duplicate_tabs(tmp
         first, second = await asyncio.gather(*tasks)
     assert first is second
     assert len(context.created) == 1
+
+
+@pytest.mark.asyncio
+async def test_reset_closes_only_registered_collection_target_even_with_hung_renderer():
+    user = page("https://www.douyin.com/user/reading", "MediaCrawler")
+    webui = page("http://localhost:5173/", target_id="webui")
+    context = browser_context([user, webui])
+    background = await module.get_collection_page(context)
+    background.evaluate.side_effect = TimeoutError("Renderer unresponsive")
+    assert await module.get_collection_page(context) is background
+    await module.reset_collection_page(context)
+    assert background.is_closed()
+    assert not user.is_closed() and not webui.is_closed()
+    closed = [params['targetId'] for method,params in context.commands if method=='Target.closeTarget']
+    assert closed == [background.target_id]
+    replacement = await module.get_collection_page(context)
+    assert replacement is not background and replacement is not user
+    user.goto.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_reset_can_recover_legacy_tab_without_a_registry():
+    user = page()
+    legacy = page(name=module.COLLECTION_TAB_NAME,target_id="legacy")
+    context = browser_context([user, legacy])
+    await module.reset_collection_page(context)
+    assert legacy.is_closed()
+    assert not user.is_closed()
+
+
+@pytest.mark.parametrize("data", ["[]", "null", "malformed"])
+def test_invalid_registry_is_ignored(data):
+    module._TARGET_FILE.write_text(data)
+    assert module._remembered_target() is None
+
+
+@pytest.mark.asyncio
+async def test_reused_legacy_tab_remembers_target_for_future_hang():
+    legacy = page(name=module.COLLECTION_TAB_NAME, target_id="legacy")
+    context = browser_context([legacy])
+    assert await module.get_collection_page(context) is legacy
+    assert module._remembered_target() == "legacy"
+    legacy.evaluate.side_effect = TimeoutError("Renderer unresponsive")
+    await module.reset_collection_page(context)
+    assert legacy.is_closed()

@@ -135,6 +135,10 @@ LOG_RETENTION_DAYS = 14
 MAINTENANCE_CHECK_INTERVAL_SECONDS = 300
 START_BROWSER_ON_SERVICE_START = True
 
+# Recover the managed Chrome/collection tab without overriding user pauses.
+ENABLE_BROWSER_AUTO_RECOVERY = True
+BROWSER_RECOVERY_TIMEOUT_SECONDS = 90
+
 # word cloud related
 # Whether to enable generating comment word clouds
 ENABLE_GET_WORDCLOUD = False

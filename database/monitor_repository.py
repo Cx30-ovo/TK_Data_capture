@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
 """Persistence helpers for the single-account Douyin monitor module."""
 
+import json
 import time
 from typing import Optional, Sequence
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select, update
+
+from tools.douyin_account_identity import parse_account_identity
 
 from .db_session import get_monitor_session
 from .models import (
@@ -40,6 +43,14 @@ def _now_seconds() -> int:
     return int(time.time())
 
 
+def _snapshot_collection_allowed():
+    return ~select(DouyinMonitoredAccount.id).where(
+        DouyinMonitoredAccount.platform == DouyinMonitorJob.platform,
+        DouyinMonitoredAccount.sec_user_id == DouyinMonitorJob.sec_user_id,
+        DouyinMonitoredAccount.snapshots_paused.is_(True),
+    ).exists()
+
+
 class MonitorRepository:
     """CRUD and state transitions for monitor accounts, posts, jobs and snapshots."""
 
@@ -51,6 +62,8 @@ class MonitorRepository:
         platform: str = "dy",
         enabled: bool = True,
         discover_interval_minutes: int = 30,
+        snapshots_paused: bool = False,
+        reject_existing: bool = False,
     ) -> DouyinMonitoredAccount:
         now = _now_seconds()
         async with get_monitor_session() as session:
@@ -59,13 +72,16 @@ class MonitorRepository:
                 DouyinMonitoredAccount.sec_user_id == sec_user_id,
             )
             account = (await session.execute(stmt)).scalar_one_or_none()
+            if account is not None and reject_existing:
+                raise ValueError("账号已存在，请选择已有账号修改配置。")
             if account is None:
                 account = DouyinMonitoredAccount(
                     platform=platform,
                     sec_user_id=sec_user_id,
                     display_name=display_name,
                     profile_url=profile_url,
-                    enabled=enabled,
+                    enabled=enabled and not snapshots_paused,
+                    snapshots_paused=snapshots_paused,
                     discover_interval_minutes=discover_interval_minutes,
                     created_at=now,
                     updated_at=now,
@@ -74,7 +90,8 @@ class MonitorRepository:
             else:
                 account.display_name = display_name or account.display_name
                 account.profile_url = profile_url or account.profile_url
-                account.enabled = enabled
+                account.enabled = enabled and not snapshots_paused
+                account.snapshots_paused = snapshots_paused
                 account.discover_interval_minutes = discover_interval_minutes
                 account.updated_at = now
             await session.flush()
@@ -107,6 +124,7 @@ class MonitorRepository:
         profile_url: Optional[str] = None,
         enabled: Optional[bool] = None,
         discover_interval_minutes: Optional[int] = None,
+        snapshots_paused: Optional[bool] = None,
     ) -> Optional[DouyinMonitoredAccount]:
         now = _now_seconds()
         async with get_monitor_session() as session:
@@ -114,13 +132,22 @@ class MonitorRepository:
             if account is None:
                 return None
             if sec_user_id is not None:
-                account.sec_user_id = sec_user_id
+                if sec_user_id != account.sec_user_id:
+                    raise ValueError("已有账号的 ID 不能替换，请新增账号；历史作品与任务保留原归属。")
             if display_name is not None:
                 account.display_name = display_name
             if profile_url is not None:
+                if parse_account_identity(profile_url) != account.sec_user_id:
+                    raise ValueError("主页链接与已有账号 ID 不一致。")
                 account.profile_url = profile_url
             if enabled is not None:
                 account.enabled = enabled
+                if enabled:
+                    account.snapshots_paused = False
+            if snapshots_paused is not None:
+                account.snapshots_paused = snapshots_paused
+                if snapshots_paused:
+                    account.enabled = False
             if discover_interval_minutes is not None:
                 account.discover_interval_minutes = discover_interval_minutes
             account.updated_at = now
@@ -132,6 +159,11 @@ class MonitorRepository:
             account = await session.get(DouyinMonitoredAccount, account_id)
             if account is None:
                 return False
+            await session.execute(update(DouyinMonitorJob).where(
+                DouyinMonitorJob.platform == account.platform,
+                DouyinMonitorJob.sec_user_id == account.sec_user_id,
+                DouyinMonitorJob.status == "pending",
+            ).values(status="skipped", finished_at=_now_seconds(), miss_reason="账号已移除，待执行快照已终止。"))
             await session.delete(account)
             await session.flush()
             return True
@@ -175,9 +207,58 @@ class MonitorRepository:
             if account is None:
                 return None
             account.last_discovered_at = current_time
-            account.updated_at = current_time
             await session.flush()
             return account
+
+    async def update_account_intervals(self, account_ids: list[int], minutes: int) -> int:
+        ids = set(account_ids)
+        async with get_monitor_session() as session:
+            accounts = list((await session.execute(select(DouyinMonitoredAccount).where(
+                DouyinMonitoredAccount.id.in_(ids)
+            ))).scalars().all())
+            if len(accounts) != len(ids):
+                raise ValueError("部分账号已不存在，请刷新后重新选择。")
+            for account in accounts:
+                account.discover_interval_minutes = minutes
+                account.updated_at = _now_seconds()
+            await session.flush()
+            return len(accounts)
+
+    async def record_account_discovery_result(self, sec_user_id: str, result: dict, finished_at: int):
+        async with get_monitor_session() as session:
+            account = (await session.execute(select(DouyinMonitoredAccount).where(
+                DouyinMonitoredAccount.platform == "dy", DouyinMonitoredAccount.sec_user_id == sec_user_id
+            ))).scalar_one_or_none()
+            if account is not None:
+                account.last_discovery_result = json.dumps(result, ensure_ascii=False)
+                account.last_discovery_finished_at = finished_at
+
+    async def get_account_summaries(self, day_start: int, now: int) -> dict[str, dict]:
+        """Aggregate account summaries in two queries, without fetching post histories."""
+        async with get_monitor_session() as session:
+            posts = (await session.execute(select(
+                DouyinPost.sec_user_id,
+                func.count(DouyinPost.id),
+                func.sum(case((DouyinPost.first_seen_at >= day_start, 1), else_=0)),
+            ).where(DouyinPost.platform == "dy").group_by(DouyinPost.sec_user_id))).all()
+            summaries = {identity: {"posts": count, "today_new_posts": int(today or 0),
+                                     "due_jobs": 0, "abnormal_jobs": 0, "jobs": {}}
+                         for identity, count, today in posts}
+            jobs = (await session.execute(select(
+                DouyinMonitorJob.sec_user_id, DouyinMonitorJob.status, func.count(DouyinMonitorJob.id),
+                func.sum(case((DouyinMonitorJob.due_at <= now, 1), else_=0)),
+            ).where(DouyinMonitorJob.platform == "dy").group_by(
+                DouyinMonitorJob.sec_user_id, DouyinMonitorJob.status
+            ))).all()
+            for identity, status, count, due in jobs:
+                summary = summaries.setdefault(identity, {"posts": 0, "today_new_posts": 0,
+                                                          "due_jobs": 0, "abnormal_jobs": 0, "jobs": {}})
+                summary["jobs"][status] = count
+                if status == "pending":
+                    summary["due_jobs"] = int(due or 0)
+                if status == "failed":
+                    summary["abnormal_jobs"] += count
+            return summaries
 
     async def list_post_ids(
         self,
@@ -275,7 +356,7 @@ class MonitorRepository:
 
     async def list_recent_abnormal_jobs(
         self,
-        statuses: tuple[str, ...] = ("failed", "missed"),
+        statuses: tuple[str, ...] = ("failed",),
         limit: int = 10,
         platform: str = "dy",
         sec_user_id: Optional[str] = None,
@@ -376,12 +457,18 @@ class MonitorRepository:
             await session.flush()
             return job
 
-    async def retry_failed_jobs(self, job_ids: Optional[list[int]] = None) -> int:
+    async def retry_failed_jobs(
+        self,
+        job_ids: Optional[list[int]] = None,
+        sec_user_id: Optional[str] = None,
+    ) -> int:
         now = _now_seconds()
         async with get_monitor_session() as session:
             stmt = select(DouyinMonitorJob).where(DouyinMonitorJob.status == "failed")
             if job_ids:
                 stmt = stmt.where(DouyinMonitorJob.id.in_(job_ids))
+            if sec_user_id:
+                stmt = stmt.where(DouyinMonitorJob.sec_user_id == sec_user_id)
             jobs = list((await session.execute(stmt)).scalars().all())
             for job in jobs:
                 job.status = "pending"
@@ -663,6 +750,7 @@ class MonitorRepository:
                 DouyinMonitorJob.job_type == "snapshot",
                 DouyinMonitorJob.status == "pending",
                 DouyinMonitorJob.due_at <= current_time,
+                _snapshot_collection_allowed(),
             )
             jobs = list((await session.execute(stmt)).scalars().all())
             for job in jobs:
@@ -692,6 +780,7 @@ class MonitorRepository:
                     DouyinMonitorJob.job_type == "snapshot",
                     DouyinMonitorJob.status == "pending",
                     DouyinMonitorJob.due_at <= current_time,
+                    _snapshot_collection_allowed(),
                 )
                 .order_by(DouyinMonitorJob.due_at.asc())
                 .limit(limit)

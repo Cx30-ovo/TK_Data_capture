@@ -11,7 +11,7 @@ export function useMonitorExecution() {
     queryKey: ['monitorExecution'],
     queryFn: async () => (await monitorApi.getExecution()).data,
     staleTime: 1000,
-    refetchInterval: (query) => query.state.data?.execution?.active || query.state.data?.retry_after_seconds ? 1500 : 8000,
+    refetchInterval: (query) => query.state.data?.execution?.active || query.state.data?.retry_after_seconds || query.state.data?.recovery?.pending ? 1500 : 3000,
   })
 }
 
@@ -45,13 +45,16 @@ export function MonitorExecutionPanel() {
   )
 
   const cooling = data.retry_after_seconds > 0
+  const recovery = data.recovery
+  const recoveredError = Boolean(recovery?.last_recovered_at && execution?.started_at && recovery.last_recovered_at > execution.started_at
+    && ['browser_disconnected', 'tab_changed', 'network_timeout'].includes(execution.error?.error_code || ''))
   const state = active ? execution?.state === 'stopping' ? 'stopping' : execution?.phase === 'waiting_tab' ? 'waiting_tab' : 'running'
-    : data.paused ? 'paused' : cooling ? 'deferred' : data.crawler_running ? 'crawler' : execution?.state === 'deferred' ? 'idle' : execution?.state || 'idle'
+    : data.paused ? 'paused' : cooling ? 'deferred' : data.crawler_running ? 'crawler' : recovery?.pending ? 'recovering' : recoveredError || execution?.state === 'deferred' ? 'idle' : execution?.state || 'idle'
   const hasTotal = active && execution?.kind === 'snapshots' && execution.total !== null && execution.total > 0
   const percent = hasTotal ? Math.round(execution!.processed / execution!.total! * 100) : undefined
   const heading = active ? t(`execution.kind.${execution?.kind}`) : t('execution.title')
-  const error = execution?.error
-  const warning = cooling || data.paused || Boolean(error)
+  const error = recoveredError ? null : execution?.error
+  const warning = cooling || data.paused || Boolean(error) || Boolean(recovery?.pending)
 
   return (
     <section className={`rounded-xl border bg-cyber-bg-secondary p-4 ${warning ? 'border-status-warning/40' : 'border-cyber-border-subtle'}`} aria-label={t('execution.title')}>
@@ -103,7 +106,14 @@ export function MonitorExecutionPanel() {
           {execution.kind === 'discovery' ? t('execution.scanResult', { saved: execution.saved, posts: execution.result.created_posts ?? 0, jobs: execution.result.created_jobs ?? 0 }) : t('execution.snapshotResult', { completed: execution.completed, retried: execution.retried, failed: execution.failed, skipped: execution.skipped })}
         </p>
       )}
-      {error && <div className="mt-3 rounded-lg border border-status-warning/30 bg-status-warning/5 p-3 text-xs text-cyber-text-secondary" role="status"><span className="font-medium text-cyber-text-primary">{error.message}</span><span className="ml-2">{error.action}</span></div>}
+      {recovery?.pending && (
+        <div className="mt-3 rounded-lg border border-status-warning/30 bg-status-warning/5 p-3 text-sm text-cyber-text-secondary" role="status" aria-live="polite">
+          <p className="font-medium text-cyber-text-primary">{t(data.paused ? 'execution.recoveryPaused' : cooling ? 'execution.recoveryCooling' : recovery.state === 'recovering' ? 'execution.recoveryRunning' : 'execution.recoveryWaiting', { seconds: recovery.retry_after_seconds })}</p>
+          <p className="mt-1 text-xs">{t('execution.recoveryHint', { attempts: recovery.attempts })}</p>
+        </div>
+      )}
+      {recovery?.error && !recovery.pending && recovery.state === 'login_required' && <p className="mt-3 text-sm text-status-warning" role="status">{recovery.error.message} · {recovery.error.action}</p>}
+      {error && !recovery?.pending && recovery?.state !== 'login_required' && <div className="mt-3 rounded-lg border border-status-warning/30 bg-status-warning/5 p-3 text-xs text-cyber-text-secondary" role="status"><span className="font-medium text-cyber-text-primary">{error.message}</span><span className="ml-2">{error.action}</span></div>}
       {cooling && <p className="mt-3 text-xs text-status-warning">{t('execution.cooldown', { minutes: Math.max(1, Math.ceil(data.retry_after_seconds / 60)) })}</p>}
       {isError && <p className="mt-3 text-xs text-status-warning" role="status">{t('execution.staleConnection')}</p>}
     </section>

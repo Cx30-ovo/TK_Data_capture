@@ -738,21 +738,25 @@ async def test_failed_jobs_can_be_batch_retried_and_classified(isolated_monitor_
             retry_delay_seconds=600,
             max_attempts=1,
         )
+    await monitor_repository.mark_job_missed(jobs[2].id, "past collection window")
 
     failed_jobs = await monitor_repository.list_jobs(status="failed")
     assert len(failed_jobs) == 2
     assert classify_job_error(failed_jobs[0]) == "risk_control"
     abnormal_jobs = await monitor_repository.list_jobs(statuses=("failed", "missed"))
-    assert {item["id"] for item in abnormal_jobs} == {jobs[0].id, jobs[1].id}
+    assert {item["id"] for item in abnormal_jobs} == {jobs[0].id, jobs[1].id, jobs[2].id}
 
     service_result = await MonitorService().list_jobs(status="abnormal", all_accounts=True)
     assert service_result["count"] == 2
     assert service_result["returned_count"] == 2
     assert service_result["total_count"] == len(jobs)
     assert service_result["status_counts"]["failed"] == 2
+    summaries = await monitor_repository.get_account_summaries(BASE_TIME, BASE_TIME + 1)
+    assert summaries["batch_retry_user"]["abnormal_jobs"] == 2
+    assert summaries["batch_retry_user"]["jobs"]["missed"] == 1
 
     limited_pending = await MonitorService().list_jobs(status="pending", limit=1, all_accounts=True)
-    assert limited_pending["count"] == 3
+    assert limited_pending["count"] == 2
     assert limited_pending["returned_count"] == 1
     assert limited_pending["jobs"][0]["status"] == "pending"
 
@@ -769,6 +773,38 @@ async def test_failed_jobs_can_be_batch_retried_and_classified(isolated_monitor_
     second = await monitor_repository.get_job(jobs[1].id)
     assert second.status == "pending"
     assert second.attempts == 0
+    missed = await monitor_repository.get_job(jobs[2].id)
+    assert missed.status == "missed"
+
+
+@pytest.mark.asyncio
+async def test_account_scoped_retry_leaves_other_account_failures_untouched(isolated_monitor_db):
+    await db_session.create_tables("sqlite")
+    first_account = await monitor_repository.upsert_monitored_account(sec_user_id="retry_scope_first")
+    second_account = await monitor_repository.upsert_monitored_account(sec_user_id="retry_scope_second")
+    jobs_by_account = []
+    for sec_user_id, aweme_id in (
+        (first_account.sec_user_id, "retry_scope_post_first"),
+        (second_account.sec_user_id, "retry_scope_post_second"),
+    ):
+        post, _ = await monitor_repository.upsert_post(
+            aweme_id=aweme_id,
+            sec_user_id=sec_user_id,
+            title=aweme_id,
+            desc=aweme_id,
+            create_time=BASE_TIME,
+            canonical_url=f"https://www.douyin.com/video/{aweme_id}",
+        )
+        job = (await monitor_repository.create_snapshot_jobs(post))[0]
+        await monitor_repository.mark_job_running(job.id)
+        await monitor_repository.mark_job_retry(job.id, error="test failure", max_attempts=1)
+        jobs_by_account.append(job)
+
+    result = await MonitorService().retry_failed_jobs(account_id=first_account.id)
+
+    assert result == {"updated": 1}
+    assert (await monitor_repository.get_job(jobs_by_account[0].id)).status == "pending"
+    assert (await monitor_repository.get_job(jobs_by_account[1].id)).status == "failed"
 
 
 @pytest.mark.asyncio

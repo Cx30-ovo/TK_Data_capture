@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 """API routes for the single-account monitor module."""
 
+import json
+import time
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -9,6 +12,8 @@ from fastapi.responses import FileResponse
 from database.monitor_repository import monitor_repository
 
 from ..schemas import MonitorAccountConfigRequest, MonitorAccountUpdateRequest, MonitorAlertStatusRequest
+from ..schemas.monitor import MonitorAccountBatchRequest
+from sqlalchemy.exc import IntegrityError
 from ..services.monitor_service import MonitorBrowserNetworkError, MonitorHotRankError, monitor_service
 from ..services.report_service import report_service
 from ..services.analytics_service import analytics_service
@@ -45,6 +50,7 @@ def _serialize_account(account) -> dict:
         "display_name": account.display_name or account.sec_user_id,
         "profile_url": account.profile_url,
         "enabled": account.enabled,
+        "snapshots_paused": account.snapshots_paused,
         "discover_interval_minutes": account.discover_interval_minutes,
         "last_discovered_at": account.last_discovered_at,
         "created_at": account.created_at,
@@ -66,7 +72,33 @@ async def _resolve_account_sec_user_id(account_id: Optional[int], all_accounts: 
 @router.get("/accounts")
 async def list_monitor_accounts(include_disabled: bool = True):
     accounts = await monitor_repository.list_monitored_accounts(include_disabled=include_disabled)
-    return {"accounts": [_serialize_account(account) for account in accounts]}
+    now = int(time.time())
+    day_start = int(datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+    summaries = await monitor_repository.get_account_summaries(day_start, now)
+    result = []
+    for account in accounts:
+        retry_seconds = monitor_service._discovery_retry_remaining(account.sec_user_id)
+        try:
+            last_result = json.loads(account.last_discovery_result) if account.last_discovery_result else None
+        except (ValueError, TypeError):
+            last_result = None
+        result.append({**_serialize_account(account),
+                       **summaries.get(account.sec_user_id, {"posts": 0, "today_new_posts": 0, "due_jobs": 0, "abnormal_jobs": 0, "jobs": {}}),
+                       "retry_after_seconds": retry_seconds,
+                       "next_discovery_at": max(now + max(retry_seconds, monitor_service._risk_control_cooldown_remaining()),
+                                                account.last_discovered_at + account.discover_interval_minutes * 60 if account.last_discovered_at else now) if account.enabled else None,
+                       "last_discovery_result": last_result,
+                       "last_discovery_finished_at": account.last_discovery_finished_at})
+    return {"accounts": result, "loop_running": monitor_service.is_running}
+
+
+@router.put("/accounts/batch/interval")
+async def update_monitor_account_intervals(request: MonitorAccountBatchRequest):
+    try:
+        count = await monitor_repository.update_account_intervals(request.account_ids, request.discover_interval_minutes)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"updated": count}
 
 
 @router.get("/accounts/comparison")
@@ -76,26 +108,35 @@ async def compare_monitor_accounts(limit: int = 100):
 
 @router.post("/accounts")
 async def create_monitor_account(request: MonitorAccountConfigRequest):
-    account = await monitor_repository.upsert_monitored_account(
-        sec_user_id=request.sec_user_id,
-        display_name=request.display_name,
-        profile_url=request.profile_url,
-        enabled=request.enabled,
-        discover_interval_minutes=request.discover_interval_minutes,
-    )
+    try:
+        account = await monitor_repository.upsert_monitored_account(
+            sec_user_id=request.sec_user_id,
+            display_name=request.display_name,
+            profile_url=request.profile_url,
+            enabled=request.enabled,
+            discover_interval_minutes=request.discover_interval_minutes,
+            snapshots_paused=request.snapshots_paused,
+            reject_existing=True,
+        )
+    except (ValueError, IntegrityError) as exc:
+        raise HTTPException(status_code=409, detail="账号已存在，请选择已有账号修改配置。") from exc
     return _serialize_account(account)
 
 
 @router.put("/accounts/{account_id}")
 async def update_monitor_account(account_id: int, request: MonitorAccountUpdateRequest):
-    account = await monitor_repository.update_monitored_account(
-        account_id=account_id,
-        sec_user_id=request.sec_user_id,
-        display_name=request.display_name,
-        profile_url=request.profile_url,
-        enabled=request.enabled,
-        discover_interval_minutes=request.discover_interval_minutes,
-    )
+    try:
+        account = await monitor_repository.update_monitored_account(
+            account_id=account_id,
+            sec_user_id=request.sec_user_id,
+            display_name=request.display_name,
+            profile_url=request.profile_url,
+            enabled=request.enabled,
+            discover_interval_minutes=request.discover_interval_minutes,
+            snapshots_paused=request.snapshots_paused,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     if account is None:
         raise HTTPException(status_code=404, detail=f"Monitor account not found: {account_id}")
     return _serialize_account(account)
@@ -151,6 +192,7 @@ async def save_monitor_config(request: MonitorAccountConfigRequest):
         profile_url=request.profile_url,
         enabled=request.enabled,
         discover_interval_minutes=request.discover_interval_minutes,
+        snapshots_paused=request.snapshots_paused,
     )
     return _serialize_account(account)
 
@@ -209,12 +251,15 @@ async def retry_monitor_job(job_id: int):
 
 
 @router.post("/jobs/retry-failed")
-async def retry_failed_monitor_jobs(job_ids: Optional[str] = None):
+async def retry_failed_monitor_jobs(job_ids: Optional[str] = None, account_id: Optional[int] = None):
     try:
         parsed_ids = [int(item) for item in job_ids.split(",") if item.strip()] if job_ids else None
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="job_ids must be a comma-separated list of integers") from exc
-    return await monitor_service.retry_failed_jobs(job_ids=parsed_ids)
+    try:
+        return await monitor_service.retry_failed_jobs(job_ids=parsed_ids, account_id=account_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/alerts")

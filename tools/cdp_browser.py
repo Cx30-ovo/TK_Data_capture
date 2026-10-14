@@ -427,9 +427,8 @@ class CDPBrowserManager:
         )
 
         # Wait for browser to be ready
-        if not self.launcher.wait_for_browser_ready(
-            self.debug_port, config.BROWSER_LAUNCH_TIMEOUT
-        ):
+        if not await asyncio.to_thread(self.launcher.wait_for_browser_ready,
+                                       self.debug_port, config.BROWSER_LAUNCH_TIMEOUT):
             raise RuntimeError(f"Browser failed to start within {config.BROWSER_LAUNCH_TIMEOUT} seconds")
 
         # Extra wait for CDP service to fully start
@@ -452,9 +451,11 @@ class CDPBrowserManager:
         Get browser WebSocket connection URL
         """
         try:
-            async with httpx.AsyncClient() as client:
+            # CDP is a local endpoint; environment proxies can make localhost
+            # requests fail even when the browser's debug port is reachable.
+            async with httpx.AsyncClient(trust_env=False) as client:
                 response = await client.get(
-                    f"http://localhost:{debug_port}/json/version", timeout=timeout
+                    f"http://127.0.0.1:{debug_port}/json/version", timeout=timeout
                 )
                 if response.status_code == 200:
                     data = response.json()

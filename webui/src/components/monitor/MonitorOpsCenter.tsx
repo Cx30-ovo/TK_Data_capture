@@ -16,6 +16,7 @@ type Tone = 'neutral' | 'ok' | 'warning' | 'error' | 'info'
 export interface MonitorOpsTarget {
   section: 'tasks' | 'alerts' | 'health'
   taskStatus?: string
+  accountId?: number
   alertView?: AlertViewFilter
   jobId?: number
   alertId?: number
@@ -198,6 +199,7 @@ export function MonitorOpsCenter({ target }: { target?: MonitorOpsTarget }) {
         <MonitorTasks
           statusFilter={taskStatus}
           onStatusFilterChange={setTaskStatus}
+          accountId={target?.section === 'tasks' ? target.accountId : undefined}
           focusJobId={target?.section === 'tasks' ? target.jobId : undefined}
           focusToken={target?.section === 'tasks' ? target.token : undefined}
         />

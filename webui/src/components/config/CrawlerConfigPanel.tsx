@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useCrawlerStore } from '@/store/crawlerStore'
 import { usePlatforms, useConfigOptions, useStartCrawler, useStopCrawler } from '@/hooks/useCrawler'
 import { monitorApi, schedulerApi } from '@/lib/api'
@@ -122,7 +123,7 @@ function MaintenanceRow({ label, current, recommended }: { label: string; curren
 }
 
 
-export function CrawlerConfigPanel() {
+export function CrawlerConfigPanel({ onOpenAbnormalTasks }: { onOpenAbnormalTasks: (accountId: number) => void }) {
   const { t } = useTranslation('config')
   const config = useCrawlerStore((state) => state.config)
   const savedConfig = useCrawlerStore((state) => state.savedConfig)
@@ -198,6 +199,19 @@ export function CrawlerConfigPanel() {
   }, [schedulerStatus, scheduleDirty])
 
   const configDirty = JSON.stringify(config) !== JSON.stringify(savedConfig)
+  const rangeDirty = config.crawler_type !== savedConfig.crawler_type
+    || config.start_page !== savedConfig.start_page
+    || config.start_time !== savedConfig.start_time
+    || config.end_time !== savedConfig.end_time
+    || config.keywords !== savedConfig.keywords
+    || config.specified_ids !== savedConfig.specified_ids
+    || config.creator_ids !== savedConfig.creator_ids
+  const runtimeDirty = config.login_type !== savedConfig.login_type
+    || config.save_option !== savedConfig.save_option
+    || config.enable_comments !== savedConfig.enable_comments
+    || config.enable_sub_comments !== savedConfig.enable_sub_comments
+    || config.headless !== savedConfig.headless
+    || config.cookies !== savedConfig.cookies
   const anyDirty = configDirty || scheduleDirty || monitorDirty
   const isDisabled = status === 'running' || status === 'stopping'
   const isRunning = status === 'running'
@@ -222,8 +236,8 @@ export function CrawlerConfigPanel() {
   }
 
   return (
-    <div className="workspace-page space-y-3 animate-slide-up">
-      <section className="workspace-hero p-4 sm:p-5">
+    <div className="workspace-page config-workspace-page space-y-3 animate-slide-up">
+      <section className="workspace-hero config-workspace-hero p-4 sm:p-5">
         <div className="workspace-hero-grid" aria-hidden="true" />
         <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div className="flex min-w-0 items-start gap-3">
@@ -231,14 +245,14 @@ export function CrawlerConfigPanel() {
             <div className="min-w-0"><Badge variant="secondary" className="mb-2"><Activity aria-hidden="true" className="h-3 w-3" />{t('configCenter.workspaceLabel')}</Badge><h1 className="workspace-title">{t('configCenter.title')}</h1><p className="workspace-description">{t('configCenter.description')}</p></div>
           </div>
           <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-3 sm:min-w-[390px]">
-            <div className="workspace-stat-card"><span>{t('configCenter.saveStatus')}</span><b className={anyDirty ? 'text-status-warning' : 'text-status-success'}>{anyDirty ? t('configCenter.unsavedShort') : t('configCenter.savedShort')}</b></div>
-            <div className="workspace-stat-card"><span>{t('configCenter.crawlerStatus')}</span><b>{isRunning ? t('configCenter.running') : t('configCenter.idle')}</b></div>
-            <div className="workspace-stat-card"><span>{t('configCenter.scheduleStatus')}</span><b>{scheduleEnabled ? t('configCenter.on') : t('configCenter.off')}</b></div>
+            <div className="workspace-stat-card config-workspace-stat"><span>{t('configCenter.saveStatus')}</span><b className={anyDirty ? 'text-status-warning' : 'text-status-success'}>{anyDirty ? t('configCenter.unsavedShort') : t('configCenter.savedShort')}</b></div>
+            <div className="workspace-stat-card config-workspace-stat"><span>{t('configCenter.crawlerStatus')}</span><b>{isRunning ? t('configCenter.running') : t('configCenter.idle')}</b></div>
+            <div className="workspace-stat-card config-workspace-stat"><span>{t('configCenter.scheduleStatus')}</span><b>{scheduleEnabled ? t('configCenter.on') : t('configCenter.off')}</b></div>
           </div>
         </div>
       </section>
 
-      <section className="workspace-toolbar z-10 p-3 lg:sticky lg:top-12">
+      <section className="workspace-toolbar config-action-bar z-10 p-3 lg:sticky lg:top-12">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
           <div className="flex min-w-0 items-center gap-2"><span className="workspace-toolbar-icon"><Save aria-hidden="true" className="h-4 w-4" /></span><div><div className="text-xs font-semibold text-cyber-text-primary">{t('configCenter.actionTitle')}</div><div className="text-[10px] text-cyber-text-muted">{t('configCenter.saveHint')}</div></div></div>
           <div className="flex flex-wrap items-center gap-2 xl:ml-auto">
@@ -296,17 +310,55 @@ export function CrawlerConfigPanel() {
         </div>
       </section>
 
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+      <Tabs defaultValue="monitor" className="config-section-tabs space-y-3">
+      <div className="config-section-navigation">
+        <div className="config-section-navigation-heading">{t('configCenter.sectionNavigation')}</div>
+        <TabsList aria-label={t('configCenter.sectionNavigation')} className="config-section-nav">
+          <TabsTrigger value="monitor" className="config-section-tab">
+            <span className="config-section-tab-icon"><Globe aria-hidden="true" className="h-4 w-4" /></span>
+            <span className="config-section-tab-copy">
+              <span className="config-section-tab-heading"><span className="config-section-tab-title">{t('configCenter.sections.monitorAccount')}</span>{monitorDirty ? <span className="config-unsaved-pill">{t('configCenter.unsavedShort')}</span> : null}</span>
+              <span className="config-section-tab-hint">{t('configCenter.sections.monitorAccountHint')}</span>
+            </span>
+          </TabsTrigger>
+          <TabsTrigger value="range" className="config-section-tab">
+            <span className="config-section-tab-icon"><Database aria-hidden="true" className="h-4 w-4" /></span>
+            <span className="config-section-tab-copy">
+              <span className="config-section-tab-heading"><span className="config-section-tab-title">{t('configCenter.sections.collectionRange')}</span>{rangeDirty ? <span className="config-unsaved-pill">{t('configCenter.unsavedShort')}</span> : null}</span>
+              <span className="config-section-tab-hint">{t('configCenter.sections.collectionRangeHint')}</span>
+            </span>
+          </TabsTrigger>
+          <TabsTrigger value="runtime" className="config-section-tab">
+            <span className="config-section-tab-icon"><KeyRound aria-hidden="true" className="h-4 w-4" /></span>
+            <span className="config-section-tab-copy">
+              <span className="config-section-tab-heading"><span className="config-section-tab-title">{t('configCenter.sections.runtimeStrategy')}</span>{runtimeDirty || scheduleDirty ? <span className="config-unsaved-pill">{t('configCenter.unsavedShort')}</span> : null}</span>
+              <span className="config-section-tab-hint">{t('configCenter.sections.runtimeStrategyHint')}</span>
+            </span>
+          </TabsTrigger>
+          <TabsTrigger value="maintenance" className="config-section-tab">
+            <span className="config-section-tab-icon"><HardDrive aria-hidden="true" className="h-4 w-4" /></span>
+            <span className="config-section-tab-copy">
+              <span className="config-section-tab-heading"><span className="config-section-tab-title">{t('configCenter.sections.systemMaintenance')}</span></span>
+              <span className="config-section-tab-hint">{t('configCenter.sections.systemMaintenanceHint')}</span>
+            </span>
+          </TabsTrigger>
+        </TabsList>
+      </div>
+
+      <TabsContent value="monitor" forceMount className="mt-0 data-[state=inactive]:hidden">
       <Section title={t('configCenter.sections.monitorAccount')} description={t('configCenter.sections.monitorAccountHint')} icon={Globe}>
         <MonitorPanel
           embedded
+          onOpenAbnormalTasks={onOpenAbnormalTasks}
           onDirtyChange={setMonitorDirty}
           onValidChange={setMonitorValid}
           saveHandlerRef={monitorSaveHandlerRef}
         />
         <ValueHint current={t('configCenter.values.monitorCurrent')} recommended={t('configCenter.values.monitorRecommended')} />
       </Section>
+      </TabsContent>
 
+      <TabsContent value="range" forceMount className="mt-0 data-[state=inactive]:hidden">
       <Section title={t('configCenter.sections.collectionRange')} description={t('configCenter.sections.collectionRangeHint')} icon={Database}>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <Field label={t('field.platform')}>
@@ -341,9 +393,9 @@ export function CrawlerConfigPanel() {
         {config.crawler_type === 'detail' ? <Field label={t('field.specifiedIds')} hint={t('field.specifiedIdsHint')}><textarea value={config.specified_ids} onChange={(event) => updateConfig({ specified_ids: event.target.value })} disabled={isDisabled} className="min-h-[72px] w-full rounded-md border border-cyber-border-DEFAULT bg-cyber-bg-tertiary px-3 py-2 text-xs font-mono text-cyber-text-primary" /><ParsedIdList value={config.specified_ids} platform="dy" type="detail" disabled={isDisabled} /></Field> : null}
         {config.crawler_type === 'creator' ? <Field label={t('field.creatorIds')} hint={t('field.creatorIdsHint')}><textarea value={config.creator_ids} onChange={(event) => updateConfig({ creator_ids: event.target.value })} disabled={isDisabled} className="min-h-[72px] w-full rounded-md border border-cyber-border-DEFAULT bg-cyber-bg-tertiary px-3 py-2 text-xs font-mono text-cyber-text-primary" /><ParsedIdList value={config.creator_ids} platform="dy" type="creator" disabled={isDisabled} /></Field> : null}
       </Section>
-      </div>
+      </TabsContent>
 
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+      <TabsContent value="runtime" forceMount className="mt-0 data-[state=inactive]:hidden">
       <Section title={t('configCenter.sections.runtimeStrategy')} description={t('configCenter.sections.runtimeStrategyHint')} icon={KeyRound}>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <Field label={t('field.loginMethod')}>
@@ -387,7 +439,9 @@ export function CrawlerConfigPanel() {
           </Field>
         </div>
       </Section>
+      </TabsContent>
 
+      <TabsContent value="maintenance" forceMount className="mt-0 data-[state=inactive]:hidden">
       <Section title={t('configCenter.sections.systemMaintenance')} description={t('configCenter.sections.systemMaintenanceHint')} icon={HardDrive}>
         <div className="flex items-start gap-2 rounded-md border border-cyber-neon-cyan/25 bg-cyber-neon-cyan/5 p-3 text-[10px] font-mono text-cyber-text-muted">
           <ShieldAlert className="mt-0.5 h-4 w-4 flex-shrink-0 text-cyber-neon-cyan" />
@@ -405,7 +459,8 @@ export function CrawlerConfigPanel() {
           <MaintenanceRow label={t('configCenter.maintenance.cdpPort')} current={String(health?.system_config?.cdp_debug_port ?? '-')} recommended="9222" />
         </div>
       </Section>
-      </div>
+      </TabsContent>
+      </Tabs>
 
       <Dialog open={dangerAction !== null} onOpenChange={(open) => { if (!open) setDangerAction(null) }}>
         <DialogContent className="max-w-md">

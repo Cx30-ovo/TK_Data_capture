@@ -63,11 +63,12 @@ function App() {
   }, [])
 
 
-  const openTasks = (status = 'pending', jobId?: number) => {
+  const openTasks = (status = 'pending', jobId?: number, accountId?: number) => {
     setOpsTarget((current) => ({
       section: 'tasks',
       taskStatus: status,
       jobId,
+      accountId,
       token: current.token + 1,
     }))
     navigateTab('ops')
@@ -192,7 +193,7 @@ function App() {
               </TabsContent>
               <TabsContent value="config" className="mt-0 md:col-span-2 xl:col-span-12">
                 <Suspense fallback={<StatePanel variant="loading" title={t('action.loading')} />}>
-                  <CrawlerConfigPanel />
+                  <CrawlerConfigPanel onOpenAbnormalTasks={(accountId) => openTasks('failed', undefined, accountId)} />
                 </Suspense>
               </TabsContent>
             </div>

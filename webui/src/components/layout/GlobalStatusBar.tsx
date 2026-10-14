@@ -1,8 +1,10 @@
+import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Activity, Bell, Camera, ChevronRight, ListChecks, Wifi } from 'lucide-react'
 import { monitorApi } from '@/lib/api'
 import { useCrawlerStore } from '@/store/crawlerStore'
+import { useMonitorExecution } from '@/components/monitor/MonitorExecutionPanel'
 
 
 type StatusTone = 'neutral' | 'ok' | 'warning' | 'error' | 'info'
@@ -88,6 +90,10 @@ export function GlobalStatusBar({
   const { t: tConfig } = useTranslation('config')
   const crawlerStatus = useCrawlerStore((state) => state.status)
   const platform = useCrawlerStore((state) => state.platform)
+  const queryClient = useQueryClient()
+  const { data: executionStatus } = useMonitorExecution()
+  const wasCollectingRef = useRef(false)
+  const lastRunIdRef = useRef<string | null>(null)
   const { data: health } = useQuery({
     queryKey: ['monitorHealth'],
     queryFn: async () => (await monitorApi.getHealth()).data,
@@ -107,6 +113,28 @@ export function GlobalStatusBar({
   const pendingCount = health?.metrics.jobs?.pending ?? overview?.jobs.pending ?? 0
   const unreadCount = health?.metrics.unread_alerts ?? 0
   const nextSnapshot = overview?.next_snapshot
+
+  useEffect(() => {
+    if (!executionStatus) return
+    const execution = executionStatus.execution
+    const isCollecting = Boolean(execution?.active || executionStatus.crawler_running)
+    const finishedRunAfterPollGap = Boolean(
+      execution?.run_id
+      && lastRunIdRef.current !== execution.run_id
+      && !execution.active
+      && execution.result,
+    )
+    const collectionJustFinished = (wasCollectingRef.current && !isCollecting) || finishedRunAfterPollGap
+
+    wasCollectingRef.current = isCollecting
+    if (execution?.run_id) lastRunIdRef.current = execution.run_id
+
+    if (collectionJustFinished) {
+      for (const queryKey of ['monitorOverview', 'monitorDashboard', 'monitorJobs', 'monitorAlerts', 'monitorHealth', 'monitorAccounts', 'monitorStatus']) {
+        void queryClient.invalidateQueries({ queryKey: [queryKey] })
+      }
+    }
+  }, [executionStatus, queryClient])
 
   return (
     <section className="app-statusbar sticky top-0 z-20 h-12 flex-shrink-0 overflow-hidden border-b border-cyber-border-subtle bg-cyber-bg-secondary/90 backdrop-blur">

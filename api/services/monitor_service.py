@@ -21,6 +21,7 @@ from tools.collection_errors import classify_collection_error
 
 from .crawler_manager import crawler_manager
 from .monitor_execution import MonitorExecution
+from .browser_recovery import BrowserRecovery
 
 RISK_CONTROL_BASE_COOLDOWN_SECONDS = 30 * 60
 RISK_CONTROL_MAX_COOLDOWN_SECONDS = 6 * 60 * 60
@@ -56,6 +57,9 @@ def monitored_operation(kind):
                 return {"status": "skipped", "reason": "监控已暂停，请先恢复监控", "error_code": "monitor_paused"}
             if self._lock.locked() or (self._execution and self._execution.active):
                 return {"status": "skipped", "reason": "已有任务正在执行，请等待完成", "error_code": "browser_busy"}
+            if self._recovery.pending:
+                return {"status": "deferred", "reason": "专用浏览器等待自动恢复", "error_code": "browser_recovering",
+                        "retry_after_seconds": self._recovery.snapshot()["retry_after_seconds"]}
             execution = self._execution = MonitorExecution(kind)
             try:
                 result = await method(self, *args, **kwargs)
@@ -78,13 +82,7 @@ def monitored_operation(kind):
                 raise
             except Exception as exc:
                 failure = classify_collection_error(exc)
-                cooldown = 0
-                if failure.error_code == "risk_control":
-                    cooldown = await self._start_risk_control_cooldown(failure.message)
-                elif failure.error_code in ("login_required", "tab_changed", "browser_disconnected"):
-                    self._paused = True
-                elif kind == "discovery" and failure.error_code in ("network_timeout", "invalid_response"):
-                    cooldown = await self._defer_discovery_retry(execution.sec_user_id, failure)
+                cooldown = await self._handle_collection_failure(failure, kind, execution.sec_user_id)
                 result = {"status": "blocked" if failure.error_code == "risk_control" else "error", "reason": failure.message,
                           **failure.as_dict(), "retry_after_seconds": cooldown}
                 execution.update(state="error", phase="finished", error=failure.as_dict(), result=result)
@@ -92,6 +90,12 @@ def monitored_operation(kind):
                 return result
             finally:
                 execution.update(finished_at=time.time(), current_post="")
+                if kind == "discovery" and execution.sec_user_id and execution.result is not None:
+                    try:
+                        await monitor_repository.record_account_discovery_result(
+                            execution.sec_user_id, execution.result, int(execution.finished_at))
+                    except Exception:
+                        await crawler_manager.add_log("[Monitor] 发现结果摘要保存失败；作品和任务保存结果不受影响", "warning")
         return run
     return decorate
 
@@ -139,6 +143,7 @@ class DouyinMonitorFetcher:
         self._lease = None
         self.should_stop = lambda: False
         self.on_progress = lambda **values: None
+        self.reset_collection_page = False
 
     async def __aenter__(self) -> "DouyinMonitorFetcher":
         self._lease = DouyinTabLease(should_stop=self.should_stop, on_wait=lambda: self.on_progress(phase="waiting_tab"))
@@ -147,7 +152,7 @@ class DouyinMonitorFetcher:
             if self.should_stop():
                 raise CollectionStoppedError("已请求停止")
             self.on_progress(phase="connecting")
-            return await self._open_browser()
+            return await asyncio.wait_for(self._open_browser(), config.BROWSER_RECOVERY_TIMEOUT_SECONDS)
         except BaseException:
             await self.__aexit__(None, None, None)
             raise
@@ -155,13 +160,16 @@ class DouyinMonitorFetcher:
     async def _open_browser(self) -> "DouyinMonitorFetcher":
         self._playwright = await async_playwright().start()
         self._crawler = DouYinCrawler()
-        browser_context = await self._crawler.launch_browser_with_cdp(
-            self._playwright,
-            None,
-            None,
-            headless=config.CDP_HEADLESS,
-        )
+        # Monitor recovery must stay in the existing managed profile: never
+        # silently fall back to a new, unrelated Playwright login context.
+        self._crawler.cdp_manager = CDPBrowserManager(profile_platform="dy")
+        browser_context = await self._crawler.cdp_manager.launch_and_connect(
+            self._playwright, None, None, headless=config.CDP_HEADLESS)
         self._crawler.browser_context = browser_context
+        if self.reset_collection_page:
+            from tools.douyin_collection_page import reset_collection_page
+            await reset_collection_page(browser_context)
+            self.reset_collection_page = False
         self._crawler.context_page = await self._crawler._get_or_create_context_page()
         try:
             await safe_page_goto(
@@ -197,17 +205,19 @@ class DouyinMonitorFetcher:
     async def _close_browser(self):
         try:
             if self._client:
-                await self._client.close_browser_pages()
+                await asyncio.wait_for(self._client.close_browser_pages(), 5)
         finally:
             try:
                 if self._crawler and self._crawler.cdp_manager:
-                    await self._crawler.cdp_manager.cleanup()
+                    await asyncio.wait_for(self._crawler.cdp_manager.cleanup(), 5)
             finally:
-                if self._playwright:
-                    await self._playwright.stop()
-                self._crawler = None
-                self._client = None
-                self._playwright = None
+                try:
+                    if self._playwright:
+                        await asyncio.wait_for(self._playwright.stop(), 5)
+                finally:
+                    self._crawler = None
+                    self._client = None
+                    self._playwright = None
 
     @staticmethod
     def _is_browser_disconnect_error(exc: Exception) -> bool:
@@ -228,7 +238,9 @@ class DouyinMonitorFetcher:
         await crawler_manager.add_log(f"[Monitor] Browser reconnecting: {classify_collection_error(reason).message}", "warning")
         # Keep the operation's lease across reconnect; no other task may navigate.
         await self._close_browser()
-        await self._open_browser()
+        if self.should_stop():
+            raise CollectionStoppedError("恢复浏览器前已请求停止")
+        await asyncio.wait_for(self._open_browser(), config.BROWSER_RECOVERY_TIMEOUT_SECONDS)
 
     @staticmethod
     def _extract_cover_url(item: dict) -> str:
@@ -336,7 +348,8 @@ class DouyinMonitorFetcher:
                 break
             self.on_progress(phase="scanning", pages=pages, scanned=len(posts))
             try:
-                response = await self._client.get_user_aweme_posts(sec_user_id, max_cursor)
+                response = await asyncio.wait_for(
+                    self._client.get_user_aweme_posts(sec_user_id, max_cursor), config.BROWSER_RECOVERY_TIMEOUT_SECONDS)
             except Exception as exc:
                 if posts:
                     raise PartialDiscoveryError(exc, posts) from exc
@@ -387,7 +400,7 @@ class DouyinMonitorFetcher:
             return await self._fetch_metrics_once(aweme_id)
 
     async def _fetch_metrics_once(self, aweme_id: str) -> dict:
-        detail = await self._client.get_video_by_id(aweme_id)
+        detail = await asyncio.wait_for(self._client.get_video_by_id(aweme_id), config.BROWSER_RECOVERY_TIMEOUT_SECONDS)
         if not detail:
             raise DouyinPostUnavailableError(f"Failed to get Douyin detail for aweme_id={aweme_id}")
         if str(detail.get("aweme_id") or "") != str(aweme_id):
@@ -413,7 +426,7 @@ class DouyinMonitorFetcher:
             return await self._fetch_hot_rank_once()
 
     async def _fetch_hot_rank_once(self) -> list[dict]:
-        response = await self._client.get_hot_search_list()
+        response = await asyncio.wait_for(self._client.get_hot_search_list(), config.BROWSER_RECOVERY_TIMEOUT_SECONDS)
         payload = response.get("data") or {}
         if isinstance(payload, list):
             payload = next((item for item in payload if isinstance(item, dict) and item.get("word_list")), {})
@@ -463,10 +476,12 @@ class MonitorService:
         self._execution = None
         self._paused = False
         self._discovery_retries = {}
+        self._recovery = BrowserRecovery(config.ENABLE_BROWSER_AUTO_RECOVERY)
+        self._last_browser_check = 0.0
 
     def execution_status(self):
         return {"paused": self._paused, "crawler_running": self._crawler_is_busy(), "retry_after_seconds": self._risk_control_cooldown_remaining(),
-                "execution": self._execution.snapshot() if self._execution else None}
+                "execution": self._execution.snapshot() if self._execution else None, "recovery": self._recovery.snapshot()}
 
     def request_safe_stop(self, run_id=None):
         execution = self._execution
@@ -482,7 +497,83 @@ class MonitorService:
         if self._execution and self._execution.active:
             return {"status": "busy", "reason": "当前任务正在停止，请等待保存完成"}
         self._paused = False
+        if self._recovery.state == "login_required":
+            self._recovery.recovered()
         return {"status": "ok", "retry_after_seconds": self._risk_control_cooldown_remaining()}
+
+    async def _handle_collection_failure(self, failure, kind, sec_user_id=""):
+        if failure.error_code == "risk_control":
+            return await self._start_risk_control_cooldown(failure.message)
+        if failure.error_code == "login_required":
+            self._paused = True
+            self._recovery.wait_for_login(failure)
+            return 0
+        was_pending = self._recovery.pending
+        scheduled = self._recovery.observe(failure)
+        if scheduled and not was_pending:
+            await crawler_manager.add_log("[自恢复] 检测到浏览器或采集页异常，将自动重连；已保存的数据保留", "warning")
+        if failure.error_code in ("tab_changed", "browser_disconnected"):
+            if not scheduled:
+                self._paused = True
+            return self._recovery.snapshot()["retry_after_seconds"]
+        if kind == "discovery" and failure.error_code in ("network_timeout", "invalid_response"):
+            return await self._defer_discovery_retry(sec_user_id, failure)
+        return 0
+
+    async def _check_browser_health(self):
+        if not self._recovery.enabled or self._paused or self._crawler_is_busy() or self._lock.locked():
+            return
+        if self._recovery.pending or self._risk_control_cooldown_remaining():
+            return
+        if time.time() - self._last_browser_check < 60:
+            return
+        self._last_browser_check = time.time()
+        manager = CDPBrowserManager(profile_platform="dy")
+        port = manager._read_recorded_port()
+        if port and not await manager._test_cdp_connection(port, log_warning=False, timeout=1):
+            await self._handle_collection_failure(classify_collection_error(RuntimeError("CDP disconnected")), "health")
+
+    async def _recover_browser_if_due(self):
+        recovery = self._recovery
+        if not recovery.pending:
+            return
+        if self._paused or self._crawler_is_busy() or self._lock.locked() or self._risk_control_cooldown_remaining():
+            return
+        if recovery.snapshot()["retry_after_seconds"]:
+            return
+        async with self._lock:
+            recovery.begin()
+            await crawler_manager.add_log(f"[自恢复] 第 {recovery.attempts} 次恢复专用 Chrome 和后台采集页", "info")
+            try:
+                fetcher = DouyinMonitorFetcher()
+                fetcher.should_stop = lambda: self._paused
+                fetcher.reset_collection_page = recovery.reset_page
+                async def prepare():
+                    async with fetcher:
+                        pass
+                await asyncio.wait_for(prepare(), config.BROWSER_RECOVERY_TIMEOUT_SECONDS)
+                # A user pause arriving during recovery must remain in force.
+                recovery.recovered()
+                self._discovery_retries = {account:retry for account,retry in self._discovery_retries.items()
+                                           if retry["failure"].error_code != "network_timeout"}
+                await crawler_manager.add_log("[自恢复] 浏览器已恢复；监控将在未暂停时继续执行待办任务", "success")
+            except CollectionStoppedError:
+                recovery.state = "waiting"
+            except asyncio.CancelledError:
+                recovery.state = "waiting"
+                raise
+            except Exception as exc:
+                failure = classify_collection_error(exc)
+                if failure.error_code == "login_required":
+                    self._paused = True
+                    recovery.wait_for_login(failure)
+                    await crawler_manager.add_log("[自恢复] 浏览器已连接，但登录已失效；请在专用 Chrome 登录后恢复监控", "warning")
+                elif failure.error_code == "risk_control":
+                    await self._start_risk_control_cooldown(failure.message)
+                    recovery.failed(failure)
+                else:
+                    delay = recovery.failed(failure)
+                    await crawler_manager.add_log(f"[自恢复] {failure.message}；{delay} 秒后重试", "warning")
 
     def _should_stop(self):
         return bool(self._execution and self._execution.stop_requested)
@@ -577,6 +668,8 @@ class MonitorService:
     async def _loop(self) -> None:
         while True:
             try:
+                await self._check_browser_health()
+                await self._recover_browser_if_due()
                 await self._run_cycle()
             except asyncio.CancelledError:
                 raise
@@ -592,10 +685,10 @@ class MonitorService:
                     dedupe_key=f"loop_error:{datetime.now().strftime('%Y-%m-%d')}",
                 )
                 await crawler_manager.add_log(f"[Monitor] [{failure.error_code}] {failure.message}", "warning")
-            await asyncio.sleep(60)
+            await asyncio.sleep(15 if self._recovery.pending else 60)
 
     async def _run_cycle(self) -> None:
-        if self._paused:
+        if self._paused or self._recovery.pending:
             return
         if self._crawler_is_busy():
             return
@@ -613,13 +706,13 @@ class MonitorService:
             )
 
         await self.run_due_snapshots()
-        if self._paused or self._risk_control_cooldown_remaining():
+        if self._paused or self._recovery.pending or self._risk_control_cooldown_remaining():
             return
 
         accounts = await monitor_repository.list_monitored_accounts(include_disabled=False)
         now = int(time.time())
         for account in accounts:
-            if self._paused or self._risk_control_cooldown_remaining():
+            if self._paused or self._recovery.pending or self._risk_control_cooldown_remaining():
                 break
             interval_seconds = max(1, account.discover_interval_minutes) * 60
             last_discovered_at = int(account.last_discovered_at or 0)
@@ -660,6 +753,8 @@ class MonitorService:
             )
             if account is None:
                 return {"status": "skipped", "reason": "no enabled monitored account"}
+            if not getattr(account, "enabled", True):
+                return {"status": "skipped", "reason": "该账号已停止发现，请先恢复账号监控。", "error_code": "account_paused"}
             account_name = account.display_name or account.sec_user_id
             self._progress(account_name=account_name, sec_user_id=account.sec_user_id)
             retry_remaining = self._discovery_retry_remaining(account.sec_user_id)
@@ -791,6 +886,7 @@ class MonitorService:
             if not discovery_error and not self._should_stop():
                 await monitor_repository.update_account_discovered_at(account.id)
                 self._discovery_retries.pop(account.sec_user_id, None)
+                self._recovery.successful_request()
             if created_posts > 0:
                 await self._create_alert(
                     alert_type="new_posts",
@@ -819,12 +915,7 @@ class MonitorService:
             if discovery_error:
                 failure = classify_collection_error(discovery_error)
                 cooldown = 0
-                if failure.error_code == "risk_control":
-                    cooldown = await self._start_risk_control_cooldown(failure.message)
-                elif failure.error_code in ("login_required", "tab_changed", "browser_disconnected"):
-                    self._paused = True
-                elif failure.error_code in ("network_timeout", "invalid_response"):
-                    cooldown = await self._defer_discovery_retry(account.sec_user_id, failure)
+                cooldown = await self._handle_collection_failure(failure, "discovery", account.sec_user_id)
                 self._progress(error=failure.as_dict())
                 await crawler_manager.add_log(f"[Monitor] [{account_name}] [{failure.error_code}] {failure.message}；已保存部分数据", "warning")
                 result.update(status="partial", reason=failure.message, **failure.as_dict(), retry_after_seconds=cooldown)
@@ -842,6 +933,11 @@ class MonitorService:
 
         async with self._lock:
             now = time.time()
+            if self._recovery.pending or self._paused:
+                message = "监控已暂停，请恢复监控后刷新热榜。" if self._paused else "浏览器正在自动恢复，请稍后刷新热榜。"
+                if self._hot_rank_cache is not None:
+                    return {**self._hot_rank_cache, "cached": True, "stale": True, "warning": message}
+                raise MonitorHotRankError(message)
             if (
                 not force
                 and self._hot_rank_cache is not None
@@ -872,8 +968,7 @@ class MonitorService:
                 raise
             except Exception as exc:
                 failure = classify_collection_error(exc)
-                if failure.error_code == "risk_control":
-                    await self._start_risk_control_cooldown(failure.message)
+                await self._handle_collection_failure(failure, "hot_rank")
                 if self._hot_rank_cache is not None:
                     return {
                         **self._hot_rank_cache,
@@ -894,6 +989,7 @@ class MonitorService:
             }
             self._hot_rank_cache = result
             self._hot_rank_cached_at = time.time()
+            self._recovery.successful_request()
             return result
 
     @monitored_operation("snapshots")
@@ -944,8 +1040,14 @@ class MonitorService:
                 for index, job in enumerate(due_jobs):
                     if self._should_stop():
                         break
+                    current_account = await monitor_repository.get_monitored_account(job.sec_user_id) if job.sec_user_id else None
+                    if current_account and getattr(current_account, "snapshots_paused", False):
+                        # Keep the original schedule; resume never fabricates a missed snapshot.
+                        skipped += 1
+                        self._progress(processed=index + 1, skipped=skipped)
+                        continue
                     account_name = account_names[job.sec_user_id or "unassigned"]
-                    self._progress(phase="collecting", account_name=account_name, current_post=job.aweme_id)
+                    self._progress(phase="collecting", account_name=account_name, sec_user_id=job.sec_user_id, current_post=job.aweme_id)
                     running_job = await monitor_repository.mark_job_running(job.id)
                     if running_job is None:
                         self._progress(processed=index + 1)
@@ -967,6 +1069,7 @@ class MonitorService:
                             captured_at=now,
                         )
                         self._clear_risk_control_cooldown()
+                        self._recovery.successful_request()
                         completed += 1
                         result = account_results.setdefault(job.sec_user_id or "unassigned", {"completed": 0, "retried": 0, "failed": 0})
                         result["completed"] += 1
@@ -987,9 +1090,7 @@ class MonitorService:
                         failure = classify_collection_error(exc)
                         self._progress(error=failure.as_dict())
                         await crawler_manager.add_log(f"[Monitor] [{account_name}] [{failure.error_code}] {failure.message}", "warning")
-                        risk_cooldown = 0
-                        if failure.error_code == "risk_control":
-                            risk_cooldown = await self._start_risk_control_cooldown(failure.message)
+                        risk_cooldown = await self._handle_collection_failure(failure, "snapshots", job.sec_user_id)
                         retry_job = await monitor_repository.mark_job_retry(
                             job_id=job.id,
                             error=f"[{failure.error_code}] {failure.message}",
@@ -1005,8 +1106,6 @@ class MonitorService:
                             result["retried"] += 1
                         if failure.error_code in ("risk_control", "login_required", "tab_changed", "browser_disconnected", "network_timeout"):
                             batch_failure = failure
-                            if failure.error_code in ("login_required", "tab_changed", "browser_disconnected"):
-                                self._paused = True
                             self._progress(processed=index + 1, completed=completed, retried=retried, failed=failed, skipped=skipped)
                             break
                     self._progress(processed=index + 1, completed=completed, retried=retried, failed=failed, skipped=skipped)
@@ -1046,7 +1145,7 @@ class MonitorService:
             if retried or failed:
                 result.update(reason=batch_failure.message if batch_failure else "部分任务未完成，已安排重试",
                               error_code=batch_failure.error_code if batch_failure else None,
-                              retry_after_seconds=self._risk_control_cooldown_remaining())
+                              retry_after_seconds=max(self._risk_control_cooldown_remaining(), self._recovery.snapshot()["retry_after_seconds"]))
             return result
 
     async def _create_alert(
@@ -1072,7 +1171,6 @@ class MonitorService:
         async with self._lock, DouyinTabLease():
             if self._crawler_is_busy():
                 return {"status": "skipped", "reason": "crawler already running"}
-
             async with async_playwright() as playwright:
                 manager = CDPBrowserManager(profile_platform="dy")
                 try:
@@ -1399,7 +1497,7 @@ class MonitorService:
             } if next_job else None,
             "today_new_posts": today_new_posts,
             "jobs": job_counts,
-            "abnormal_total": int(job_counts.get("failed", 0)) + int(job_counts.get("missed", 0)),
+            "abnormal_total": int(job_counts.get("failed", 0)),
             "recent_abnormal_jobs": abnormal_jobs,
         }
 
@@ -1407,7 +1505,7 @@ class MonitorService:
         account = await self._resolve_account(account_id, all_accounts=all_accounts)
         sec_user_id = account.sec_user_id if account else None
         normalized_status = str(status or "").strip().lower()
-        statuses = ("failed", "missed") if normalized_status == "abnormal" else None
+        statuses = ("failed",) if normalized_status == "abnormal" else None
         exact_status = normalized_status if normalized_status and normalized_status not in {"all", "abnormal"} else None
         jobs = await monitor_repository.list_jobs(
             status=exact_status,
@@ -1420,7 +1518,7 @@ class MonitorService:
         status_counts = await monitor_repository.get_job_counts(sec_user_id=sec_user_id)
         total_count = sum(status_counts.values())
         if normalized_status == "abnormal":
-            filtered_count = int(status_counts.get("failed", 0)) + int(status_counts.get("missed", 0))
+            filtered_count = int(status_counts.get("failed", 0))
         elif exact_status:
             filtered_count = int(status_counts.get(exact_status, 0))
         else:
@@ -1447,8 +1545,18 @@ class MonitorService:
             "attempts": job.attempts,
         }
 
-    async def retry_failed_jobs(self, job_ids: Optional[list[int]] = None) -> dict:
-        count = await monitor_repository.retry_failed_jobs(job_ids=job_ids)
+    async def retry_failed_jobs(
+        self,
+        job_ids: Optional[list[int]] = None,
+        account_id: Optional[int] = None,
+    ) -> dict:
+        account = await monitor_repository.get_monitored_account_by_id(account_id) if account_id is not None else None
+        if account_id is not None and account is None:
+            raise ValueError(f"Monitored account not found: {account_id}")
+        count = await monitor_repository.retry_failed_jobs(
+            job_ids=job_ids,
+            sec_user_id=account.sec_user_id if account else None,
+        )
         await crawler_manager.add_log(f"[Monitor] Manually retried {count} failed jobs", "info")
         return {"updated": count}
 

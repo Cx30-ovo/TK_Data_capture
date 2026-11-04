@@ -131,7 +131,7 @@ export function MonitorExport() {
         </div>
       </section>
 
-      <section className="workspace-toolbar z-10 p-3 lg:sticky lg:top-12">
+      <section className="workspace-toolbar p-3">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
           <div className="flex min-w-0 items-center gap-2 text-xs font-semibold text-cyber-text-primary"><span className="workspace-toolbar-icon"><Download aria-hidden="true" className="h-4 w-4" /></span><div><div>{t('export.quickActions')}</div><div className="text-[10px] font-normal text-cyber-text-muted">{t('export.quickActionsHint')}</div></div></div>
           <div className="flex flex-wrap items-center gap-2 xl:ml-auto">

@@ -123,14 +123,14 @@
     "recoveryPaused": "Monitoring and automatic recovery are paused.",
     "recoveryCooling": "Waiting for the risk-control cooldown before restoring the browser.",
     "recoveryHint": "{{attempts}} attempts · Saved data retained · Pending jobs continue after recovery",
-    "kind": { "discovery": "Discovery progress", "snapshots": "Snapshot progress" },
+    "kind": { "discovery": "Discovery progress", "snapshots": "Snapshot progress", "comments": "Comment collection progress" },
     "state": {
       "idle": "Idle", "running": "Running", "waiting_tab": "Waiting for tab",
       "stopping": "Stopping safely", "paused": "Monitoring paused", "deferred": "Cooling down",
       "completed": "Completed", "stopped": "Stopped", "skipped": "Not executed",
       "partial": "Partially completed", "error": "Needs attention", "crawler": "Crawler running", "recovering": "Auto recovery"
     },
-    "phase": { "connecting": "Connecting browser", "waiting_tab": "Waiting for another task to release the tab", "scanning": "Scanning recent posts", "saving": "Saving scanned posts", "collecting": "Collecting current snapshot", "finished": "Finished" }
+    "phase": { "connecting": "Connecting browser", "waiting_tab": "Waiting for another task to release the tab", "scanning": "Scanning recent posts", "saving": "Saving scanned posts", "collecting": "Collecting current snapshot", "comments": "Collecting comments and replies", "finished": "Finished" }
   },
   "section": {
     "targetMatrix": {

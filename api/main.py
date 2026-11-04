@@ -36,7 +36,11 @@ from fastapi.responses import FileResponse
 
 from .routers import ai_router, crawler_router, data_router, monitor_router, scheduler_router, websocket_router
 from .services.monitor_service import monitor_service
+from .services.post_editorial_service import post_editorial_service
 from .services import scheduler_service
+from .services import topic_monitor_service
+from .routers.topic_monitor import router as topic_monitor_router
+from config.db_config import sqlite_db_config
 from .services.maintenance_service import maintenance_service
 from .services.crawler_manager import crawler_manager
 from database import db
@@ -64,9 +68,12 @@ async def lifespan(_: FastAPI):
     await scheduler_service.start()
     await monitor_service.start()
     await maintenance_service.start()
+    await topic_monitor_service.start_runner(sqlite_db_config['db_path'])
     try:
         yield
     finally:
+        await post_editorial_service.stop()
+        await topic_monitor_service.stop_runner()
         await maintenance_service.stop()
         await monitor_service.stop()
         await scheduler_service.stop()
@@ -100,6 +107,7 @@ app.add_middleware(
 app.include_router(crawler_router, prefix="/api")
 app.include_router(data_router, prefix="/api")
 app.include_router(monitor_router, prefix="/api")
+app.include_router(topic_monitor_router, prefix="/api")
 app.include_router(ai_router, prefix="/api")
 app.include_router(scheduler_router, prefix="/api")
 app.include_router(websocket_router, prefix="/api")

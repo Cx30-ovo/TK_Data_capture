@@ -40,6 +40,7 @@ from tools import utils
 from tools.cdp_browser import CDPBrowserManager, safe_page_goto
 from tools.douyin_browser_coordinator import DouyinTabLease
 from tools.douyin_collection_page import get_collection_page, is_collection_page
+from tools.douyin_collection_page import _create_background_page as create_background_page
 from var import crawler_type_var, source_keyword_var
 
 from .client import DouYinClient
@@ -158,7 +159,9 @@ class DouYinCrawler(AbstractCrawler):
             except Exception:
                 continue
 
-        page = candidates[0] if candidates else await self.browser_context.new_page()
+        # new_page() selects the new tab. Reuse the same background CDP creation
+        # used by collection, without marking this user login tab as a collector.
+        page = candidates[0] if candidates else await create_background_page(self.browser_context)
         try:
             await page.evaluate("() => { window.name = 'MediaCrawler'; }")
         except Exception:

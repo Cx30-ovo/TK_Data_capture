@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { collectionErrorMessage, monitorApi, type MonitorAccount, type MonitorRunResult } from '@/lib/api'
 import { useMonitorAccountStore } from '@/store/monitorAccountStore'
 import { MonitorExecutionPanel, useMonitorExecution } from './MonitorExecutionPanel'
+import { AccountCommentSettings } from './AccountCommentSettings'
 
 export function parseSecUserId(value: string): string {
   const trimmed = value.trim()
@@ -386,6 +387,7 @@ export function MonitorPanel({ embedded = false, onOpenAbnormalTasks, onDirtyCha
               <div className="space-y-1.5"><Label>{t('accountManager.mode')}</Label><Select value={draft.mode} disabled={formDisabled} onValueChange={value => setDraft(current => ({ ...current, mode: value as Draft['mode'] }))}><SelectTrigger aria-label={t('accountManager.mode')} className="min-h-11"><SelectValue /></SelectTrigger><SelectContent>{['active', 'discoveryOff', 'paused'].map(value => <SelectItem key={value} value={value}>{t(`accountManager.modeOptions.${value}`)}</SelectItem>)}</SelectContent></Select></div>
             </div>
             <p className="text-xs leading-relaxed text-cyber-text-secondary">{t(`accountManager.modeHints.${draft.mode}`)}</p>
+            {!isCreating && activeAccount && <AccountCommentSettings key={activeAccount.id} accountId={activeAccount.id} disabled={isBusy || accountDirty} />}
             {!isCreating && activeAccount && <div className="space-y-2 border-t border-cyber-border-subtle pt-3 text-xs text-cyber-text-secondary">
               <p>{t('accountManager.lastSuccess', { time: formatTime(activeAccount.last_discovered_at) })}</p>
               <p>{formatNextDiscovery(activeAccount)}</p>
@@ -404,6 +406,7 @@ export function MonitorPanel({ embedded = false, onOpenAbnormalTasks, onDirtyCha
           </div>
         </section>
       </div>
+
       <Dialog open={!!navigation} onOpenChange={open => { if (!open) setNavigation(null) }}>
         <DialogContent className="max-w-[calc(100vw-2rem)] sm:max-w-lg"><DialogHeader><DialogTitle>{t('accountManager.unsavedTitle')}</DialogTitle><DialogDescription>{t('accountManager.unsavedHint')}</DialogDescription></DialogHeader>
           <DialogFooter className="gap-2"><Button variant="outline" className="min-h-11" disabled={isBusy} onClick={() => setNavigation(null)}>{t('accountManager.keepEditing')}</Button>

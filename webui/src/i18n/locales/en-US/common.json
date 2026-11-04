@@ -8,6 +8,7 @@
     "error": "ERROR"
   },
   "tabs": {
+    "accounts": "Account matrix",
     "overview": "Operations",
     "config": "System Settings",
     "monitorData": "Content Performance",
@@ -21,6 +22,21 @@
     "entries": "{{count}} logs"
   },
   "statusbar": {
+    "snapshotSchedule": "Snapshot schedule",
+    "snapshotLoading": "Loading",
+    "snapshotStale": "Refresh required",
+    "snapshotRunning": "Running",
+    "snapshotPaused": "Paused",
+    "snapshotRecovering": "Waiting for browser",
+    "snapshotCooling": "Cooldown",
+    "snapshotNone": "No pending snapshots",
+    "snapshotStopped": "Scheduler stopped",
+    "snapshotDue": "Due · awaiting execution",
+    "snapshotDelayed": "Delayed {{count}} min",
+    "snapshotSoon": "Within 1 minute",
+    "snapshotMinutes": "In {{count}} min",
+    "snapshotHours": "In about {{count}} hours",
+    "snapshotScheduledFor": "Scheduled for",
     "collection": "Collection",
     "browser": "Browser link",
     "pendingJobs": "Pending jobs",

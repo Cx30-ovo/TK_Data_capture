@@ -1,13 +1,15 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Toaster } from 'sonner'
-import { Activity, BarChart3, Download, LayoutDashboard, Settings2, Radar } from 'lucide-react'
-import { Sidebar } from '@/components/layout/Sidebar'
+import { Activity, ArrowUpRight, BarChart3, Download, Radar, Settings2, UsersRound } from 'lucide-react'
+import { SpatialHeader, type AppTab } from '@/components/layout/SpatialHeader'
+import { SpatialInsights } from '@/components/monitor/SpatialInsights'
+import { ConsoleDrawer } from '@/components/layout/ConsoleDrawer'
+import { useThemeStore } from '@/store/themeStore'
 import { GlobalStatusBar } from '@/components/layout/GlobalStatusBar'
 import type { MonitorOpsTarget } from '@/components/monitor/MonitorOpsCenter'
 import { EnvironmentCheck, isEnvChecked } from '@/components/env/EnvironmentCheck'
 import { LicenseDisclaimer, isLicenseAccepted } from '@/components/license/LicenseDisclaimer'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { StatePanel } from '@/components/ui/state-panel'
 
 const CrawlerConfigPanel = lazy(() => import('@/components/config/CrawlerConfigPanel').then((module) => ({ default: module.CrawlerConfigPanel })))
@@ -16,9 +18,9 @@ const MonitorDataCenter = lazy(() => import('@/components/monitor/MonitorDataCen
 const MonitorOpsCenter = lazy(() => import('@/components/monitor/MonitorOpsCenter').then((module) => ({ default: module.MonitorOpsCenter })))
 const MonitorExport = lazy(() => import('@/components/monitor/MonitorExport').then((module) => ({ default: module.MonitorExport })))
 const MonitorHotRank = lazy(() => import('@/components/monitor/MonitorHotRank').then((module) => ({ default: module.MonitorHotRank })))
+const AccountMatrix = lazy(() => import('@/components/monitor/AccountMatrix').then((module) => ({ default: module.AccountMatrix })))
+const TopicMonitor = lazy(() => import('@/components/monitor/TopicMonitor').then((module) => ({ default: module.TopicMonitor })))
 
-type AppTab = 'overview' | 'data' | 'hot' | 'ops' | 'export' | 'config'
-const NAV_TRIGGER_CLASS = 'app-nav-item min-w-0 cursor-pointer flex-col gap-0.5 px-1 py-1.5 text-[11px] sm:flex-row sm:gap-2 sm:px-2 sm:py-2 sm:text-xs lg:gap-3 lg:px-3 lg:py-2.5 lg:text-sm'
 
 function getInitialTab(): AppTab {
   const params = new URLSearchParams(window.location.search)
@@ -26,11 +28,13 @@ function getInitialTab(): AppTab {
   const module = params.get('module')
   if (module === 'hot' && (!value || value === 'data')) return 'hot'
   if (!value && (module === 'overview' || module === 'topics' || module === 'lifecycle' || module === 'strategy' || module === 'hot')) return 'data'
-  return value === 'data' || value === 'hot' || value === 'ops' || value === 'export' || value === 'config' ? value : 'overview'
+  return value === 'accounts' || value === 'topic-monitor' || value === 'data' || value === 'hot' || value === 'ops' || value === 'export' || value === 'config' ? value : value === 'overview' ? 'overview' : 'insights'
 }
 
 function App() {
   const { t } = useTranslation('common')
+  const theme = useThemeStore(state => state.resolvedTheme)
+  const [insightSearch, setInsightSearch] = useState('')
   const [activeTab, setActiveTab] = useState<AppTab>(getInitialTab)
   const [opsTarget, setOpsTarget] = useState<MonitorOpsTarget>({ section: 'tasks', taskStatus: 'pending', token: 0 })
   const [dataFocus, setDataFocus] = useState<{ awemeId?: string; token: number }>({ token: 0 })
@@ -95,7 +99,8 @@ function App() {
   }
 
   return (
-    <div className="cyber-grid relative min-h-screen">
+    <div className="spatial-app">
+      <div className="spatial-backdrop" aria-hidden="true" />
       {/* License Disclaimer Modal - Shows first or when triggered */}
       {!licenseAccepted && (
         <LicenseDisclaimer onAccept={handleLicenseAccept} />
@@ -113,49 +118,9 @@ function App() {
         {t('skipToContent')}
       </a>
 
-      <Tabs
-        orientation="vertical"
-        value={activeTab}
-        onValueChange={(value) => navigateTab(value as AppTab)}
-        className="app-shell"
-      >
-        <Sidebar
-          onCreateMonitor={() => navigateTab('config')}
-          navigation={(
-            <TabsList className="app-navigation-list h-auto w-full justify-start border-0 bg-transparent p-0">
-              <TabsTrigger value="overview" className={NAV_TRIGGER_CLASS}>
-                <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
-                {t('tabs.overview')}
-              </TabsTrigger>
-              <TabsTrigger value="data" className={NAV_TRIGGER_CLASS}>
-                <BarChart3 className="h-4 w-4" aria-hidden="true" />
-                {t('tabs.monitorData')}
-              </TabsTrigger>
-              <TabsTrigger value="hot" className={NAV_TRIGGER_CLASS}>
-                <Radar className="h-4 w-4" aria-hidden="true" />
-                {t('tabs.hot')}
-              </TabsTrigger>
-              <TabsTrigger value="ops" className={NAV_TRIGGER_CLASS}>
-                <Activity className="h-4 w-4" aria-hidden="true" />
-                {t('tabs.ops')}
-              </TabsTrigger>
-            </TabsList>
-          )}
-          utilityNavigation={(
-            <TabsList className="app-navigation-list h-auto w-full justify-start border-0 bg-transparent p-0">
-              <TabsTrigger value="export" className={NAV_TRIGGER_CLASS}>
-                <Download className="h-4 w-4" aria-hidden="true" />
-                {t('tabs.export')}
-              </TabsTrigger>
-              <TabsTrigger value="config" className={NAV_TRIGGER_CLASS}>
-                <Settings2 className="h-4 w-4" aria-hidden="true" />
-                {t('tabs.config')}
-              </TabsTrigger>
-            </TabsList>
-          )}
-        />
-
-        <div className="flex min-w-0 flex-1 flex-col">
+      <SpatialHeader activeTab={activeTab} onNavigate={navigateTab} onSearch={value => { setInsightSearch(value); navigateTab('insights') }} />
+      <div className="spatial-app-content">
+        <div className="spatial-system-strip">
           <GlobalStatusBar
             onOpenOverview={() => navigateTab('overview')}
             onOpenHealth={openHealth}
@@ -164,50 +129,76 @@ function App() {
             onOpenSnapshot={() => openTasks('pending')}
           />
 
-          <main id="webui-main-content" tabIndex={-1} className="min-h-0 flex-1 pb-14 focus:outline-none">
-            <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2 xl:grid-cols-12">
-              <TabsContent value="overview" className="mt-0 md:col-span-2 xl:col-span-12">
+        </div>
+        <main id="webui-main-content" tabIndex={-1} className={`spatial-main ${activeTab === 'insights' ? 'is-insights' : ''}`}>
+          {activeTab === 'insights' && <section className="spatial-home-tab">
+            <SpatialInsights search={insightSearch} onSearchChange={setInsightSearch} onOpenData={openData} onOpenTopics={() => navigateTab('topic-monitor')} onOpenHot={() => navigateTab('hot')} onOpenConfig={() => navigateTab('config')} />
+          </section>}
+          {activeTab !== 'insights' && <div className="spatial-workspace">
+            <aside className="spatial-workspace-rail spatial-glass" aria-label="工作区导航"><span>工作区</span>{[
+              { id: 'accounts', label: '账号矩阵', icon: UsersRound },
+              { id: 'topic-monitor', label: '话题监控', icon: Radar },
+              { id: 'data', label: '内容分析', icon: BarChart3 },
+              { id: 'hot', label: '平台热榜', icon: Radar },
+              { id: 'overview', label: '运行总览', icon: Activity },
+              { id: 'ops', label: '任务中心', icon: Activity },
+              { id: 'export', label: '数据导出', icon: Download },
+              { id: 'config', label: '采集设置', icon: Settings2 },
+            ].map(page => <button key={page.id} aria-current={activeTab === page.id ? 'page' : undefined} onClick={() => navigateTab(page.id as AppTab)}><page.icon aria-hidden="true" /><span>{page.label}</span><ArrowUpRight aria-hidden="true" /></button>)}<div className="spatial-console"><ConsoleDrawer /></div></aside>
+            <div className="spatial-workspace-content">
+              {activeTab === 'accounts' && <section className="mt-0 md:col-span-2 xl:col-span-12">
+                <Suspense fallback={<StatePanel variant="loading" title={t('action.loading')} />}>
+                  <AccountMatrix onOpenSettings={() => navigateTab('config')} />
+                </Suspense>
+              </section>}
+              {activeTab === 'overview' && <section className="mt-0 md:col-span-2 xl:col-span-12">
                 <Suspense fallback={<StatePanel variant="loading" title={t('action.loading')} />}>
                   <MonitorOverview onOpenTasks={openTasks} onOpenAlerts={openAlerts} onOpenData={openData} onOpenConfig={() => navigateTab('config')} />
                 </Suspense>
-              </TabsContent>
-              <TabsContent value="data" className="mt-0 md:col-span-2 xl:col-span-12">
+              </section>}
+              {activeTab === 'topic-monitor' && <section className="mt-0 md:col-span-2 xl:col-span-12">
+                <Suspense fallback={<StatePanel variant="loading" title={t('action.loading')} />}>
+                  <TopicMonitor />
+                </Suspense>
+              </section>}
+              {activeTab === 'data' && <section className="mt-0 md:col-span-2 xl:col-span-12">
                 <Suspense fallback={<StatePanel variant="loading" title={t('action.loading')} />}>
                   <MonitorDataCenter focusAwemeId={dataFocus.awemeId} focusToken={dataFocus.token} />
                 </Suspense>
-              </TabsContent>
-              <TabsContent value="ops" className="mt-0 md:col-span-2 xl:col-span-12">
+              </section>}
+              {activeTab === 'ops' && <section className="mt-0 md:col-span-2 xl:col-span-12">
                 <Suspense fallback={<StatePanel variant="loading" title={t('action.loading')} />}>
                   <MonitorOpsCenter target={opsTarget} />
                 </Suspense>
-              </TabsContent>
-              <TabsContent value="hot" className="mt-0 md:col-span-2 xl:col-span-12">
+              </section>}
+              {activeTab === 'hot' && <section className="mt-0 md:col-span-2 xl:col-span-12">
                 <Suspense fallback={<StatePanel variant="loading" title={t('action.loading')} />}>
                   <MonitorHotRank />
                 </Suspense>
-              </TabsContent>
-              <TabsContent value="export" className="mt-0 md:col-span-2 xl:col-span-12">
+              </section>}
+              {activeTab === 'export' && <section className="mt-0 md:col-span-2 xl:col-span-12">
                 <Suspense fallback={<StatePanel variant="loading" title={t('action.loading')} />}>
                   <MonitorExport />
                 </Suspense>
-              </TabsContent>
-              <TabsContent value="config" className="mt-0 md:col-span-2 xl:col-span-12">
+              </section>}
+              {activeTab === 'config' && <section className="mt-0 md:col-span-2 xl:col-span-12">
                 <Suspense fallback={<StatePanel variant="loading" title={t('action.loading')} />}>
                   <CrawlerConfigPanel onOpenAbnormalTasks={(accountId) => openTasks('failed', undefined, accountId)} />
                 </Suspense>
-              </TabsContent>
+              </section>}
             </div>
-          </main>
-        </div>
-      </Tabs>
+          </div>}
+        </main>
+      </div>
 
       {/* Toast notifications - Theme-aware style */}
       <Toaster
         position="top-right"
+        theme={theme}
         toastOptions={{
-          className: 'glass-panel font-mono text-cyber-text-primary',
+          className: 'glass-panel text-cyber-text-primary',
           style: {
-            fontFamily: 'JetBrains Mono, monospace',
+            fontFamily: 'inherit',
           },
         }}
       />

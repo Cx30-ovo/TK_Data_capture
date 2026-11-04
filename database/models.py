@@ -420,6 +420,16 @@ class MonitorAlert(Base):
     resolved_at = Column(BigInteger, comment='解决时间戳')
 
 
+class PostEditorialLabel(Base):
+    __tablename__ = 'post_editorial_labels'
+
+    cache_key = Column(String(64), primary_key=True)
+    aweme_id = Column(String(255), nullable=False, index=True)
+    tags_json = Column(Text, nullable=False)
+    retry_at = Column(BigInteger, nullable=False, default=0)
+    updated_at = Column(BigInteger, nullable=False)
+
+
 class AIAnalysisResult(Base):
     __tablename__ = 'ai_analysis_results'
     __table_args__ = (

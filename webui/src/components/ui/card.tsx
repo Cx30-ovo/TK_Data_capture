@@ -3,7 +3,7 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
 
 const cardVariants = cva(
-  'relative rounded-[var(--card-radius)] border border-[var(--card-border)] bg-[var(--card-bg)] text-cyber-text-primary shadow-[var(--card-shadow)]',
+  'relative rounded-[var(--card-radius)] border border-[var(--card-border)] [background:var(--card-bg)] text-cyber-text-primary shadow-[var(--card-shadow)]',
   {
     variants: {
       variant: {
@@ -11,7 +11,7 @@ const cardVariants = cva(
         soft: 'bg-cyber-bg-tertiary/25 shadow-none',
         elevated: 'shadow-[var(--primitive-shadow-md)]',
         interactive:
-          'group cursor-default transition-[transform,border-color,box-shadow,background-color] duration-200 hover:-translate-y-0.5 hover:border-cyber-border-default hover:shadow-[var(--primitive-shadow-md)] focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/15 motion-reduce:transform-none',
+          'group cursor-default transition-[border-color,box-shadow,background-color] duration-200 hover:border-cyber-border-default hover:shadow-[var(--primitive-shadow-md)] focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/15 motion-reduce:transform-none',
       },
     },
     defaultVariants: {

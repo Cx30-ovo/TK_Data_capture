@@ -1,7 +1,4 @@
-/* Design Tokens - Auto-generated */
-/* Do not edit directly - modify tokens.json instead */
-
-/* === PRIMITIVES === */
+/* Spatial theme: primitive → semantic → component. Existing business aliases share these values. */
 :root {
   --primitive-color-gray-50: 246 248 251;
   --primitive-color-gray-100: 241 245 249;
@@ -57,81 +54,126 @@
   --primitive-duration-slow: 300ms;
 }
 
-/* === SEMANTIC === */
-:root {
-  --color-background: 246 248 251;
-  --color-surface: 255 255 255;
-  --color-surface-muted: 241 245 249;
-  --color-foreground: 15 23 42;
-  --color-foreground-secondary: 51 65 85;
-  --color-foreground-muted: 100 116 139;
-  --color-border: 226 232 240;
-  --color-border-strong: 203 213 225;
-  --color-primary: 37 99 235;
-  --color-primary-hover: 29 78 216;
-  --color-primary-contrast: 255 255 255;
-  --color-brand: 254 44 85;
-  --color-brand-strong: 217 26 63;
-  --color-cyan: 37 244 238;
-  --color-success: 22 163 74;
-  --color-warning: 194 65 12;
-  --color-danger: 190 18 60;
-  --color-info: 14 116 144;
-  --color-purple: 124 58 237;
-  --space-component: 0.75rem;
-  --space-section: 1.5rem;
-}
 
-/* === COMPONENTS === */
 :root {
-  --button-bg: rgb(var(--color-primary));
-  --button-fg: rgb(var(--color-primary-contrast));
-  --button-hover-bg: rgb(var(--color-primary-hover));
-  --button-radius: 0.5rem;
-  --button-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
-  --input-bg: rgb(var(--color-surface));
-  --input-border: rgb(var(--color-border));
+
+  --color-background: 241 246 252;
+  --color-surface: 250 253 255;
+  --color-surface-muted: 232 241 251;
+  --color-foreground: 23 52 85;
+  --color-foreground-secondary: 55 83 113;
+  --color-foreground-muted: 88 114 141;
+  --color-border: 210 226 241;
+  --color-border-strong: 174 201 228;
+  --color-primary: 24 111 204;
+  --color-primary-hover: 21 84 166;
+  --color-primary-contrast: 255 255 255;
+  --color-brand: 24 111 204;
+  --color-brand-strong: 21 84 166;
+  --color-cyan: 24 111 204;
+  --color-success: 21 120 82;
+  --color-warning: 162 90 17;
+  --color-danger: 184 44 72;
+  --color-info: 24 111 204;
+  --color-purple: 111 67 170;
+  --space-component: 0.75rem;
+  --space-section: 1.25rem;
+  --font-body: 'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-meta: 'JetBrains Mono', Consolas, monospace;
+  --radius: 0.75rem;
+  --button-bg: linear-gradient(120deg, #268ce9, #1859c5);
+  --button-fg: #fff;
+  --button-hover-bg: #1859c5;
+  --button-radius: 8px;
+  --button-shadow: none;
+  --input-bg: rgb(var(--color-surface-muted) / .55);
+  --input-border: rgb(var(--color-border-strong));
   --input-focus-ring: rgb(var(--color-primary));
-  --input-radius: 0.5rem;
-  --card-bg: rgb(var(--color-surface));
+  --input-radius: 8px;
+  --card-bg: linear-gradient(145deg, rgb(var(--color-surface)/.94), rgb(var(--color-surface)/.78));
   --card-border: rgb(var(--color-border));
-  --card-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
-  --card-radius: 0.5rem;
-  --badge-radius: 9999px;
-  --badge-font-size: 0.75rem;
-  --table-header-bg: rgb(var(--color-surface-muted));
-  --table-row-bg: rgb(var(--color-surface));
-  --table-row-hover-bg: rgb(var(--color-surface-muted));
+  --card-shadow: 0 6px 24px rgb(var(--color-primary)/.025);
+  --card-radius: 12px;
+  --badge-radius: 999px;
+  --badge-font-size: 12px;
+  --table-header-bg: rgb(var(--color-surface-muted)/.6);
+  --table-row-bg: transparent;
+  --table-row-hover-bg: rgb(var(--color-primary)/.05);
   --table-border: rgb(var(--color-border));
-  --sidebar-width: 15.5rem;
-  --sidebar-bg: rgb(var(--color-surface));
-  --sidebar-border: rgb(var(--color-border));
-  --statusbar-height: 3rem;
-  --statusbar-bg: rgb(var(--color-surface));
-  --console-collapsed-height: 2.5rem;
+  --shadow-glow-spread: 4px;
+  --shadow-glow-opacity: .12;
+  --glass-bg: var(--color-surface) / .85;
+  --glass-border: var(--color-border) / .8;
+  --glass-dark-bg: var(--color-surface) / .9;
+  --glass-dark-border: var(--color-border) / .8;
   --banner-bg: rgb(var(--color-surface));
   --banner-border: rgb(var(--color-border));
   --banner-title: rgb(var(--color-foreground));
   --banner-muted: rgb(var(--color-foreground-muted));
   --banner-brand: rgb(var(--color-brand));
-  --banner-tech: rgb(var(--color-cyan));
-  --banner-radius: 0.75rem;
-  --banner-min-height: 14rem;
+  --banner-tech: rgb(var(--color-primary));
+  --banner-radius: 12px;
+  --banner-min-height: 10rem;
+  --cyber-console-surface: 7 19 34;
+  --cyber-console-header: 12 31 53;
+  --cyber-console-foreground: 234 244 255;
+  --cyber-console-muted: 156 179 202;
+  --cyber-bg-primary: var(--color-background);
+  --cyber-bg-secondary: var(--color-surface-muted);
+  --cyber-bg-tertiary: var(--color-surface-muted);
+  --cyber-bg-panel: var(--color-surface);
+  --cyber-bg-elevated: var(--color-surface);
+  --cyber-text-primary: var(--color-foreground);
+  --cyber-text-secondary: var(--color-foreground-secondary);
+  --cyber-text-muted: var(--color-foreground-muted);
+  --cyber-border-default: var(--color-border-strong);
+  --cyber-border-subtle: var(--color-border);
+  --cyber-border-glow: var(--color-primary);
+  --cyber-neon-cyan: var(--color-primary);
+  --cyber-neon-cyan-dim: var(--color-info);
+  --cyber-neon-pink: var(--color-danger);
+  --cyber-neon-pink-dim: var(--color-danger);
+  --cyber-neon-green: var(--color-success);
+  --cyber-neon-green-dim: var(--color-success);
+  --cyber-neon-orange: var(--color-warning);
+  --cyber-neon-yellow: var(--color-warning);
+  --cyber-neon-purple: var(--color-purple);
+  --brand-red: var(--color-brand);
+  --brand-red-strong: var(--color-brand-strong);
+  --brand-cyan: var(--color-primary);
+  --cyber-report-bg: var(--color-surface);
+  --cyber-report-bg-muted: var(--color-surface-muted);
+  --cyber-report-fg: var(--color-foreground);
+  --cyber-report-fg-secondary: var(--color-foreground-secondary);
+  --cyber-report-fg-muted: var(--color-foreground-muted);
+  --cyber-report-border: var(--color-border);
+  --cyber-status-success: var(--color-success);
+  --cyber-status-warning: var(--color-warning);
+  --cyber-status-danger: var(--color-danger);
+  --cyber-status-info: var(--color-info);
+  --cyber-status-purple: var(--color-purple);
+  --cyber-status-neutral: var(--color-foreground-secondary);
 }
-
-/* === DARK MODE === */
 .dark {
-  --color-background: 11 17 32;
-  --color-surface: 17 24 39;
-  --color-surface-muted: 30 41 59;
-  --color-foreground: 230 237 243;
-  --color-foreground-secondary: 203 213 225;
-  --color-foreground-muted: 148 163 184;
-  --color-border: 30 41 59;
-  --color-border-strong: 51 65 85;
-  --color-success: 74 222 128;
-  --color-warning: 251 146 60;
-  --color-danger: 251 113 133;
-  --color-info: 34 211 238;
-  --color-purple: 192 132 252;
+
+  --color-background: 7 19 34;
+  --color-surface: 12 31 53;
+  --color-surface-muted: 21 46 73;
+  --color-foreground: 234 244 255;
+  --color-foreground-secondary: 187 208 229;
+  --color-foreground-muted: 147 172 200;
+  --color-border: 38 66 96;
+  --color-border-strong: 60 94 129;
+  --color-primary: 103 200 255;
+  --color-primary-hover: 133 216 255;
+  --color-brand: 103 200 255;
+  --color-brand-strong: 77 174 238;
+  --color-cyan: 103 200 255;
+  --color-success: 88 211 163;
+  --color-warning: 245 191 98;
+  --color-danger: 255 139 157;
+  --color-info: 103 200 255;
+  --color-purple: 191 165 250;
+  --primitive-shadow-md: 0 8px 24px rgb(0 6 18 / .25);
+  --primitive-shadow-lg: 0 24px 70px rgb(0 6 18 / .5);
 }

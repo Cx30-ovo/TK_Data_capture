@@ -11,10 +11,11 @@ from datetime import datetime
 from typing import Any, Iterable, Mapping
 
 import jieba
+from .title_sentence import TITLE_SENTENCE_RULE, TITLE_SENTENCE_VERSION, TITLE_LENGTH_BINS, TITLE_LENGTH_GROUP_VERSION, extract_title_sentence
 
 
 DATA_LIMIT = "无曝光/播放数据，结论仅反映互动表现"
-LENGTH_GROUPS = ("≤20字", "21-25字", "26-30字", "31-40字", ">40字")
+LENGTH_GROUPS = tuple(label + "字" for label, _, _ in TITLE_LENGTH_BINS)
 STOP_WORDS = {
     "一个", "一些", "一种", "这个", "那个", "这些", "那些", "我们", "你们", "他们",
     "什么", "怎么", "如何", "为什么", "可以", "就是", "还是", "已经", "没有", "不是",
@@ -30,12 +31,8 @@ _CHINESE_TOKEN_RE = re.compile(r"^[\u3400-\u4dbf\u4e00-\u9fff]{2,}$")
 
 
 def clean_title(value: Any) -> str:
-    """Remove topics, mentions and bracketed metadata, keeping Chinese characters only."""
-    text = str(value or "")
-    text = _HASHTAG_RE.sub(" ", text)
-    text = _MENTION_RE.sub(" ", text)
-    text = _BRACKET_RE.sub(" ", text)
-    return "".join(_CHINESE_RE.findall(text))
+    """Use the same extracted headline and letter/number count as account profiles."""
+    return "".join(char for char in extract_title_sentence(str(value or ""))["text"] if char.isalnum())
 
 
 def normalize_title_template(value: Any) -> str:
@@ -118,15 +115,7 @@ def _keyword_status(*, count: int, hit_count: int, lift_percent: float | None) -
 
 
 def _length_group(length: int) -> str:
-    if length <= 20:
-        return "≤20字"
-    if length <= 25:
-        return "21-25字"
-    if length <= 30:
-        return "26-30字"
-    if length <= 40:
-        return "31-40字"
-    return ">40字"
+    return next(label + "字" for label, low, high in TITLE_LENGTH_BINS if low <= length <= high)
 
 
 def _latest_snapshot(snapshots: Iterable[Any]) -> Any | None:
@@ -144,14 +133,18 @@ def build_rows(posts: list[Any], snapshots_by_post: Mapping[str, list[Any]]) -> 
         comments = int(getattr(latest, "comment_count", 0) or 0)
         collects = int(getattr(latest, "collected_count", 0) or 0)
         shares = int(getattr(latest, "share_count", 0) or 0)
-        cleaned = clean_title(post.title or post.desc or "")
-        length = len(cleaned)
+        raw_title = str(post.title or post.desc or "")
+        extracted = extract_title_sentence(raw_title)
+        cleaned = clean_title(raw_title)
+        length = extracted["word_count"]
         rows.append({
             "aweme_id": str(post.aweme_id),
-            "title": str(post.title or post.desc or post.aweme_id),
+            "title": extracted["text"],
+            "raw_caption": raw_title,
+            "title_extraction_method": extracted["method"],
             "title_clean": cleaned,
             "title_len": length,
-            "len_group": _length_group(length),
+            "len_group": _length_group(length) if length is not None else None,
             "create_time": int(post.create_time or 0),
             "publish_time": datetime.fromtimestamp(int(post.create_time or 0)).isoformat(timespec="seconds"),
             "likes": likes,
@@ -159,7 +152,7 @@ def build_rows(posts: list[Any], snapshots_by_post: Mapping[str, list[Any]]) -> 
             "collects": collects,
             "shares": shares,
             "interaction": interaction_score(likes, comments, collects, shares),
-            "template": normalize_title_template(post.title or post.desc or ""),
+            "template": normalize_title_template(extracted["text"]),
         })
     return rows
 
@@ -210,8 +203,8 @@ def _long_short_statistics(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "avg_shares": _round(statistics.fmean(row["shares"] for row in items)) if items else 0.0,
         }
 
-    short = summarize("短标题", [row for row in rows if row["title_len"] <= 20])
-    long = summarize("长标题", [row for row in rows if row["title_len"] >= 21])
+    short = summarize("短标题", [row for row in rows if row["title_len"] is not None and row["title_len"] <= 20])
+    long = summarize("长标题", [row for row in rows if row["title_len"] is not None and row["title_len"] >= 21])
     baseline = short["avg_interaction"]
     lift = _round((long["avg_interaction"] - baseline) / baseline * 100) if baseline else None
     return {"short": short, "long": long, "long_vs_short_lift_percent": lift}
@@ -282,8 +275,9 @@ def compute_title_strategy(posts: list[Any], snapshots_by_post: Mapping[str, lis
         reverse=True,
     )
 
+    length_rows = [row for row in rows if row["title_len"] is not None]
     length_stats = [
-        _group_statistics(group, [row for row in rows if row["len_group"] == group], total, overall_median)
+        _group_statistics(group, [row for row in length_rows if row["len_group"] == group], len(length_rows), overall_median)
         for group in LENGTH_GROUPS
     ]
     hit_samples = sorted((row for row in rows if row["is_hit"]), key=lambda row: row["interaction"], reverse=True)[:20]
@@ -296,7 +290,7 @@ def compute_title_strategy(posts: list[Any], snapshots_by_post: Mapping[str, lis
         if count >= 2
     ]
 
-    sample_keys = ("aweme_id", "title", "title_clean", "create_time", "publish_time", "title_len", "interaction", "likes", "comments", "collects", "shares")
+    sample_keys = ("aweme_id", "title", "raw_caption", "title_extraction_method", "title_clean", "create_time", "publish_time", "title_len", "interaction", "likes", "comments", "collects", "shares")
     compact = lambda row: {key: row[key] for key in sample_keys}
     return {
         "overview": {
@@ -312,6 +306,9 @@ def compute_title_strategy(posts: list[Any], snapshots_by_post: Mapping[str, lis
         },
         "top_keywords": top_keywords[:10],
         "title_length_groups": length_stats,
+        "title_extraction": {"version": TITLE_SENTENCE_VERSION, "rule": TITLE_SENTENCE_RULE,
+                             "grouping_version": TITLE_LENGTH_GROUP_VERSION,
+                             "sample_count": len(length_rows), "excluded_count": total - len(length_rows)},
         "long_vs_short": _long_short_statistics(rows),
         "hit_samples": [compact(row) for row in hit_samples],
         "normal_samples": [compact(row) for row in normal_samples],

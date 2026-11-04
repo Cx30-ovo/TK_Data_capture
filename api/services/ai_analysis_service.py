@@ -17,13 +17,14 @@ from database.monitor_repository import monitor_repository
 from .ai_model_service import AIServiceError, ai_model_service
 from .cover_analysis_service import cover_analysis_service
 from .title_strategy_metrics import DATA_LIMIT, clean_title, compute_title_strategy
+from .title_sentence import TITLE_SENTENCE_VERSION, TITLE_LENGTH_GROUP_VERSION
 from .title_strategy_prompts import PATTERN_SYSTEM_PROMPT
 
 
 TOPIC_PROMPT_VERSION = "topic-v8"
 LIFECYCLE_PROMPT_VERSION = "lifecycle-v2"
 TOPIC_IDEAS_PROMPT_VERSION = "topic-ideas-v4"
-TITLE_STRATEGY_PROMPT_VERSION = "content-performance-v2"
+TITLE_STRATEGY_PROMPT_VERSION = "content-performance-four-bins-v5"
 TIME_RANGE_SECONDS = {
     "24h": 24 * 60 * 60,
     "7d": 7 * 24 * 60 * 60,
@@ -393,6 +394,7 @@ class AIAnalysisService:
                 "interaction_formula": "点赞 + 2×评论 + 2×收藏 + 3×转发",
                 "hit_definition": "互动分 >= max(P90, 均值 + 2×标准差)",
                 "data_limit": DATA_LIMIT,
+                "title_extraction": metrics.get("title_extraction") or {},
             }
             phase_one_payload = {
                 **compact_context,
@@ -480,6 +482,7 @@ class AIAnalysisService:
             },
             "top_keywords": top_keywords,
             "title_length_analysis": {
+                "extraction": metrics.get("title_extraction") or {},
                 "groups": metrics.get("title_length_groups") or [],
                 "long_vs_short": metrics.get("long_vs_short") or {},
                 "best_range": self._strategy_text(length_ai.get("best_range"), 80),
@@ -529,6 +532,7 @@ class AIAnalysisService:
         length_ai = phase_one.get("title_length_analysis") if isinstance(phase_one.get("title_length_analysis"), dict) else {}
         long_short_ai = length_ai.get("long_vs_short") if isinstance(length_ai.get("long_vs_short"), dict) else {}
         title_length_analysis = {
+            "extraction": metrics.get("title_extraction") or {},
             "groups": metrics.get("title_length_groups") or [],
             "long_vs_short": metrics.get("long_vs_short") or {},
             "best_range": self._strategy_text(length_ai.get("best_range"), 80),
@@ -1175,6 +1179,14 @@ class AIAnalysisService:
             except json.JSONDecodeError:
                 return default
 
+        result = loads(item.result_json, {})
+        if item.analysis_type == "title_strategy" and isinstance(result, dict):
+            length = result.get("title_length_analysis")
+            if isinstance(length, dict):
+                # Read-time annotation only: never rewrite old persisted reports.
+                stale = ((length.get("extraction") or {}).get("version") != TITLE_SENTENCE_VERSION
+                         or (length.get("extraction") or {}).get("grouping_version") != TITLE_LENGTH_GROUP_VERSION)
+                result["title_length_analysis"] = {**length, "stale_caption_length": stale}
         return {
             "id": item.id,
             "analysis_type": item.analysis_type,
@@ -1184,7 +1196,7 @@ class AIAnalysisService:
             "provider": item.provider,
             "model": item.model_name,
             "prompt_version": item.prompt_version,
-            "result": loads(item.result_json, {}),
+            "result": result,
             "usage": loads(item.usage_json, {}),
             "created_at": item.created_at,
             "updated_at": item.updated_at,

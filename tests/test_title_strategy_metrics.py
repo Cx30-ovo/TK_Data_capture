@@ -1,6 +1,15 @@
 from types import SimpleNamespace
+import pytest
 
 from api.services.title_strategy_metrics import clean_title, compute_title_strategy, interaction_score
+from api.services.title_strategy_metrics import _length_group
+
+
+@pytest.mark.parametrize("length,group", [(1, "≤20字"), (20, "≤20字"),
+    (21, "21—30字"), (30, "21—30字"), (31, "31—40字"),
+    (40, "31—40字"), (41, ">40字"), (100, ">40字")])
+def test_four_length_groups_boundaries(length, group):
+    assert _length_group(length) == group
 
 
 def post(index: int, title: str):

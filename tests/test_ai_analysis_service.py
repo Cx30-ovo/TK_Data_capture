@@ -1,4 +1,5 @@
 import time
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -6,6 +7,46 @@ import pytest
 from api.services.ai_analysis_service import AIAnalysisService
 from database import db_session
 from database.ai_analysis_repository import ai_analysis_repository
+from api.services.title_sentence import TITLE_SENTENCE_VERSION, TITLE_LENGTH_GROUP_VERSION
+
+
+def test_old_title_length_cache_annotated_without_rewriting_bytes():
+    raw = json.dumps({"title_length_analysis": {"groups": [{"count": 10}]}})
+    item = SimpleNamespace(id=1, analysis_type="title_strategy", status="done", scope_json="{}",
+        provider="fixture", model_name="fixture", prompt_version="content-performance-v2",
+        result_json=raw, usage_json="{}", created_at=1, updated_at=1, expires_at=None)
+    result = AIAnalysisService._serialize_cache_item(item, cache_hit=True)
+    assert result["result"]["title_length_analysis"]["stale_caption_length"] is True
+    assert item.result_json == raw
+    item.result_json = json.dumps({"title_length_analysis": {"extraction": {"version": "caption-cleaned-title-v2", "grouping_version": "title-length-four-bins-v1"}}})
+    result = AIAnalysisService._serialize_cache_item(item, cache_hit=True)
+    assert result["result"]["title_length_analysis"]["stale_caption_length"] is True
+    current = json.dumps({"title_length_analysis": {"extraction": {
+        "version": TITLE_SENTENCE_VERSION, "grouping_version": TITLE_LENGTH_GROUP_VERSION},
+        "groups": [{"count": 10}]}})
+    item.result_json = current
+    result = AIAnalysisService._serialize_cache_item(item, cache_hit=True)
+    assert result["result"]["title_length_analysis"]["stale_caption_length"] is False
+    assert result["result"]["title_length_analysis"]["groups"] == [{"count": 10}]
+    assert item.result_json == current
+
+
+@pytest.mark.parametrize('version,grouping,stale', [
+    ('caption-cleaned-title-v2', TITLE_LENGTH_GROUP_VERSION, True),
+    ('caption-cleaned-title-v3', TITLE_LENGTH_GROUP_VERSION, True),
+    (TITLE_SENTENCE_VERSION, 'old-bins', True),
+    (TITLE_SENTENCE_VERSION, TITLE_LENGTH_GROUP_VERSION, False),
+    (None, None, True),
+])
+def test_title_length_version_authority_is_read_only(version, grouping, stale):
+    raw = json.dumps({'title_length_analysis': {'extraction': {'version':version,'grouping_version':grouping},
+                                              'stale_caption_length':not stale}})
+    item = SimpleNamespace(id=1, analysis_type='title_strategy', status='done', scope_json='{}',
+        provider='fixture', model_name='fixture', prompt_version='fixture', result_json=raw,
+        usage_json='{}', created_at=1, updated_at=1, expires_at=None)
+    result = AIAnalysisService._serialize_cache_item(item, cache_hit=True)
+    assert result['result']['title_length_analysis']['stale_caption_length'] is stale
+    assert item.result_json == raw
 
 
 @pytest.fixture

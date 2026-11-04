@@ -285,7 +285,10 @@ function ContentPerformance({ current, accountId }: { current: AIAnalysisRespons
     return <Notice text={summary || t('titleStrategy.insufficient')} />
   }
   const cover = result.cover_analysis
-  const lengthGroups = result.title_length_analysis.groups || []
+  // The server owns the active extraction version. Fallback supports an older
+  // server that only annotated stale reports, without rejecting its v4 results.
+  const staleTitleLength = result.title_length_analysis.stale_caption_length ?? (result.title_length_analysis.extraction?.version !== 'caption-cleaned-title-v4' || result.title_length_analysis.extraction?.grouping_version !== 'title-length-four-bins-v1')
+  const lengthGroups = staleTitleLength ? [] : (result.title_length_analysis.groups || [])
   const stableLengthGroups = lengthGroups.filter((row) => row.count >= 30)
   const bestLengthGroup = [...(stableLengthGroups.length ? stableLengthGroups : lengthGroups)]
     .filter((row) => row.count > 0)
@@ -315,7 +318,7 @@ function ContentPerformance({ current, accountId }: { current: AIAnalysisRespons
 
         <TabsContent value="titles" className="mt-0"><Tabs defaultValue="length" className="space-y-3"><TabsList className="h-auto gap-1"><TabsTrigger value="length" className="min-h-11 px-4">{t('titleStrategy.lengthTitle')}</TabsTrigger><TabsTrigger value="keywords" className="min-h-11 px-4">{t('titleStrategy.keywordTitle')}</TabsTrigger></TabsList><TabsContent value="length" className="mt-0">
           <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <LengthPerformanceChart rows={result.title_length_analysis.groups} overallMedian={result.overview.interaction_median || 0} />
+            {staleTitleLength ? <p role="status" className="text-sm text-amber-800">此报告采用旧的文案长度口径，标题长度图已停用；需要手动重新分析后才显示标题句统计，不会自动调用模型。</p> : <><p className="mb-4 text-sm text-slate-600">{result.title_length_analysis.extraction?.rule} 纳入 {result.title_length_analysis.extraction?.sample_count} 篇，无法提取 {result.title_length_analysis.extraction?.excluded_count} 篇。</p><LengthPerformanceChart rows={lengthGroups} overallMedian={result.overview.interaction_median || 0} /></>}
           </article>
           </TabsContent><TabsContent value="keywords" className="mt-0"><KeywordPerformanceChart rows={result.top_keywords} /></TabsContent></Tabs>
         </TabsContent>

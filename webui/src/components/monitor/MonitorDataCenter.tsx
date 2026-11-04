@@ -156,7 +156,7 @@ export function MonitorDataCenter({ focusAwemeId, focusToken }: { focusAwemeId?:
         </div>
       </section>
 
-      <section className="overview-panel z-20 p-3 backdrop-blur lg:sticky lg:top-12" aria-labelledby="data-center-filter-title">
+      <section className="overview-panel p-3" aria-labelledby="data-center-filter-title">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
           <div className="flex min-w-40 items-center gap-2 lg:self-center">
             <span className="grid h-8 w-8 place-items-center rounded-md bg-cyber-bg-tertiary text-cyber-text-secondary"><Filter aria-hidden="true" className="h-4 w-4" /></span>

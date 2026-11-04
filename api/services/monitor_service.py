@@ -2,6 +2,7 @@
 """Business service linking the monitor repository with the Douyin crawler."""
 
 import asyncio
+import os
 import shutil
 import time
 import urllib.parse
@@ -16,15 +17,22 @@ import config
 from database.monitor_repository import monitor_repository
 from media_platform.douyin.core import DouYinCrawler
 from tools.cdp_browser import CDPBrowserManager, safe_page_goto
-from tools.douyin_browser_coordinator import DouyinTabLease, CollectionStoppedError
+from tools.douyin_browser_coordinator import DouyinTabLease, DouyinBrowserBusyError, CollectionStoppedError
 from tools.collection_errors import classify_collection_error
 
+from .post_editorial_service import post_editorial_service
 from .crawler_manager import crawler_manager
 from .monitor_execution import MonitorExecution
 from .browser_recovery import BrowserRecovery
+from . import monitor_comments_service as comment_service
+from database import monitor_comments_repository as comment_repo
 
 RISK_CONTROL_BASE_COOLDOWN_SECONDS = 30 * 60
-RISK_CONTROL_MAX_COOLDOWN_SECONDS = 6 * 60 * 60
+_risk_control_cap = os.getenv("RISK_CONTROL_MAX_COOLDOWN_SECONDS", "")
+RISK_CONTROL_MAX_COOLDOWN_SECONDS = max(
+    RISK_CONTROL_BASE_COOLDOWN_SECONDS,
+    int(_risk_control_cap) if _risk_control_cap.isdecimal() else 6 * 60 * 60,
+)
 DISCOVERY_RETRY_BASE_SECONDS = 2 * 60
 DISCOVERY_RETRY_MAX_SECONDS = 30 * 60
 
@@ -78,6 +86,8 @@ def monitored_operation(kind):
                 execution.update(state="stopped", phase="finished", result=result)
                 return result
             except asyncio.CancelledError:
+                if kind == "snapshots":
+                    self._snapshot_recovery_pending = True
                 execution.update(state="stopped", phase="finished", result={"status": "stopped", "reason": "服务正在关闭"})
                 raise
             except Exception as exc:
@@ -478,6 +488,7 @@ class MonitorService:
         self._discovery_retries = {}
         self._recovery = BrowserRecovery(config.ENABLE_BROWSER_AUTO_RECOVERY)
         self._last_browser_check = 0.0
+        self._snapshot_recovery_pending = False
 
     def execution_status(self):
         return {"paused": self._paused, "crawler_running": self._crawler_is_busy(), "retry_after_seconds": self._risk_control_cooldown_remaining(),
@@ -648,6 +659,8 @@ class MonitorService:
 
     async def start(self) -> None:
         if not self.is_running:
+            self._snapshot_recovery_pending = True
+            await self._recover_interrupted_snapshots()
             reconciled = await monitor_repository.reconcile_deleted_post_jobs()
             if reconciled:
                 await crawler_manager.add_log(
@@ -655,6 +668,26 @@ class MonitorService:
                     "info",
                 )
             self._task = asyncio.create_task(self._loop())
+
+    async def _recover_interrupted_snapshots(self) -> bool:
+        if not self._snapshot_recovery_pending:
+            return True
+        if self._lock.locked() or (self._execution and self._execution.active) or self._crawler_is_busy():
+            return False
+        try:
+            # The same OS-backed lease is held from browser entry through snapshot
+            # commit/cleanup. Do not mistake another process's work for an orphan.
+            async with self._lock, DouyinTabLease(timeout=0):
+                result = await monitor_repository.recover_interrupted_snapshot_jobs()
+        except DouyinBrowserBusyError:
+            return False
+        self._snapshot_recovery_pending = False
+        if sum(result.values()):
+            await crawler_manager.add_log(
+                f"[Monitor] 中断快照任务回收：重新排队 {result['pending']}，已错过 {result['missed']}，"
+                f"核实已完成 {result['done']}，已跳过 {result['skipped']}，待处理 {result['failed']}", "warning",
+            )
+        return True
 
     async def stop(self) -> None:
         if self._task:
@@ -695,6 +728,9 @@ class MonitorService:
         if self._risk_control_cooldown_remaining():
             return
 
+        if not await self._recover_interrupted_snapshots():
+            return
+
         missed_count = await monitor_repository.mark_overdue_jobs_missed()
         if missed_count > 0:
             await self._create_alert(
@@ -725,6 +761,13 @@ class MonitorService:
                 "info",
             )
             await self.discover_account(sec_user_id=account.sec_user_id)
+
+        # Resume one queued comment slice even when no new account discovery is due.
+        # The next cycle starts with snapshots/discovery again; do not monopolize the browser.
+        if not (self._paused or self._recovery.pending or self._risk_control_cooldown_remaining()):
+            eligible=[a.sec_user_id for a in accounts if not self._discovery_retry_remaining(a.sec_user_id)]
+            ident=await asyncio.to_thread(comment_repo.next_due,comment_service.source(),eligible)
+            if ident:await self.collect_post_comments(ident,manual=False)
 
     def _crawler_is_busy(self) -> bool:
         return bool(crawler_manager.process and crawler_manager.process.poll() is None)
@@ -846,41 +889,71 @@ class MonitorService:
                         if metrics.get("cover_url"):
                             item["cover_url"] = metrics["cover_url"]
 
-            created_posts = 0
-            created_jobs = 0
-            updated_covers = 0
-            existing_processed = 0
-            self._progress(phase="saving")
-            for item in posts:
-                post, created = await monitor_repository.upsert_post(
-                    aweme_id=item["aweme_id"],
-                    sec_user_id=item["sec_user_id"],
-                    title=item.get("title", ""),
-                    desc=item.get("desc", ""),
-                    create_time=item["create_time"],
-                    canonical_url=item["canonical_url"],
-                    cover_url=item.get("cover_url", ""),
-                    platform=item.get("platform", "dy"),
-                    status=item.get("status", "active"),
-                    source=item.get("source", "creator_monitor"),
-                )
-                if item["aweme_id"] in missing_cover_ids and item.get("cover_url"):
-                    updated_covers += 1
-                if created:
-                    created_posts += 1
-                    await monitor_repository.record_first_seen_snapshot(
-                        aweme_id=post.aweme_id,
-                        platform=post.platform,
-                        liked_count=item.get("liked_count", 0),
-                        collected_count=item.get("collected_count", 0),
-                        comment_count=item.get("comment_count", 0),
-                        share_count=item.get("share_count", 0),
-                        captured_at=post.first_seen_at,
+                created_posts = 0
+                created_jobs = 0
+                updated_covers = 0
+                existing_processed = 0
+                self._progress(phase="saving")
+                for item in posts:
+                    post, created = await monitor_repository.upsert_post(
+                        aweme_id=item["aweme_id"],
+                        sec_user_id=item["sec_user_id"],
+                        title=item.get("title", ""),
+                        desc=item.get("desc", ""),
+                        create_time=item["create_time"],
+                        canonical_url=item["canonical_url"],
+                        cover_url=item.get("cover_url", ""),
+                        platform=item.get("platform", "dy"),
+                        status=item.get("status", "active"),
+                        source=item.get("source", "creator_monitor"),
                     )
-                    created_jobs += len(await monitor_repository.create_snapshot_jobs(post))
-                else:
-                    existing_processed += 1
-                self._progress(saved=created_posts + existing_processed, completed=created_posts)
+                    if item["aweme_id"] in missing_cover_ids and item.get("cover_url"):
+                        updated_covers += 1
+                    if created:
+                        created_posts += 1
+                        await monitor_repository.record_first_seen_snapshot(
+                            aweme_id=post.aweme_id,
+                            platform=post.platform,
+                            liked_count=item.get("liked_count", 0),
+                            collected_count=item.get("collected_count", 0),
+                            comment_count=item.get("comment_count", 0),
+                            share_count=item.get("share_count", 0),
+                            captured_at=post.first_seen_at,
+                        )
+                        created_jobs += len(await monitor_repository.create_snapshot_jobs(post))
+                    else:
+                        existing_processed += 1
+                    self._progress(saved=created_posts + existing_processed, completed=created_posts)
+
+                comment_results = []
+                try:
+                    policy = await asyncio.to_thread(comment_repo.policy, comment_service.source(), account.sec_user_id)
+                    if policy['enabled']:
+                        await asyncio.to_thread(comment_repo.enqueue, comment_service.source(), account.sec_user_id,
+                            [item['aweme_id'] for item in posts if item['aweme_id'] not in known_ids])
+                        due = [] if discovery_error or self._should_stop() else await asyncio.to_thread(comment_repo.due, comment_service.source(), account.sec_user_id)
+                        comment_deadline=time.monotonic()+120
+                        for ident in due:
+                            if self._should_stop() or time.monotonic()>=comment_deadline:break
+                            linked = await monitor_repository.get_post(ident)
+                            if (not linked or linked.sec_user_id != account.sec_user_id or linked.status != 'active'
+                                    or linked.create_time < new_post_cutoff and await asyncio.to_thread(
+                                        comment_repo.fully_traversed,comment_service.source(),ident)):
+                                await asyncio.to_thread(comment_repo.expire, comment_service.source(), ident)
+                                continue
+                            self._progress(phase='comments', current_post=ident)
+                            outcome, failure = await comment_service.collect_one(active_fetcher, account.sec_user_id, ident, policy,
+                                timeout_seconds=max(.1,comment_deadline-time.monotonic()))
+                            comment_results.append({'aweme_id':ident, **outcome})
+                            if failure and classify_collection_error(failure).error_code in (
+                                'risk_control','login_required','browser_disconnected','tab_changed'):
+                                discovery_error = failure
+                                break
+                except Exception as exc:
+                    # Sidecar failures never undo discovered posts or snapshots.
+                    comment_results.append({'state':'failed', 'message':classify_collection_error(exc).message})
+                    if classify_collection_error(exc).error_code in ('risk_control','login_required','browser_disconnected','tab_changed'):
+                        discovery_error=exc
 
             # A stopped/partial scan must not claim the full discovery interval.
             if not discovery_error and not self._should_stop():
@@ -911,6 +984,7 @@ class MonitorService:
                 "created_posts": created_posts,
                 "created_jobs": created_jobs,
                 "updated_covers": updated_covers,
+                "comment_collections": comment_results,
             }
             if discovery_error:
                 failure = classify_collection_error(discovery_error)
@@ -920,6 +994,69 @@ class MonitorService:
                 await crawler_manager.add_log(f"[Monitor] [{account_name}] [{failure.error_code}] {failure.message}；已保存部分数据", "warning")
                 result.update(status="partial", reason=failure.message, **failure.as_dict(), retry_after_seconds=cooldown)
             return result
+
+    async def _refresh_snapshot_comments(self, targets, fetcher, allow_requests=True):
+        """Queue every committed snapshot first, then share one paced browser slice."""
+        results=[];ready=[];critical=None
+        for key,ident in targets:
+            try:
+                policy=await asyncio.to_thread(comment_repo.policy,comment_service.source(),key)
+                if not policy['enabled']:continue
+                await asyncio.to_thread(comment_repo.request_snapshot_refresh,comment_service.source(),key,ident)
+                ready.append((key,ident,policy))
+            except Exception as exc:
+                failure=classify_collection_error(exc)
+                results.append({'aweme_id':ident,'state':'failed','error_code':failure.error_code,'message':failure.message})
+        deadline=time.monotonic()+120
+        for key,ident,policy in ready:
+            if not allow_requests or self._should_stop() or time.monotonic()>=deadline or critical:
+                results.append({'aweme_id':ident,'state':'pending','message':'快照已保存，评论等待续采'})
+                continue
+            try:
+                self._progress(phase='comments',sec_user_id=key,current_post=ident)
+                outcome,error=await comment_service.collect_one(fetcher,key,ident,policy,
+                    timeout_seconds=max(.1,deadline-time.monotonic()))
+                results.append({'aweme_id':ident,**outcome})
+                failure=classify_collection_error(error) if error else None
+            except Exception as exc:
+                failure=classify_collection_error(exc)
+                results.append({'aweme_id':ident,'state':'failed','error_code':failure.error_code,'message':failure.message})
+            if failure and failure.error_code in ('risk_control','login_required','browser_disconnected','tab_changed'):
+                critical=failure
+                await self._handle_collection_failure(failure,'comments',key)
+                self._progress(error=failure.as_dict())
+            if failure:
+                await crawler_manager.add_log(f'[Monitor] [评论] [{failure.error_code}] {failure.message}；快照已保存','warning')
+        return results,critical
+
+    @monitored_operation("comments")
+    async def collect_post_comments(self, aweme_id: str, fetcher=None, manual: bool = True) -> dict:
+        async with self._lock:
+            cooldown=self._risk_control_cooldown_remaining()
+            if cooldown:return {'status':'deferred','reason':'风控冷却中','retry_after_seconds':cooldown}
+            if self._crawler_is_busy():return {'status':'skipped','reason':'普通采集正在执行'}
+            post=await monitor_repository.get_post(aweme_id)
+            if not post or post.status!='active':
+                if not manual:await asyncio.to_thread(comment_repo.expire,comment_service.source(),aweme_id)
+                return {'status':'skipped','reason':'作品不存在或已不可用'}
+            account=await monitor_repository.get_monitored_account(post.sec_user_id)
+            if not account or not account.enabled:return {'status':'skipped','reason':'账号发现已暂停'}
+            policy=await asyncio.to_thread(comment_repo.policy,comment_service.source(),post.sec_user_id)
+            if not policy['enabled']:return {'status':'skipped','reason':'请先启用该账号的评论采集'}
+            if (not manual and post.create_time<int(time.time())-7*86400 and await asyncio.to_thread(
+                    comment_repo.fully_traversed,comment_service.source(),aweme_id)):
+                await asyncio.to_thread(comment_repo.expire,comment_service.source(),aweme_id)
+                return {'status':'skipped','reason':'旧作品评论已完成全量分页，不再定时刷新'}
+            self._progress(account_name=account.display_name,sec_user_id=account.sec_user_id,phase='comments',current_post=aweme_id)
+            fetcher=fetcher or DouyinMonitorFetcher()
+            self._configure_fetcher(fetcher)
+            async with fetcher as active:
+                result,failure=await comment_service.collect_one(active,post.sec_user_id,aweme_id,policy,manual=manual)
+            if failure and classify_collection_error(failure).error_code in (
+                'risk_control','login_required','browser_disconnected','tab_changed'):
+                raise failure
+            self._progress(saved=result.get('root_comments',0)+result.get('replies',0))
+            return {'status':result['state'] if result['state'] in ('deferred','partial') else 'ok',**result}
 
     async def get_hot_rank(self, force: bool = False, fetcher=None) -> dict:
         cache_ttl_seconds = 60
@@ -1036,6 +1173,9 @@ class MonitorService:
             deleted_posts = 0
             account_results: dict[str, dict[str, int]] = {}
             batch_failure = None
+            snapshot_comment_targets = {}
+            comment_results = []
+            comment_failure = None
             async with fetcher as active_fetcher:
                 for index, job in enumerate(due_jobs):
                     if self._should_stop():
@@ -1073,6 +1213,8 @@ class MonitorService:
                         completed += 1
                         result = account_results.setdefault(job.sec_user_id or "unassigned", {"completed": 0, "retried": 0, "failed": 0})
                         result["completed"] += 1
+                        if current_account and getattr(current_account,'enabled',True):
+                            snapshot_comment_targets[(job.sec_user_id,job.aweme_id)] = None
                     except DouyinPostUnavailableError as exc:
                         skipped_jobs = await monitor_repository.mark_post_deleted_and_skip_jobs(
                             aweme_id=job.aweme_id,
@@ -1110,6 +1252,11 @@ class MonitorService:
                             break
                     self._progress(processed=index + 1, completed=completed, retried=retried, failed=failed, skipped=skipped)
 
+                # Comments are an independent follow-up. Failure cannot retry or
+                # undo a successfully committed metrics snapshot.
+                comment_results,comment_failure = await self._refresh_snapshot_comments(
+                    snapshot_comment_targets,active_fetcher,allow_requests=batch_failure is None)
+
             await crawler_manager.add_log(
                 f"[Monitor] [快照批次] Snapshot cycle result: completed={completed}, retried={retried}, "
                 f"failed={failed}, skipped={skipped}, deleted_posts={deleted_posts}",
@@ -1142,10 +1289,17 @@ class MonitorService:
                 "skipped": skipped,
                 "deleted_posts": deleted_posts,
             }
+            if comment_results:result['comment_collections']=comment_results
             if retried or failed:
                 result.update(reason=batch_failure.message if batch_failure else "部分任务未完成，已安排重试",
                               error_code=batch_failure.error_code if batch_failure else None,
                               retry_after_seconds=max(self._risk_control_cooldown_remaining(), self._recovery.snapshot()["retry_after_seconds"]))
+            if comment_failure:
+                result.update(status='partial',reason='快照已保存，评论更新未完成',
+                              error_code=comment_failure.error_code,
+                              retry_after_seconds=max(self._risk_control_cooldown_remaining(),self._recovery.snapshot()['retry_after_seconds']))
+            elif not (retried or failed) and any(item.get('error_code') for item in comment_results):
+                result.update(status='partial',reason='快照已保存，部分评论等待重试')
             return result
 
     async def _create_alert(
@@ -1184,8 +1338,8 @@ class MonitorService:
                     crawler.browser_context = browser_context
                     page = await crawler._get_or_create_context_page(bootstrap=True)
                     await safe_page_goto(page, crawler.index_url, accepted_hosts=("douyin.com",))
-                    if not config.CDP_HEADLESS:
-                        await page.bring_to_front()
+                    # Preparing a login tab is background work. Never activate it
+                    # over the editor's current workbench tab, including on restart.
                 finally:
                     await manager.cleanup()
         await crawler_manager.add_log("[Monitor] Dedicated browser is ready", "success")
@@ -1354,6 +1508,7 @@ class MonitorService:
         sec_user_id = account.sec_user_id if account else None
         posts = await monitor_repository.list_posts(limit=limit, sec_user_id=sec_user_id)
         post_count = await monitor_repository.count_posts(sec_user_id=sec_user_id)
+        editorial_tags = await post_editorial_service.enrich(posts)
         snapshots = await monitor_repository.list_snapshots(
             aweme_ids=[post.aweme_id for post in posts],
             limit=None,
@@ -1401,6 +1556,7 @@ class MonitorService:
                     "cover_url": post.cover_url,
                     "status": post.status,
                     "snapshots": snapshots_by_post.get(post.aweme_id, []),
+                    **editorial_tags[post.aweme_id],
                 }
                 for post in posts
             ],

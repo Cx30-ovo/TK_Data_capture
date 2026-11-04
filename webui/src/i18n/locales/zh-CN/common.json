@@ -8,6 +8,7 @@
     "error": "错误"
   },
   "tabs": {
+    "accounts": "账号矩阵",
     "overview": "运营总览",
     "config": "系统设置",
     "monitorData": "内容表现",
@@ -21,6 +22,21 @@
     "entries": "{{count}} 条日志"
   },
   "statusbar": {
+    "snapshotSchedule": "快照调度",
+    "snapshotLoading": "读取中",
+    "snapshotStale": "状态待刷新",
+    "snapshotRunning": "执行中",
+    "snapshotPaused": "已暂停",
+    "snapshotRecovering": "等待浏览器恢复",
+    "snapshotCooling": "冷却等待中",
+    "snapshotNone": "暂无待执行快照",
+    "snapshotStopped": "调度未运行",
+    "snapshotDue": "已到期 · 待执行",
+    "snapshotDelayed": "已延迟 {{count}} 分钟",
+    "snapshotSoon": "1分钟内",
+    "snapshotMinutes": "{{count}} 分钟后",
+    "snapshotHours": "约 {{count}} 小时后",
+    "snapshotScheduledFor": "计划时间",
     "collection": "采集状态",
     "browser": "浏览器连接",
     "pendingJobs": "待执行任务",
@@ -34,7 +50,7 @@
   },
   "sidebar": {
     "title": "MediaCrawler",
-    "subtitle": "抖音单账号监控",
+    "subtitle": "媒体账号内容决策",
     "createMonitorTask": "新建监控任务",
     "primaryNavigation": "主导航",
     "businessNavigation": "业务工作台",

@@ -766,6 +766,71 @@ class MonitorRepository:
             await session.flush()
             return missed_count
 
+    async def recover_interrupted_snapshot_jobs(
+        self, now: Optional[int] = None, job_ids: Optional[Sequence[int]] = None,
+    ) -> dict[str, int]:
+        """Reconcile orphaned jobs only while the caller holds the browser lease.
+
+        Startup/cancellation reconciliation, never a time-based sweep of live work.
+        Original due times and attempt counts are preserved; no snapshot is invented.
+        """
+        current_time = _now_seconds() if now is None else int(now)
+        recovered = {"pending": 0, "missed": 0, "done": 0, "skipped": 0, "failed": 0}
+        if job_ids is not None and not job_ids:
+            return recovered
+        async with get_monitor_session() as session:
+            stmt = select(DouyinMonitorJob).where(
+                DouyinMonitorJob.job_type == "snapshot", DouyinMonitorJob.status == "running",
+            )
+            if job_ids is not None:
+                stmt = stmt.where(DouyinMonitorJob.id.in_(tuple(job_ids)))
+            jobs = list((await session.execute(stmt)).scalars().all())
+            for job in jobs:
+                snapshot = (await session.execute(select(DouyinPostSnapshot).where(
+                    DouyinPostSnapshot.platform == job.platform,
+                    DouyinPostSnapshot.aweme_id == job.aweme_id,
+                    DouyinPostSnapshot.stage == job.stage,
+                ))).scalar_one_or_none()
+                if snapshot is not None:
+                    job.status = "done"
+                    job.finished_at = snapshot.captured_at
+                    job.last_error = None
+                    job.miss_reason = None
+                else:
+                    post = (await session.execute(select(DouyinPost).where(
+                        DouyinPost.platform == job.platform, DouyinPost.aweme_id == job.aweme_id,
+                    ))).scalar_one_or_none()
+                    allowed_window = SNAPSHOT_ALLOWED_WINDOWS.get(job.stage)
+                    original_offset = dict(SNAPSHOT_STAGES).get(job.stage)
+                    # Existing retry scheduling may have advanced due_at. It must
+                    # not extend the original lifecycle observation window here.
+                    original_due = min(job.due_at, int(post.create_time) + original_offset) if post and original_offset is not None else job.due_at
+                    if post is None or post.status != "active":
+                        job.status = "skipped"
+                        job.finished_at = current_time
+                        job.miss_reason = "上次快照执行中断，作品已不存在或不可用，后续采集已跳过。"
+                    elif allowed_window is None:
+                        job.status = "failed"
+                        job.finished_at = current_time
+                        job.last_error = "上次快照执行中断，无法识别采集阶段，请检查任务。"
+                    elif current_time > original_due + allowed_window:
+                        job.status = "missed"
+                        job.finished_at = current_time
+                        job.miss_reason = "上次快照执行中断，恢复时已超过原阶段采集窗口；未补采或生成历史快照。"
+                    elif job.attempts >= 3:
+                        job.status = "failed"
+                        job.finished_at = current_time
+                        job.last_error = "上次快照执行中断，已达到重试次数，等待人工处理。"
+                    else:
+                        job.status = "pending"
+                        job.started_at = None
+                        job.finished_at = None
+                        job.last_error = "上次快照执行中断，仍在原采集窗口内，已重新排队。"
+                        job.miss_reason = None
+                recovered[job.status] += 1
+            await session.flush()
+        return recovered
+
     async def list_due_jobs(
         self,
         now: Optional[int] = None,

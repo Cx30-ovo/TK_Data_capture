@@ -89,7 +89,7 @@ export function MonitorExecutionPanel() {
       {active && (
         <div className="mt-4 space-y-2">
           <div className="flex flex-wrap justify-between gap-2 text-xs text-cyber-text-secondary">
-            <span>{execution?.kind === 'discovery' ? t('execution.scanCount', { pages: execution.pages, count: execution.scanned, saved: execution.saved }) : t('execution.jobCount', { done: execution?.processed, total: execution?.total ?? '—', completed: execution?.completed })}</span>
+            <span>{execution?.kind === 'comments' ? t('execution.phase.comments') : execution?.kind === 'discovery' ? t('execution.scanCount', { pages: execution.pages, count: execution.scanned, saved: execution.saved }) : t('execution.jobCount', { done: execution?.processed, total: execution?.total ?? '—', completed: execution?.completed })}</span>
             <span className="tabular-nums">{t('execution.elapsed', { seconds: execution?.elapsed_seconds })}{percent !== undefined ? ` · ${percent}%` : ` · ${t('execution.noTotal')}`}</span>
           </div>
           {hasTotal ? (
@@ -103,7 +103,7 @@ export function MonitorExecutionPanel() {
       )}
       {!active && execution?.result && (
         <p className="mt-3 text-xs text-cyber-text-secondary">
-          {execution.kind === 'discovery' ? t('execution.scanResult', { saved: execution.saved, posts: execution.result.created_posts ?? 0, jobs: execution.result.created_jobs ?? 0 }) : t('execution.snapshotResult', { completed: execution.completed, retried: execution.retried, failed: execution.failed, skipped: execution.skipped })}
+          {execution.kind === 'comments' ? execution.result.reason || execution.result.message || t('execution.phase.comments') : execution.kind === 'discovery' ? t('execution.scanResult', { saved: execution.saved, posts: execution.result.created_posts ?? 0, jobs: execution.result.created_jobs ?? 0 }) : t('execution.snapshotResult', { completed: execution.completed, retried: execution.retried, failed: execution.failed, skipped: execution.skipped })}
         </p>
       )}
       {recovery?.pending && (

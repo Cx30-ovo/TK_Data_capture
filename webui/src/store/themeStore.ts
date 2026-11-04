@@ -17,7 +17,8 @@ function getSystemTheme(): 'light' | 'dark' {
 
 function getStoredTheme(): Theme {
   if (typeof window === 'undefined') return 'light'
-  const stored = localStorage.getItem(THEME_KEY) as Theme | null
+  let stored: Theme | null = null
+  try { stored = localStorage.getItem(THEME_KEY) as Theme | null } catch { /* Keep the document usable when storage is blocked. */ }
   if (stored && ['light', 'dark', 'system'].includes(stored)) {
     return stored
   }
@@ -26,6 +27,9 @@ function getStoredTheme(): Theme {
 
 function applyTheme(resolved: 'light' | 'dark') {
   const root = document.documentElement
+  root.dataset.theme = resolved
+  root.style.colorScheme = resolved
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', resolved === 'dark' ? '#071322' : '#f1f6fc')
   if (resolved === 'dark') {
     root.classList.add('dark')
   } else {
@@ -50,7 +54,7 @@ export const useThemeStore = create<ThemeState>((set) => ({
 
   setTheme: (theme) => {
     const resolved = resolveTheme(theme)
-    localStorage.setItem(THEME_KEY, theme)
+    try { localStorage.setItem(THEME_KEY, theme) } catch { /* Apply in-memory choice. */ }
     applyTheme(resolved)
     set({ theme, resolvedTheme: resolved })
   },
@@ -65,5 +69,15 @@ if (typeof window !== 'undefined') {
       applyTheme(resolved)
       useThemeStore.setState({ resolvedTheme: resolved })
     }
+  })
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', event => {
+    if (event.key !== THEME_KEY) return
+    const theme: Theme = event.newValue === 'dark' || event.newValue === 'system' ? event.newValue : 'light'
+    const resolvedTheme = resolveTheme(theme)
+    applyTheme(resolvedTheme)
+    useThemeStore.setState({ theme, resolvedTheme })
   })
 }

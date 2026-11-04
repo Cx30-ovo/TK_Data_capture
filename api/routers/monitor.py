@@ -2,7 +2,9 @@
 """API routes for the single-account monitor module."""
 
 import json
+import asyncio
 import time
+from pathlib import Path
 from datetime import datetime
 from typing import Optional
 
@@ -17,8 +19,130 @@ from sqlalchemy.exc import IntegrityError
 from ..services.monitor_service import MonitorBrowserNetworkError, MonitorHotRankError, monitor_service
 from ..services.report_service import report_service
 from ..services.analytics_service import analytics_service
+from ..schemas.account_profiles import AccountProfile
+from ..services.account_profile_service import AccountNotFound, ProfileUnavailable, get_account_profile
+from config.db_config import sqlite_db_config
+from ..schemas.account_matrix import MatrixAssignment
+from database.account_matrix_repository import MatrixError, get_matrix, save_assignment
+from ..services.account_grouping_service import GroupingError, GroupingRequest, infer_group, model_status
+from ..services.account_style_service import StyleRequest, read_style, analyze_style
+from ..services.monitor_comments_service import CommentPolicy
 
 router = APIRouter(prefix="/monitor", tags=["monitor"])
+
+
+@router.get('/accounts/{account_id}/comment-policy')
+async def read_comment_policy(account_id: int):
+    from ..services import monitor_comments_service as service
+    account=await monitor_repository.get_monitored_account_by_id(account_id)
+    if not account:raise HTTPException(404,'账号不存在')
+    return await asyncio.to_thread(service.repo.policy,service.source(),account.sec_user_id)
+
+
+@router.put('/accounts/{account_id}/comment-policy')
+async def save_comment_policy(account_id: int, request: CommentPolicy):
+    from ..services import monitor_comments_service as service
+    account=await monitor_repository.get_monitored_account_by_id(account_id)
+    if not account:raise HTTPException(404,'账号不存在')
+    return await asyncio.to_thread(service.repo.save_policy,service.source(),account.sec_user_id,request.model_dump())
+
+
+@router.get('/posts/{aweme_id}/comments')
+async def read_post_comments(aweme_id: str, page: int=Query(1,ge=1,le=100000),parent_comment_id: str=Query('',pattern=r'^\d{0,64}$')):
+    from ..services import monitor_comments_service as service
+    if not await monitor_repository.get_post(aweme_id):raise HTTPException(404,'作品不存在')
+    result=await asyncio.to_thread(service.repo.read,service.source(),aweme_id,page,parent_comment_id)
+    return {**result,'page':page,'page_size':20,'parent_comment_id':parent_comment_id}
+
+
+@router.post('/posts/{aweme_id}/comments/collect')
+async def collect_post_comments(aweme_id: str):
+    if not await monitor_repository.get_post(aweme_id):raise HTTPException(404,'作品不存在')
+    return await monitor_service.collect_post_comments(aweme_id)
+
+
+async def _account_style_action(action, account_id, days, **kwargs):
+    try:
+        return await action(sqlite_db_config['db_path'], account_id, days, **kwargs)
+    except AccountNotFound as exc:
+        raise HTTPException(status_code=404, detail='账号不存在') from exc
+    except ProfileUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except GroupingError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail='账号或统计窗口无效') from exc
+
+
+@router.get('/accounts/{account_id}/style-profile')
+async def read_account_style(account_id: int, days: int = Query(30, ge=1, le=365)):
+    return await _account_style_action(read_style, account_id, days)
+
+
+@router.post('/accounts/{account_id}/style-profile')
+async def analyze_account_style(account_id: int, request: StyleRequest):
+    return await _account_style_action(analyze_style, account_id, request.days, max_model_requests=request.max_model_requests)
+
+
+@router.get('/account-matrix/model-status')
+async def account_grouping_status():
+    return model_status()
+
+
+@router.post('/account-matrix/{account_id}/infer-group')
+async def infer_account_group(account_id: int, request: GroupingRequest):
+    try:
+        baseline = await asyncio.to_thread(get_matrix, sqlite_db_config['db_path'], matrix_metadata_path())
+        account = next((a for a in baseline['accounts'] if a['id'] == account_id), None)
+        if account is None:
+            raise AccountNotFound()
+        result = await infer_group(sqlite_db_config['db_path'], account_id, request.days)
+        updated = await asyncio.to_thread(save_assignment, sqlite_db_config['db_path'], matrix_metadata_path(),
+            account_id, {'expected_version': baseline['version'], 'identity_sha256': account['identity_sha256']},
+            generated_group=result)
+        return {**result, 'matrix': updated}
+    except MatrixError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+    except GroupingError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+    except AccountNotFound as exc:
+        raise HTTPException(status_code=404, detail='账号不存在') from exc
+    except ProfileUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+def matrix_metadata_path() -> str:
+    return str(Path(sqlite_db_config["db_path"]).resolve().with_name("account_matrix.db"))
+
+
+@router.get("/account-matrix")
+async def read_account_matrix():
+    try:
+        return await asyncio.to_thread(get_matrix, sqlite_db_config["db_path"], matrix_metadata_path())
+    except MatrixError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+
+
+@router.put("/account-matrix/{account_id}")
+async def update_account_matrix(account_id: int, request: MatrixAssignment):
+    try:
+        return await asyncio.to_thread(save_assignment, sqlite_db_config["db_path"],
+                                       matrix_metadata_path(), account_id, request.model_dump())
+    except MatrixError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+
+
+@router.get("/accounts/{account_id}/profile", response_model=AccountProfile)
+async def read_account_profile(account_id: int, days: int = Query(30, ge=1, le=365)):
+    """Read existing data only; never refresh collection or call a model."""
+    if account_id < 1:
+        raise HTTPException(status_code=422, detail="账号 ID 必须为正整数")
+    try:
+        return await get_account_profile(sqlite_db_config["db_path"], account_id, days)
+    except AccountNotFound as exc:
+        raise HTTPException(status_code=404, detail="账号不存在") from exc
+    except ProfileUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.get("/execution")

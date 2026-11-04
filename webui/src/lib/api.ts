@@ -191,7 +191,7 @@ export interface MonitorExecutionStatus {
   execution: {
     run_id: string
     started_at: number
-    kind: 'discovery' | 'snapshots'
+    kind: 'discovery' | 'snapshots' | 'comments'
     state: string
     phase: string
     active: boolean
@@ -233,6 +233,15 @@ export interface MonitorSnapshot {
 }
 
 export interface MonitorDashboardPost {
+  channel?: string
+  region?: string
+  region_evidence?: string
+  tag_status?: string
+  tag_reason?: string
+  ambiguous_fields?: string[]
+  tag_confidence?: Record<string, number>
+  channel_evidence?: string
+  tag_method?: string
   aweme_id: string
   title: string
   desc: string
@@ -620,6 +629,8 @@ export interface AITitleStrategyResult {
   }
   top_keywords: AITitleStrategyKeyword[]
   title_length_analysis: {
+    stale_caption_length?: boolean
+    extraction?: { version: string; grouping_version: string; rule: string; sample_count: number; excluded_count: number }
     groups: AITitleLengthGroup[]
     long_vs_short: {
       short: { group: string; count: number; avg_interaction: number; median_interaction: number; hit_rate: number; avg_shares: number }
@@ -740,7 +751,7 @@ export const monitorApi = {
   getDashboard: (limit?: number) =>
     api.get<MonitorDashboard>('/monitor/dashboard', { params: { ...(limit === undefined ? {} : { limit }), ...accountParams() } }),
   getOverview: () => api.get<MonitorOverview>('/monitor/overview', { params: accountParams() }),
-  getHotRank: (force = false) => api.get<DouyinHotRankResponse>('/monitor/hot-rank', { params: { force }, timeout: 120000 }),
+  getHotRank: (force = false, timeout = 120000) => api.get<DouyinHotRankResponse>('/monitor/hot-rank', { params: { force }, timeout }),
   getJobs: (status?: string, limit?: number, accountId?: number) =>
     api.get<MonitorJobsResponse>('/monitor/jobs', { params: { ...(status ? { status } : {}), ...(limit === undefined ? {} : { limit }), ...(accountId === undefined ? accountParams() : { account_id: accountId }) } }),
   retryJob: (jobId: number) => api.post('/monitor/jobs/' + jobId + '/retry'),

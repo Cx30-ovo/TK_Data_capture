@@ -1,6 +1,9 @@
 """Offline tests for tab coordination, classified failures, and safe stopping."""
 
 import asyncio
+import json
+import os
+import subprocess
 import sys
 import time
 from contextvars import Context
@@ -14,6 +17,15 @@ from api.services import monitor_service as module
 from api.services.monitor_service import DouyinMonitorFetcher, MonitorService, PartialDiscoveryError
 from tools.collection_errors import classify_collection_error
 from tools.douyin_browser_coordinator import CollectionStoppedError, DouyinBrowserBusyError, DouyinTabLease
+
+
+@pytest.mark.parametrize('override,expected', [('10800',10800), ('invalid',21600), ('1',1800)])
+def test_deployment_cooldown_override_preserves_default_and_minimum(override, expected):
+    environment = dict(os.environ, RISK_CONTROL_MAX_COOLDOWN_SECONDS=override)
+    output = subprocess.check_output([sys.executable, '-c',
+        'import json; from api.services.monitor_service import RISK_CONTROL_MAX_COOLDOWN_SECONDS as cap; print(json.dumps(cap))'],
+        env=environment, text=True)
+    assert json.loads(output)==expected
 
 
 @pytest.mark.asyncio
@@ -116,7 +128,7 @@ def post(i):
 
 
 @pytest.fixture
-def repository():
+def repository(tmp_path):
     """Every repository call is mocked: no production DB access is possible."""
     from unittest.mock import MagicMock
     repo = MagicMock()
@@ -130,7 +142,9 @@ def repository():
     repo.mark_job_retry = AsyncMock(return_value=SimpleNamespace(status="pending"))
     repo.mark_overdue_jobs_missed = AsyncMock(return_value=0)
     repo.upsert_post = AsyncMock(side_effect=lambda **kw: (SimpleNamespace(**kw, first_seen_at=int(time.time())), True))
-    with patch.object(module, "monitor_repository", repo), patch.object(module.crawler_manager, "add_log", AsyncMock()):
+    with patch.object(module, "monitor_repository", repo), patch.object(module.crawler_manager, "add_log", AsyncMock()), \
+         patch.object(module.comment_service, "source", lambda: str(tmp_path / "source.db")), \
+         patch.object(module, "DouyinTabLease", lambda **kw: DouyinTabLease(tmp_path / "tab.lock", **kw)):
         yield repo
 
 

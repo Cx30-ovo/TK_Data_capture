@@ -44,13 +44,17 @@ async def test_startup_reuses_empty_chrome_tab_without_opening_another(landing):
 
 
 @pytest.mark.asyncio
-async def test_startup_creates_missing_douyin_tab_but_keeps_webui():
+async def test_startup_creates_missing_douyin_tab_in_background_and_keeps_webui(monkeypatch):
     webui = make_page("http://localhost:5173/", "MediaCrawler")
     unrelated = make_page("https://example.com/")
     crawler, context = make_crawler([webui, unrelated])
+    background = make_page('about:blank')
+    create = AsyncMock(return_value=background)
+    monkeypatch.setattr(core_module, 'create_background_page', create)
     selected = await crawler._get_or_create_context_page(bootstrap=True)
-    assert selected is context.new_page.return_value
-    context.new_page.assert_awaited_once()
+    assert selected is background
+    create.assert_awaited_once_with(context)
+    context.new_page.assert_not_awaited()
     webui.evaluate.assert_not_awaited()
     unrelated.evaluate.assert_not_awaited()
     assert webui.url == "http://localhost:5173/"
@@ -80,10 +84,15 @@ async def test_collection_selects_background_tab_even_when_only_webui_is_open(mo
 
 
 @pytest.mark.asyncio
-async def test_startup_does_not_promote_collection_tab_to_the_user_login_tab():
+async def test_startup_does_not_promote_collection_tab_to_the_user_login_tab(monkeypatch):
     background = make_page("about:blank", COLLECTION_TAB_NAME)
     crawler, context = make_crawler([background, make_page("http://localhost:5173/")])
-    assert await crawler._get_or_create_context_page(bootstrap=True) is context.new_page.return_value
+    login_page=make_page('about:blank')
+    create=AsyncMock(return_value=login_page)
+    monkeypatch.setattr(core_module, 'create_background_page', create)
+    assert await crawler._get_or_create_context_page(bootstrap=True) is login_page
+    create.assert_awaited_once_with(context)
+    context.new_page.assert_not_awaited()
     background.goto.assert_not_awaited()
     background.bring_to_front.assert_not_awaited()
 
@@ -120,10 +129,7 @@ async def test_browser_preparation_bootstraps_tab_and_preserves_shared_browser(m
     assert await service.ensure_browser_ready() == {"status": "ok"}
     crawler._get_or_create_context_page.assert_awaited_once_with(bootstrap=True)
     goto.assert_awaited_once_with(page, crawler.index_url, accepted_hosts=("douyin.com",))
-    if headless:
-        page.bring_to_front.assert_not_awaited()
-    else:
-        page.bring_to_front.assert_awaited_once()
+    page.bring_to_front.assert_not_awaited()
     manager.cleanup.assert_awaited_once()
 
 

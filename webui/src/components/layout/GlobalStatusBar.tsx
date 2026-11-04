@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Activity, Bell, Camera, ChevronRight, ListChecks, Wifi } from 'lucide-react'
 import { monitorApi } from '@/lib/api'
+import { snapshotStatus } from '@/lib/snapshotStatus'
 import { useCrawlerStore } from '@/store/crawlerStore'
 import { useMonitorExecution } from '@/components/monitor/MonitorExecutionPanel'
 
@@ -19,22 +20,6 @@ const TONE_CLASSES: Record<StatusTone, string> = {
 }
 
 
-function formatSnapshotTime(
-  timestamp: number | null | undefined,
-  t: (key: string) => string,
-): string {
-  if (!timestamp) return '-'
-  const date = new Date(timestamp * 1000)
-  const today = new Date()
-  const tomorrow = new Date(today)
-  tomorrow.setDate(today.getDate() + 1)
-  const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  if (date.toDateString() === today.toDateString()) return `${t('statusbar.today')} ${time}`
-  if (date.toDateString() === tomorrow.toDateString()) return `${t('statusbar.tomorrow')} ${time}`
-  return date.toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
-}
-
-
 function StatusItem({
   icon: Icon,
   label,
@@ -43,6 +28,7 @@ function StatusItem({
   tone = 'neutral',
   onClick,
   valueMono = false,
+  title,
 }: {
   icon: typeof Activity
   label: string
@@ -50,11 +36,13 @@ function StatusItem({
   detail?: string
   tone?: StatusTone
   onClick?: () => void
+  title?: string
   valueMono?: boolean
 }) {
   return (
     <button
       type="button"
+      title={title}
       onClick={onClick}
       disabled={!onClick}
       className={`group flex min-w-[154px] flex-1 items-center gap-2.5 rounded-md border border-l-2 border-cyber-border-subtle bg-cyber-bg-panel/80 px-2.5 py-0.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-status-info lg:min-w-0 ${TONE_CLASSES[tone]} ${onClick ? 'cursor-pointer hover:bg-cyber-bg-tertiary/40 hover:shadow-sm' : 'cursor-default'}`}
@@ -99,7 +87,7 @@ export function GlobalStatusBar({
     queryFn: async () => (await monitorApi.getHealth()).data,
     refetchInterval: 30000,
   })
-  const { data: overview } = useQuery({
+  const { data: overview, dataUpdatedAt: overviewUpdatedAt, isError: overviewError } = useQuery({
     queryKey: ['monitorOverview'],
     queryFn: async () => (await monitorApi.getOverview()).data,
     refetchInterval: 30000,
@@ -113,6 +101,16 @@ export function GlobalStatusBar({
   const pendingCount = health?.metrics.jobs?.pending ?? overview?.jobs.pending ?? 0
   const unreadCount = health?.metrics.unread_alerts ?? 0
   const nextSnapshot = overview?.next_snapshot
+  const [clockNow, setClockNow] = useState(Date.now())
+  useEffect(() => { const timer = window.setInterval(() => setClockNow(Date.now()), 10000); return () => window.clearInterval(timer) }, [])
+  // Follow server time, advancing from the most recent successful response.
+  const now = overview ? overview.now + Math.max(0, (clockNow - overviewUpdatedAt) / 1000) : clockNow / 1000
+  const snapshot = snapshotStatus({ dueAt: nextSnapshot?.due_at, now, loaded: Boolean(overview),
+    stale: overviewError || Boolean(overviewUpdatedAt && clockNow - overviewUpdatedAt > 90000),
+    paused: executionStatus?.paused, recovering: executionStatus?.recovery?.pending,
+    cooling: Boolean(executionStatus?.retry_after_seconds), loopRunning: overview?.loop_running,
+    active: executionStatus?.execution?.active && executionStatus.execution.kind === 'snapshots' })
+  const snapshotTitle = nextSnapshot ? `${t('statusbar.snapshotScheduledFor')} ${new Date(nextSnapshot.due_at * 1000).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })} · ${nextSnapshot.stage} · ${nextSnapshot.title}` : undefined
 
   useEffect(() => {
     if (!executionStatus) return
@@ -175,10 +173,11 @@ export function GlobalStatusBar({
         />
         <StatusItem
           icon={Camera}
-          label={t('statusbar.nextSnapshot')}
-          value={formatSnapshotTime(nextSnapshot?.due_at, t)}
+          label={t(snapshot.label)}
+          value={t(snapshot.key, { count: snapshot.count })}
+          title={snapshotTitle}
           detail={nextSnapshot?.stage}
-          tone={nextSnapshot ? 'info' : 'neutral'}
+          tone={snapshot.tone}
           onClick={onOpenSnapshot}
           valueMono
         />

@@ -123,14 +123,14 @@
     "recoveryPaused": "监控已手动暂停，自动恢复也已暂停。",
     "recoveryCooling": "等待风控冷却结束后恢复浏览器。",
     "recoveryHint": "已尝试 {{attempts}} 次 · 已保存的数据保留 · 恢复后继续待执行任务",
-    "kind": { "discovery": "作品发现进度", "snapshots": "快照执行进度" },
+    "kind": { "discovery": "作品发现进度", "snapshots": "快照执行进度", "comments": "评论采集进度" },
     "state": {
       "idle": "待命", "running": "执行中", "waiting_tab": "等待页签",
       "stopping": "安全停止中", "paused": "监控已暂停", "deferred": "冷却中",
       "completed": "已完成", "stopped": "已停止", "skipped": "未执行",
       "partial": "部分完成", "error": "需处理", "crawler": "普通爬虫运行中", "recovering": "自动恢复中"
     },
-    "phase": { "connecting": "连接浏览器", "waiting_tab": "等待其他任务释放页签", "scanning": "扫描最新作品", "saving": "保存已扫描数据", "collecting": "采集当前快照", "finished": "处理结束" }
+    "phase": { "connecting": "连接浏览器", "waiting_tab": "等待其他任务释放页签", "scanning": "扫描最新作品", "saving": "保存已扫描数据", "collecting": "采集当前快照", "comments": "采集评论与子评论", "finished": "处理结束" }
   },
   "section": {
     "targetMatrix": {

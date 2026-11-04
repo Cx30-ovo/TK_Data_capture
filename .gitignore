@@ -192,3 +192,9 @@ output/backups/*
 output/exports/*
 output/reports/*
 output/pytest-*/
+
+# Local verification evidence and isolated frontend builds
+/tmp/
+/webui/dist-*/
+database/*.db-wal
+database/*.db-shm

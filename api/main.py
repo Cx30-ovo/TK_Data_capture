@@ -256,6 +256,9 @@ if os.path.exists(WEBUI_DIR):
     logos_dir = os.path.join(WEBUI_DIR, "logos")
     if os.path.exists(logos_dir):
         app.mount("/logos", StaticFiles(directory=logos_dir), name="logos")
+    spatial_dir = os.path.join(WEBUI_DIR, "spatial")
+    if os.path.exists(spatial_dir):
+        app.mount("/spatial", StaticFiles(directory=spatial_dir), name="spatial")
     # Mount other static files (e.g., vite.svg)
     app.mount("/static", StaticFiles(directory=WEBUI_DIR), name="webui-static")
 

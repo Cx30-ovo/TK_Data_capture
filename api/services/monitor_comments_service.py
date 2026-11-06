@@ -35,7 +35,38 @@ def normalize(raw,ident,parent):
     def count(v):
         try:return max(0,int(v or 0))
         except (ValueError,TypeError):return 0
+    # reply_id identifies the thread root, not the immediate reply target.
+    # Only the explicit reply_to_reply_id can establish a child-to-child edge.
+    target=None;relation='root' if not parent else 'unknown'
+    root=raw.get('reply_id')
+    root_matches=root in (None,'',0,'0',parent) or type(root) is int and str(root)==parent
+    self_target=False
+    if parent and 'reply_to_reply_id' in raw:
+        value=raw['reply_to_reply_id']
+        valid=type(value) in (str,int) and str(value).isascii() and str(value).isdigit() and len(str(value))<=64
+        if valid and root_matches:
+            target=parent if int(value)==0 else str(value)
+            self_target=target==cid
+            relation='platform' if target!=cid else 'invalid'
+            if relation=='invalid':target=None
+        else:relation='invalid'
+    # The platform may identify the replied-to person without returning their
+    # comment. Preserve that explicit object independently from the tree edge.
+    # Never derive it from @mentions, author names or the root comment's author.
+    reply_user=raw.get('reply_to_user')
+    reply_user=reply_user if isinstance(reply_user,dict) else {}
+    name=raw.get('reply_to_username') or reply_user.get('nickname')
+    name=name.strip() if isinstance(name,str) else ''
+    uid=raw.get('reply_to_userid') or raw.get('reply_to_user_id') or reply_user.get('uid')
+    uid=str(uid).strip() if type(uid) in (str,int) else ''
+    object_valid=bool(parent and root_matches and not self_target)
+    reply_name=mask_nickname(name) if object_valid and name else ''
+    reply_hash=anonymize_user_id(uid) if object_valid and uid not in ('','0') else ''
     return {'comment_id':cid,'parent_comment_id':parent,'content':raw['text'],
+            'root_comment_id':parent or cid,'reply_to_comment_id':target,
+            'reply_relation_source':relation,'reply_relation_version':1,
+            'reply_to_nickname':reply_name,'reply_to_creator_hash':reply_hash,
+            'reply_object_source':'platform' if reply_name or reply_hash else 'unknown',
             'nickname':mask_nickname(user.get('nickname')),'creator_hash':anonymize_user_id(user.get('uid')),
             'create_time':count(raw.get('create_time')),'like_count':count(raw.get('digg_count')),
             'reply_count':count(raw.get('reply_comment_total')),'captured_at':int(time.time())}

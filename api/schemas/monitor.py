@@ -3,7 +3,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
 from tools.douyin_account_identity import normalize_account_profile, parse_account_identity
 
@@ -51,3 +51,21 @@ class MonitorAccountBatchRequest(BaseModel):
 class MonitorAlertStatusRequest(BaseModel):
     alert_ids: list[int] = Field(min_length=1)
     status: Literal["unread", "read", "resolved", "ignored"]
+
+
+class PostEditorialCorrectionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    mode: Literal["manual", "automatic"] = "manual"
+    expected_revision: StrictInt = Field(ge=0)
+    source_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    channel: Literal["时政", "民生", "健康", "经济", "三农", "文旅", "科技", "体育",
+                     "教育", "法治", "文娱", "政策文件", "应急", "环境生态", "待判定"] | None = None
+    region: Literal["本地", "本省", "国内", "国际", "待判定"] | None = None
+    reason: str = Field(default="", max_length=1000)
+
+    @model_validator(mode="after")
+    def require_manual_reason(self):
+        self.reason = self.reason.strip()
+        if self.mode == "manual" and (self.channel is None or self.region is None or not self.reason):
+            raise ValueError("请选择频道、地域并填写纠正依据")
+        return self

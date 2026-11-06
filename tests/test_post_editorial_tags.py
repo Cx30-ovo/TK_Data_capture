@@ -1,6 +1,6 @@
 import pytest
 
-from api.services.post_editorial_tags import classify_post
+from api.services.post_editorial_tags import assess_post, classify_post
 
 
 @pytest.mark.parametrize("title,desc,channel,region", [
@@ -45,3 +45,32 @@ def test_tags(title, desc, channel, region):
     assert result["channel"] == channel
     assert result["region"] == region
     assert bool(result["region_evidence"]) == (region != "待判定")
+
+
+@pytest.mark.parametrize("title,initial_channel", [
+    ("妈妈：叫妈妈！宝宝：爸爸！我不仅叫爸，我还字正腔圆", "待判定"),
+    ("一岁萌娃迈出人生第一步，跌跌撞撞走向父母", "待判定"),
+    ("厦门幼儿园萌娃向爸爸展示自己的玩具", "教育"),
+    ("妈妈带宝宝到厦门医院治疗", "健康"),
+    ("厦门幼儿园向父母公布招生安排", "教育"),
+    ("厦门法院审理父母抚养权诉讼", "法治"),
+    ("电视剧里的妈妈和宝宝迎来大结局", "文娱"),
+    ("厦门双十中学的旧日风华，泛黄画里有青春", "待判定"),
+    ("厦门中学公开旧照用于历史课堂教学", "待判定"),
+    ("厦门学校的老照片唤起青春回忆", "教育"),
+    ("野生动物与幼崽相依的亲情", "环境生态"),
+])
+def test_context_requests_model_review_without_forcing_livelihood(title, initial_channel):
+    initial = classify_post(title)
+    assessed = assess_post(title)
+    assert initial["channel"] == initial_channel
+    assert assessed["channel"] == initial_channel
+    assert "channel" in assessed["ambiguous_fields"]
+    assert assessed["ambiguous_fields"].count("channel") == 1
+    assert assessed["tag_status"] == "pending"
+
+
+def test_family_words_in_credits_and_trailing_hashtags_do_not_create_review_context():
+    assessed = assess_post("厦门新增公交线路", "（编辑/妈妈）#宝宝 #育儿")
+    assert assessed["channel"] == "民生"
+    assert assessed["ambiguous_fields"] == []

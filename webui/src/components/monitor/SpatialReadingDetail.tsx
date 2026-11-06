@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { ArrowUpRight, Clock3, Flame, Heart, MessageCircle, Share2, Sparkles } from 'lucide-react'
 import type { DouyinHotRankItem, MonitorDashboardPost } from '@/lib/api'
 import { presentPost } from '@/lib/postPresentation'
-import { PostEditorialEvidence, PostEditorialTags } from './PostEditorialTags'
+import { PostEditorialCorrection, PostEditorialEvidence, PostEditorialTags } from './PostEditorialTags'
 import { PostComments } from './PostComments'
 
 export type ReadingSignal = { id: string; title: string; kind: 'post'; post: MonitorDashboardPost }
@@ -21,7 +21,7 @@ export function SpatialReadingDetail({ signal, post, onOpenData, onOpenTopics }:
   const metrics = signal.kind === 'rank'
     ? [{ icon: Flame, label: '平台热度', value: signal.rank.hot_value }, { icon: Sparkles, label: '相关视频', value: signal.rank.video_count }]
     : [{ icon: Heart, label: '点赞', value: snapshot?.liked_count }, { icon: MessageCircle, label: '评论', value: snapshot?.comment_count }, { icon: Share2, label: '分享', value: snapshot?.share_count }]
-  return <div className="spatial-detail-reader">
+  return <div className="spatial-detail-reader" role="region" aria-label="作品阅读正文" tabIndex={0}>
     <div className="spatial-reader-header">
       <div className="spatial-detail-meta"><span>{work ? '抖音 · 账号采集' : '抖音 · 平台热榜'}</span><span><Clock3 aria-hidden="true" />{stamp(work?.create_time || (signal.kind === 'rank' ? signal.rank.event_time : 0))}</span></div>
       <h2 id="spatial-reading-title" className={titleExpanded ? 'is-expanded' : ''}>{title}</h2>
@@ -29,10 +29,11 @@ export function SpatialReadingDetail({ signal, post, onOpenData, onOpenTopics }:
       {work && <PostEditorialTags post={work} />}
       <div className="spatial-detail-metrics">{metrics.map(metric => <div key={metric.label}><metric.icon aria-hidden="true" /><strong>{compact(metric.value)}</strong><span>{metric.label}</span></div>)}</div>
     </div>
-    <div className="spatial-reader-copy" role="region" aria-label="作品阅读正文" tabIndex={0}>
+    <div className="spatial-reader-copy">
       {display?.body && <p className="spatial-detail-copy">{display.body}</p>}
       {!!display?.topics.length && <div className="spatial-reading-topics" aria-label="作品话题">{display.topics.map(topic => <span key={topic}>#{topic}</span>)}</div>}
       {work && <PostEditorialEvidence post={work} />}
+      {work && <PostEditorialCorrection post={work} />}
       {work && <PostComments key={work.aweme_id} awemeId={work.aweme_id} />}
       {work ? <details className="spatial-original-copy"><summary>查看原始文案与署名</summary><p>{work.title || '暂无标题'}</p>{work.desc && work.desc !== work.title && <p>{work.desc}</p>}<small>作品 ID：{work.aweme_id}</small></details>
         : <p className="spatial-detail-copy">这条线索来自平台热榜，代表传播热度。请核验原始发布、时间与上下文，再进行编辑判断。</p>}

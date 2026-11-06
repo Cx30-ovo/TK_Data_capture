@@ -233,6 +233,17 @@ export interface MonitorSnapshot {
 }
 
 export interface MonitorDashboardPost {
+  tag_experience_refs?: { aweme_id: string; revision: number; source_sha256: string; channel: string; region: string; reason: string; similarity: number }[]
+  visual_status?: 'sampled_video' | 'cover_only' | 'unavailable' | 'analysis_failed' | null
+  visual_limitation?: string
+  visual_sources?: { id: string; kind: string; timestamp_seconds: number | null; sha256: string }[]
+  channel_evidence_source?: { kind: string; timestamp_seconds?: number | null; sha256?: string } | null
+  region_evidence_source?: { kind: string; timestamp_seconds?: number | null; sha256?: string } | null
+  classification_source_sha256?: string
+  manual_revision?: number
+  manual_status?: 'active' | 'outdated' | 'none'
+  manual_reason?: string
+  manual_corrected_at?: number | null
   channel?: string
   region?: string
   region_evidence?: string
@@ -251,6 +262,20 @@ export interface MonitorDashboardPost {
   cover_url: string | null
   status: string
   snapshots: MonitorSnapshot[]
+}
+
+export interface EditorialCorrectionPayload {
+  mode: 'manual' | 'automatic'
+  expected_revision: number
+  source_sha256: string
+  channel?: string
+  region?: string
+  reason?: string
+}
+export type EditorialClassification = Partial<MonitorDashboardPost> & {
+  classification_source_sha256: string
+  manual_revision: number
+  manual_status: 'active' | 'outdated' | 'none'
 }
 
 export interface MonitorDashboard {
@@ -724,6 +749,9 @@ export const schedulerApi = {
 }
 
 export const monitorApi = {
+  getEditorialTags: (id: string) => api.get<EditorialClassification>('/monitor/posts/' + encodeURIComponent(id) + '/editorial-tags'),
+  correctEditorialTags: (id: string, payload: EditorialCorrectionPayload) =>
+    api.put<EditorialClassification>('/monitor/posts/' + encodeURIComponent(id) + '/editorial-tags', payload),
   getExecution: () => api.get<MonitorExecutionStatus>('/monitor/execution'),
   stopExecution: (runId?: string) => api.post('/monitor/execution/stop', undefined, { params: { run_id: runId } }),
   resumeExecution: () => api.post('/monitor/execution/resume'),

@@ -7,6 +7,7 @@ import pytest
 
 from api.services.post_editorial_service import PostEditorialService
 from api.services.post_editorial_tags import assess_post
+from database.post_editorial_repository import manual_key
 
 
 def post(id="1", title="日本游客在厦门旅游", desc=""):
@@ -22,6 +23,10 @@ class Repository:
 
     async def save(self, key, post_id, tags, retry_at=0):
         self.rows[key] = {"tags": copy.deepcopy(tags), "retry_at": retry_at}
+
+    async def load_manual(self, ids):
+        return {ident: copy.deepcopy(self.rows[manual_key(ident)]["tags"])
+                for ident in ids if manual_key(ident) in self.rows}
 
 
 class Model:
@@ -109,6 +114,99 @@ async def test_unavailable_model_does_not_queue_or_fake_ai_result():
     assert result["tag_status"] == "ai_unavailable"
     assert result["tag_method"] == "rules_v2"
     assert service.worker is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("title,channel", [
+    ("妈妈：叫妈妈！宝宝：爸爸！我不仅叫爸，我还字正腔圆", "民生"),
+    ("一岁萌娃迈出人生第一步，跌跌撞撞走向父母", "民生"),
+    ("厦门幼儿园萌娃向爸爸展示自己的玩具", "民生"),
+    ("妈妈带宝宝到厦门医院治疗", "健康"),
+    ("厦门幼儿园向父母公布招生安排", "教育"),
+    ("厦门法院审理父母抚养权诉讼", "法治"),
+    ("电视剧里的妈妈和宝宝迎来大结局", "文娱"),
+    ("厦门双十中学的旧日风华，泛黄画里有青春", "文旅"),
+    ("厦门中学公开旧照用于历史课堂教学", "教育"),
+    ("野生动物与幼崽相依的亲情", "环境生态"),
+])
+async def test_semantic_review_can_resolve_context_and_preserve_independent_location(title, channel):
+    class AnswerModel(Model):
+        async def generate_json(self, **kwargs):
+            self.calls += 1
+            self.system_prompt = kwargs["system_prompt"]
+            rows = json.loads(kwargs["user_prompt"])["items"]
+            return {"items": [{"aweme_id": row["aweme_id"], "channel": channel,
+                               "channel_confidence": .95, "channel_evidence": row["title"],
+                               "region": "待判定", "region_confidence": .5,
+                               "region_evidence": "", "reason": "按核心内容区分频道，地点单独判断。"}
+                              for row in rows]}
+
+    model, repo = AnswerModel(), Repository()
+    service = PostEditorialService(model, repo)
+    sample = post(title=title)
+    initial = assess_post(title)
+    try:
+        assert (await service.enrich([sample]))["1"]["tag_status"] == "pending"
+        await asyncio.wait_for(service.worker, 2)
+        result = (await service.enrich([sample]))["1"]
+        assert result["channel"] == channel
+        assert result["channel_evidence"] == title
+        assert result["ai_reviewed_fields"] == ["channel"]
+        assert result["region"] == initial["region"]
+        assert result["tag_status"] == ("uncertain" if initial["region"] == "待判定" else "resolved")
+        assert "频道和地域独立判断" in model.system_prompt
+        assert "不以是否属于硬新闻" in model.system_prompt
+        assert model.calls == 1
+    finally:
+        await service.stop()
+
+
+@pytest.mark.asyncio
+async def test_updated_policy_requeues_old_unknown_cache_without_rewriting_it(monkeypatch):
+    from api.services import post_editorial_service as module
+
+    model, repo = Model(), Repository()
+    service = PostEditorialService(model, repo)
+    sample = post()
+    with monkeypatch.context() as old:
+        old.setattr(module, "VERSION", "editorial-hybrid-v4.2-marine-ecology")
+        old_key = service.cache_key(sample)
+    await repo.save(old_key, sample.aweme_id, {**assess_post(sample.title), "tag_status": "uncertain"})
+    original = copy.deepcopy(repo.rows[old_key])
+    try:
+        assert old_key != service.cache_key(sample)
+        assert (await service.enrich([sample]))["1"]["tag_status"] == "pending"
+        await asyncio.wait_for(service.worker, 2)
+        assert (await service.enrich([sample]))["1"]["region"] == "本地"
+        assert model.calls == 1
+        assert repo.rows[old_key] == original
+    finally:
+        await service.stop()
+
+
+@pytest.mark.parametrize("confidence,accepted", [(.79, False), (.8, True), (.95, True)])
+def test_clear_channel_is_independent_of_unknown_location_and_keeps_acceptance_threshold(confidence, accepted):
+    title = "宝宝迈出第一步走向父母"
+    item = {"aweme_id": "1", "title": title, "desc": "", "rules": assess_post(title),
+            "ambiguous_fields": ["channel", "region"]}
+    row = {"aweme_id": "1", "channel": "民生", "channel_confidence": confidence,
+           "channel_evidence": "宝宝迈出第一步", "region": "待判定",
+           "region_confidence": .5, "region_evidence": ""}
+    result = PostEditorialService.validate({"items": [row]}, [("key", item)])["1"]
+    assert result["channel"] == ("民生" if accepted else "待判定")
+    assert result["region"] == "待判定"
+    assert result["tag_status"] == "uncertain"
+
+
+def test_prompt_example_cannot_replace_evidence_from_current_post():
+    title = "孩子在客厅开心地笑了"
+    item = {"aweme_id": "1", "title": title, "desc": "", "rules": assess_post(title),
+            "ambiguous_fields": ["channel"]}
+    row = {"aweme_id": "1", "channel": "民生", "channel_confidence": .99,
+           "channel_evidence": "一岁萌娃迈出人生第一步，跌跌撞撞走向父母"}
+    result = PostEditorialService.validate({"items": [row]}, [("key", item)])["1"]
+    assert result["channel"] == "待判定"
+    assert result["channel_evidence"] == ""
 
 
 def batch_and_answer(**changes):

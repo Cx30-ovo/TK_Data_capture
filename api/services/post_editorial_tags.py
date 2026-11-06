@@ -99,6 +99,15 @@ def assess_post(title: str = "", desc: str = "") -> dict:
     if re.search(r"经济舱|动物.{0,8}居民|生物圈", text) and not top:
         fields.append("channel")
         reasons.append("频道关键词可能具有其他含义")
+    # These words identify context for semantic review, not a forced channel.
+    # A school anecdote may be everyday life; a baby's hospital visit is health.
+    if re.search(r"家庭|亲子|育儿|萌娃|宝宝|宝妈|宝爸|爸妈|妈妈|爸爸|父母|亲情|学步", text):
+        fields.append("channel")
+        reasons.append("家庭生活与健康、教育、文娱等频道需要按核心内容区分")
+    if (re.search(r"学校|中学|小学|大学|校园", text)
+            and re.search(r"旧照|旧日|怀旧|青春|回忆|老照片|泛黄|旧时", text)):
+        fields.append("channel")
+        reasons.append("校园历史记忆与教学招生需要按核心内容区分")
     if re.search(r"籍贯|祖籍|出生于|来自", text):
         fields.append("region")
         reasons.append("地点可能描述人物属性")

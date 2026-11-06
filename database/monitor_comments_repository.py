@@ -159,9 +159,23 @@ def finish(source,ident,comments,summary):
                     checkpoint={'version':1,'generation':previous['refresh_generation'],'root_cursor':0,
                                 'roots_done':False,'reply_after':'','reply_parent':'','reply_cursor':0,'replies_done':False})
         for item in comments:
-            old=db.execute('SELECT parent_comment_id FROM comments WHERE aweme_id=? AND comment_id=?',
+            old=db.execute('SELECT parent_comment_id,payload FROM comments WHERE aweme_id=? AND comment_id=?',
                            (ident,item['comment_id'])).fetchone()
             if old and old[0]!=item['parent_comment_id']:raise ValueError('评论回复关系冲突')
+            item=dict(item)
+            prior=json.loads(old['payload']) if old else {}
+            if old and item.get('reply_relation_source','unknown')=='unknown':
+                # A later response omitting relationship fields must not erase a known edge.
+                for field in ('root_comment_id','reply_to_comment_id','reply_relation_source','reply_relation_version'):
+                    if field in prior:item[field]=prior[field]
+            same_target=item.get('reply_to_comment_id')==prior.get('reply_to_comment_id')
+            if old and same_target and item.get('reply_relation_source')!='invalid':
+                if item.get('reply_object_source','unknown')=='unknown':
+                    for field in ('reply_to_nickname','reply_to_creator_hash','reply_object_source'):
+                        if field in prior:item[field]=prior[field]
+                elif (item.get('reply_to_creator_hash') and item.get('reply_to_creator_hash')==prior.get('reply_to_creator_hash')
+                      and not item.get('reply_to_nickname')):
+                    item['reply_to_nickname']=prior.get('reply_to_nickname','')
             db.execute('INSERT INTO comments VALUES(?,?,?,?) ON CONFLICT(aweme_id,comment_id) DO UPDATE SET '
                 'parent_comment_id=excluded.parent_comment_id,payload=excluded.payload',
                 (ident,item['comment_id'],item['parent_comment_id'],json.dumps(item,ensure_ascii=False)))
@@ -189,6 +203,124 @@ def read(source,ident,page=1,parent=''):
         for item in items:
             item['saved_replies']=db.execute('SELECT count(*) FROM comments WHERE aweme_id=? AND parent_comment_id=?',
                                             (ident,item['comment_id'])).fetchone()[0]
+        _reply_objects(db,ident,items)
         count=db.execute('SELECT count(*) FROM comments WHERE aweme_id=?',(ident,)).fetchone()[0]
         return {'items':items,'total':total,'total_saved':count,
+                'collection':json.loads(row['payload'])|{'state':row['state'],'updated_at':row['updated_at']} if row else None}
+
+
+def _reply_objects(db,ident,items):
+    """Resolve exact comment IDs inside this work/thread; names never establish tree edges."""
+    targets=list({item.get('reply_to_comment_id') for item in items
+                  if item.get('parent_comment_id') and item.get('reply_relation_source')=='platform'
+                  and isinstance(item.get('reply_to_comment_id'),str)})
+    authors={}
+    if targets:
+        slots=','.join('?' for _ in targets)
+        authors={row[0]:(row[1],json.loads(row[2])) for row in db.execute(
+            f'SELECT comment_id,parent_comment_id,payload FROM comments WHERE aweme_id=? AND comment_id IN ({slots})',
+            (ident,*targets))}
+    people={}
+    for root in {item.get('parent_comment_id') for item in items if item.get('parent_comment_id')
+                 and item.get('reply_object_source')=='platform' and item.get('reply_to_creator_hash')
+                 and not item.get('reply_to_nickname')}:
+        hashes={item['reply_to_creator_hash'] for item in items if item.get('parent_comment_id')==root
+                and item.get('reply_to_creator_hash') and not item.get('reply_to_nickname')}
+        slots=','.join('?' for _ in hashes)
+        for row in db.execute(
+            "SELECT json_extract(payload,'$.creator_hash'),json_extract(payload,'$.nickname') FROM comments "
+            f"WHERE aweme_id=? AND (parent_comment_id=? OR comment_id=?) AND json_extract(payload,'$.creator_hash') IN ({slots}) "
+            "ORDER BY json_extract(payload,'$.captured_at') DESC,comment_id",(ident,root,root,*hashes)):
+            if row[1]:people.setdefault((root,row[0]),row[1])
+    for item in items:
+        root=item.get('parent_comment_id');target=item.get('reply_to_comment_id')
+        # Only show a particular replied-to person. Direct root replies need no label.
+        item['reply_target_display_name']=''
+        item['reply_target_display_source']=None
+        if not root or target==root:continue
+        if item.get('reply_relation_status') in ('cross_thread','self_reference','cycle'):continue
+        match=authors.get(target)
+        if match and (match[0]!=root or target==item.get('comment_id')):continue
+        if item.get('reply_object_source')=='platform' and item.get('reply_to_nickname'):
+            item['reply_target_display_name']=item['reply_to_nickname']
+            item['reply_target_display_source']='platform'
+        elif match and match[1].get('nickname'):
+            item['reply_target_display_name']=match[1]['nickname']
+            item['reply_target_display_source']='collected_comment'
+        elif item.get('reply_object_source')=='platform' and people.get((root,item.get('reply_to_creator_hash'))):
+            item['reply_target_display_name']=people[(root,item['reply_to_creator_hash'])]
+            item['reply_target_display_source']='collected_user'
+
+
+def read_tree(source,ident,root,page=1,target=''):
+    """Read one branch, preserving pagination. No recursion, new schema or read-time writes.
+
+    The persisted adjacency is independent of presentation. Missing/cyclic/cross-thread
+    edges remain in an explicit unlinked group rather than being guessed as root replies.
+    """
+    target=target or root
+    with connection(source) as db:
+        empty={'items':[],'total':0,'total_saved':0,'collection':None,'thread_total':0,'unlinked_count':0,
+               'tree_parent_comment_id':target}
+        if db is None:return empty
+        root_row=db.execute('SELECT parent_comment_id FROM comments WHERE aweme_id=? AND comment_id=?',
+                            (ident,root)).fetchone()
+        if not root_row or root_row[0]!='':return empty
+        edges={r['comment_id']:(r['target'],r['origin']) for r in db.execute(
+            "SELECT comment_id,json_extract(payload,'$.reply_to_comment_id') target,"
+            "json_extract(payload,'$.reply_relation_source') origin FROM comments WHERE aweme_id=? AND parent_comment_id=?",
+            (ident,root))}
+        parents={};states={};missing={}
+        for cid,(dest,origin) in edges.items():
+            if origin!='platform' or not isinstance(dest,str) or not dest.isascii() or not dest.isdigit():
+                parents[cid]='unlinked';states[cid]='invalid' if origin=='invalid' else 'unknown'
+            elif dest==cid:
+                parents[cid]='unlinked';states[cid]='self_reference'
+            elif dest==root:
+                parents[cid]=root;states[cid]='direct'
+            elif dest in edges:
+                parents[cid]=dest;states[cid]='reply'
+            else:
+                parents[cid]='unlinked';states[cid]='missing_target';missing[cid]=dest
+        outside=set();destinations=list(set(missing.values()))
+        for offset in range(0,len(destinations),400):
+            part=destinations[offset:offset+400];slots=','.join('?' for _ in part)
+            outside.update(r[0] for r in db.execute(
+                f'SELECT comment_id FROM comments WHERE aweme_id=? AND comment_id IN ({slots})',(ident,*part)))
+        for cid,dest in missing.items():
+            if dest in outside:states[cid]='cross_thread'
+        # Iterative three-colour walk: arbitrary thread depth without recursion limits.
+        done=set()
+        for start in edges:
+            trail=[];positions={};cursor=start
+            while cursor in edges and cursor not in done and cursor not in positions:
+                positions[cursor]=len(trail);trail.append(cursor);cursor=parents[cursor]
+            if cursor in positions:
+                for cid in trail[positions[cursor]:]:
+                    parents[cid]='unlinked';states[cid]='cycle'
+            done.update(trail)
+        children={}
+        for cid,parent in parents.items():children.setdefault(parent,[]).append(cid)
+        # Load light sort keys only; fetch full bodies for the selected page.
+        rows=[]
+        for offset in range(0,len(children.get(target,[])),400):
+            part=children[target][offset:offset+400];slots=','.join('?' for _ in part)
+            rows.extend((r[0],r[1] or 0) for r in db.execute(
+                f"SELECT comment_id,json_extract(payload,'$.like_count') FROM comments WHERE aweme_id=? AND comment_id IN ({slots})",
+                (ident,*part)))
+        rows.sort(key=lambda row:(-row[1],row[0]))
+        selected=rows[(page-1)*20:page*20];items=[]
+        if selected:
+            slots=','.join('?' for _ in selected)
+            values={r[0]:json.loads(r[1]) for r in db.execute(
+                f'SELECT comment_id,payload FROM comments WHERE aweme_id=? AND comment_id IN ({slots})',
+                (ident,*(cid for cid,_ in selected)))}
+            for cid,_ in selected:
+                items.append({**values[cid],'saved_replies':0,'saved_direct_replies':len(children.get(cid,[])),
+                              'reply_relation_status':states[cid]})
+        _reply_objects(db,ident,items)
+        row=db.execute('SELECT state,updated_at,payload FROM collections WHERE aweme_id=?',(ident,)).fetchone()
+        return {**empty,'items':items,'total':len(rows),'thread_total':len(edges),
+                'unlinked_count':len(children.get('unlinked',[])),
+                'total_saved':db.execute('SELECT count(*) FROM comments WHERE aweme_id=?',(ident,)).fetchone()[0],
                 'collection':json.loads(row['payload'])|{'state':row['state'],'updated_at':row['updated_at']} if row else None}

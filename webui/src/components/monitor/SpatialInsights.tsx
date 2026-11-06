@@ -29,7 +29,7 @@ const cloudSlots = [
 ]
 const wrap = (n: number, m: number) => ((n % m) + m) % m
 const smooth = (n: number) => { const t = Math.max(0, Math.min(1, n)); return t*t*t*(t*(6*t-15)+10) }
-function useReferenceCloud(ref: RefObject<HTMLDivElement>, enabled: boolean, paused: boolean, slowed: boolean, compactView: boolean, rotation: number, count: number, identity: string) {
+function useReferenceCloud(ref: RefObject<HTMLDivElement>, enabled: boolean, paused: boolean, compactView: boolean, rotation: number, count: number, identity: string) {
   const elapsed = useRef(0)
   useEffect(() => {
     const stage = ref.current
@@ -40,10 +40,10 @@ function useReferenceCloud(ref: RefObject<HTMLDivElement>, enabled: boolean, pau
     resize.observe(stage)
     const cards = Array.from(stage.querySelectorAll<HTMLButtonElement>('.spatial-cloud-card'))
     const draw = (now: number) => {
-      if (previous && !paused && !document.hidden) elapsed.current += Math.min((now-previous)/1000, .05) * (slowed ? .2 : 1)
+      if (previous && !paused && !document.hidden) elapsed.current += Math.min((now-previous)/1000, .05)
       previous = now
-      const cycle = Math.floor(elapsed.current / 5.5)
-      const focus = rotation + cycle + smooth((elapsed.current-cycle*5.5-2)/3.5)
+      const cycle = Math.floor(elapsed.current / 4.5)
+      const focus = rotation + cycle + smooth((elapsed.current-cycle*4.5-1.5)/3)
       const size = Math.min(width/1224*.82, height/806*1.25)
       cards.forEach((card, index) => {
         const p = wrap((index-(count > 1 ? focus : 0))*cloudSlots.length/count,cloudSlots.length), i = Math.floor(p), t = p-i
@@ -77,7 +77,7 @@ function useReferenceCloud(ref: RefObject<HTMLDivElement>, enabled: boolean, pau
     }
     frame = requestAnimationFrame(draw)
     return () => { cancelAnimationFrame(frame); resize.disconnect(); cards.forEach(card => { card.removeAttribute('data-front'); ['left','top','width','height','transform','opacity','z-index','--reference-font','--reference-category','--reference-pad'].forEach(key => card.style.removeProperty(key)) }) }
-  }, [ref, enabled, paused, slowed, compactView, rotation, count, identity])
+  }, [ref, enabled, paused, compactView, rotation, count, identity])
 }
 
 function useReducedMotion() {
@@ -100,7 +100,7 @@ function useBarrageLayout(ref: RefObject<HTMLDivElement>, enabled: boolean, iden
       // Equal travel speeds and enough room per slot prevent same-lane overtaking.
       const slots = Math.ceil(cards.length / lanes)
       const distance = Math.max(stage.clientWidth + width + 32, slots * (width + 32))
-      const duration = distance / 55
+      const duration = distance / 65
       const order = Array.from({ length: lanes }, (_, i) => i)
       for (let i = order.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1))
@@ -145,8 +145,7 @@ export function SpatialInsights({ search, onSearchChange, onOpenData, onOpenTopi
   const stageRef = useRef<HTMLDivElement>(null)
   const [reading, setReading] = useState(false)
   const [rotation, setRotation] = useState(0)
-  const [hovered, setHovered] = useState(false)
-  const [previewId, setPreviewId] = useState<string | null>(null)
+  const [cloudFocused, setCloudFocused] = useState(false)
   const reduced = useReducedMotion()
   const allPosts = dashboard.data?.posts ?? []
   const rankItems = ranks.data?.items ?? []
@@ -161,9 +160,7 @@ export function SpatialInsights({ search, onSearchChange, onOpenData, onOpenTopi
   const signals = useMemo<Signal[]>(() => posts.length ? [...posts].map(post => ({ id: post.aweme_id, title: presentPost(post).title, kind: 'post' as const, post })).sort((a, b) => heat(b) - heat(a)).slice(0, 15) : day === 'all' && !period && !hasTagFilter ? filteredRanks.slice(0, 15).map(rank => ({ id: `rank-${rank.sentence_id || rank.word}`, title: rank.word, kind: 'rank' as const, rank })) : [], [posts, rankItems, keyword, day, period, hasTagFilter])
   const cloudSignals = signals
   useBarrageLayout(stageRef, mode === 'barrage', cloudSignals.map(signal => signal.id).join(','))
-  const preview = cloudSignals.find(signal => signal.id === previewId)
-  useEffect(() => setPreviewId(null), [rotation, mode, accountId, keyword, day, period, channel, region])
-  useReferenceCloud(stageRef, mode === 'cloud', paused || reduced || !!preview || reading, hovered, reading, rotation, cloudSignals.length, cloudSignals.map(signal => signal.id).join(','))
+  useReferenceCloud(stageRef, mode === 'cloud', paused || reduced || cloudFocused || reading, reading, rotation, cloudSignals.length, cloudSignals.map(signal => signal.id).join(','))
   const availableDays = useMemo(() => { const counts = new Map<string, number>(); allPosts.forEach(post => { const key = dayKey(post.create_time); counts.set(key, (counts.get(key) ?? 0) + 1) }); return [...counts].sort(([a], [b]) => b.localeCompare(a)) }, [allPosts])
   const [dateOffset, setDateOffset] = useState(0)
   const today = dayKey(Date.now() / 1000)
@@ -227,10 +224,9 @@ export function SpatialInsights({ search, onSearchChange, onOpenData, onOpenTopi
       {dashboard.isError && dashboard.data && <p className="spatial-inline-warning" role="status">刷新失败，正在显示上次采集内容。</p>}
     </div><footer className="spatial-panel-footer"><span>时间按北京时间显示</span><button onClick={() => onOpenData()}>全部作品<ArrowUpRight aria-hidden="true" /></button></footer></section>
     <section className={`spatial-center ${!selected ? 'is-exploring' : ''} ${reading ? 'is-reading' : ''}`} aria-label="热点探索与内容详情"><section ref={cloudRef} role={full ? 'dialog' : undefined} aria-modal={full ? true : undefined} className={`spatial-cloud-panel ${full ? 'is-fullscreen' : ''}`} aria-label="热点星云"><header className="spatial-cloud-heading"><h2><span className="spatial-live-dot" />热点星云</h2><div><div className="spatial-segment" role="group" aria-label="热点展示方式"><button aria-pressed={mode === 'cloud'} onClick={() => setMode('cloud')}>星云</button><button aria-pressed={mode === 'barrage'} onClick={() => setMode('barrage')}>弹幕</button></div><button className="spatial-icon-button" onClick={() => setPaused(!paused)} aria-pressed={paused || reduced} aria-label={paused ? '播放星云动效' : '暂停星云动效'}>{paused || reduced ? <Play aria-hidden="true" /> : <Pause aria-hidden="true" />}</button><button className="spatial-icon-button" onClick={() => setFull(!full)} aria-label={full ? '退出探索大视图' : '展开探索大视图'}>{full ? <Minimize2 aria-hidden="true" /> : <Maximize2 aria-hidden="true" />}</button></div></header>
-      <div ref={stageRef} className={`spatial-cloud-stage ${mode} ${paused || reduced || !!preview ? 'is-paused' : ''} ${preview ? 'has-preview' : ''}`} onMouseEnter={() => setHovered(true)} onMouseLeave={() => { setHovered(false); if (!stageRef.current?.contains(document.activeElement)) setPreviewId(null) }} onFocus={() => setHovered(true)} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) { setHovered(false); setPreviewId(null) } }} onKeyDown={event => { if (event.key === 'Escape' && preview) { event.stopPropagation(); setPreviewId(null) } }}><div className="spatial-orbit orbit-one" aria-hidden="true" /><div className="spatial-orbit orbit-two" aria-hidden="true" /><div className="spatial-orbit orbit-three" aria-hidden="true" />
-        {cloudSignals.length ? cloudSignals.map(signal => <button key={signal.id} className="spatial-cloud-card" aria-pressed={selected?.id === signal.id} aria-describedby={preview?.id === signal.id ? 'spatial-cloud-preview' : undefined} data-preview={preview?.id === signal.id} onMouseEnter={() => setPreviewId(signal.id)} onFocus={() => setPreviewId(signal.id)} onClick={() => { setPreviewId(null); choose(signal) }}><span>{signal.kind === 'post' ? `${postChannel(signal.post.channel)} · ${signal.post.region || '待判定'}` : '平台热度信号'}<Sparkles aria-hidden="true" /></span><strong>{cloudTitle(signal.title)}</strong><small>{signal.kind === 'rank' ? `热度 ${compact(signal.rank.hot_value)}` : signal.post.snapshots.length ? `互动 ${compact(heat(signal))}` : '等待互动快照'}</small></button>) : <div className="spatial-cloud-empty">{dashboard.isLoading || ranks.isLoading ? <><RefreshCw className="animate-spin" /><strong>正在生成星云</strong></> : <><Sparkles /><strong>等待新的内容信号</strong><p>采集内容或平台热榜就绪后，将在这里展开。</p></>}</div>}
-        {preview && <div id="spatial-cloud-preview" className="spatial-cloud-preview" role="region" aria-label="完整标题预览"><div><span>{preview.kind === 'post' ? `${postChannel(preview.post.channel)} · ${preview.post.region || '待判定'}` : '平台热度信号 · 事实待核验'}</span><button aria-label="关闭标题预览" onClick={() => setPreviewId(null)}><X aria-hidden="true" /></button></div><p>{cloudTitle(preview.title)}</p><footer><span>{preview.kind === 'post' ? preview.post.snapshots.length ? `互动 ${compact(heat(preview))}` : '等待互动快照' : `平台热度 ${compact(preview.rank.hot_value)}`}</span><button onClick={() => { setPreviewId(null); choose(preview) }}>阅读详情<ArrowUpRight aria-hidden="true" /></button></footer></div>}
-      </div><footer className="spatial-cloud-footer"><span title={signals[0]?.kind === 'rank' ? '平台热度信号，事实待核验。卡片大小与位置用于轮换展示，不代表热度排名。' : '按最新互动总量选取当前筛选内的前 15 条内容。卡片大小与位置用于轮换展示，不代表热度排名。'}>{signals[0]?.kind === 'rank' ? '平台热度信号' : '悬停预览 · 点击阅读'} · 大小不代表排名</span>{mode === 'cloud' && <div><button disabled={signals.length < 2} aria-label="上一组星云位置" onClick={() => setRotation(value => value - 1)}><ChevronLeft aria-hidden="true" /></button><span aria-live="polite">{signals.length ? `${signals.length} 条线索 · 轮换展示` : '暂无线索'}</span><button disabled={signals.length < 2} aria-label="下一组星云位置" onClick={() => setRotation(value => value + 1)}><ChevronRight aria-hidden="true" /></button></div>}</footer></section>
+      <div ref={stageRef} className={`spatial-cloud-stage ${mode} ${paused || reduced || cloudFocused || reading ? 'is-paused' : ''}`} onFocus={event => setCloudFocused(event.target.matches(':focus-visible'))} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setCloudFocused(false) }}><div className="spatial-orbit orbit-one" aria-hidden="true" /><div className="spatial-orbit orbit-two" aria-hidden="true" /><div className="spatial-orbit orbit-three" aria-hidden="true" />
+        {cloudSignals.length ? cloudSignals.map(signal => <button key={signal.id} className="spatial-cloud-card" aria-pressed={selected?.id === signal.id} onClick={() => choose(signal)}><span>{signal.kind === 'post' ? `${postChannel(signal.post.channel)} · ${signal.post.region || '待判定'}` : '平台热度信号'}<Sparkles aria-hidden="true" /></span><strong>{cloudTitle(signal.title)}</strong><small>{signal.kind === 'rank' ? `热度 ${compact(signal.rank.hot_value)}` : signal.post.snapshots.length ? `互动 ${compact(heat(signal))}` : '等待互动快照'}</small></button>) : <div className="spatial-cloud-empty">{dashboard.isLoading || ranks.isLoading ? <><RefreshCw className="animate-spin" /><strong>正在生成星云</strong></> : <><Sparkles /><strong>等待新的内容信号</strong><p>采集内容或平台热榜就绪后，将在这里展开。</p></>}</div>}
+      </div><footer className="spatial-cloud-footer"><span title={signals[0]?.kind === 'rank' ? '平台热度信号，事实待核验。卡片大小与位置用于轮换展示，不代表热度排名。' : '按最新互动总量选取当前筛选内的前 15 条内容。卡片大小与位置用于轮换展示，不代表热度排名。'}>{signals[0]?.kind === 'rank' ? '平台热度信号' : '点击卡片 · 下方阅读'} · 大小不代表排名</span>{mode === 'cloud' && <div><button disabled={signals.length < 2} aria-label="上一组星云位置" onClick={() => setRotation(value => value - 1)}><ChevronLeft aria-hidden="true" /></button><span aria-live="polite">{signals.length ? `${signals.length} 条线索 · 轮换展示` : '暂无线索'}</span><button disabled={signals.length < 2} aria-label="下一组星云位置" onClick={() => setRotation(value => value + 1)}><ChevronRight aria-hidden="true" /></button></div>}</footer></section>
       <section className="spatial-detail spatial-glass" aria-label="内容详情"><header className="spatial-panel-heading"><h2>{selected ? '内容情报' : '阅读与研判'}</h2>{selected && <div><button className="spatial-icon-button" aria-label={reading ? '恢复标准阅读' : '展开阅读'} onClick={() => setReading(!reading)}>{reading ? <Minimize2 aria-hidden="true" /> : <Maximize2 aria-hidden="true" />}</button><button className="spatial-icon-button" aria-label="收起内容详情" onClick={() => { setSelected(null); setReading(false) }}><X aria-hidden="true" /></button></div>}</header>{selected ? <SpatialReadingDetail key={selected.id} signal={selected} post={currentPost} onOpenData={onOpenData} onOpenTopics={onOpenTopics} /> : <div className="spatial-detail-placeholder"><div className="spatial-placeholder-symbol"><Sparkles aria-hidden="true" /></div><h3>从一条线索，发现更多</h3><p>选择左侧内容、星云卡片或右侧热榜，<br />在这里查看详情并继续分析。</p><span>发现 · 阅读 · 研判</span></div>}</section>
     </section>
     <section className="spatial-ranks spatial-glass" aria-labelledby="spatial-rank-title"><header className="spatial-panel-heading"><h2 id="spatial-rank-title"><Flame aria-hidden="true" />平台热榜</h2><button className="spatial-icon-button" onClick={() => void refreshRanks()} disabled={hotRefreshing || ranks.isFetching} aria-label="刷新平台热榜"><RefreshCw className={hotRefreshing || ranks.isFetching ? 'animate-spin' : ''} aria-hidden="true" /></button></header><div className="spatial-rank-tabs"><span>抖音热榜</span><button onClick={onOpenHot}>完整榜单<ArrowUpRight aria-hidden="true" /></button></div><p className="spatial-rank-meta" title={ranks.data?.generated_at ? `数据时间：${new Date(ranks.data.generated_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}` : undefined}>{ranks.data ? `${ranks.data.stale || ranks.isError || hotRefreshError ? '历史缓存' : '平台快照'} · ${hotRankAge(ranks.data.generated_at, rankClock)}` : '平台传播热度'}{(ranks.isFetching || hotRefreshing) && ranks.data ? ' · 更新中' : ''}</p>{hotWarning && <p className="spatial-inline-warning" role="status">{hotWarning}{rankItems.length > 0 ? ' 当前保留上次成功数据。' : ''}</p>}<div className="spatial-rank-list">{ranks.isLoading ? <StatePanel variant="loading" title="正在读取热榜" /> : ranks.isError && !ranks.data ? <StatePanel variant="error" title="热榜暂不可用" description="请检查采集浏览器连接，恢复后重试。" action={<Button variant="outline" onClick={() => void refreshRanks()} disabled={hotRefreshing}>重试</Button>} /> : filteredRanks.length ? filteredRanks.map((rank, index) => <button key={rank.sentence_id || rank.word} className="spatial-rank-row" aria-pressed={selected?.id === `rank-${rank.sentence_id || rank.word}`} onClick={() => choose({ id: `rank-${rank.sentence_id || rank.word}`, title: rank.word, kind: 'rank', rank })}><span className={`spatial-rank-number ${index < 3 ? 'is-top' : ''}`}>{rank.is_pinned ? '荐' : rank.rank ?? index + 1}</span><span className="spatial-rank-word">{rank.word}<span className="spatial-rank-meter"><i style={{ width: `${rank.hot_value / maxRankHeat * 100}%` }} /></span></span><small title="平台热度值">{rank.hot_value > 0 ? compact(rank.hot_value) : '—'}</small></button>) : <StatePanel variant="empty" title="暂无匹配热榜" />}</div><footer className="spatial-panel-footer"><span>平台热度值 · 事实待核验</span><Flame aria-hidden="true" /></footer></section>

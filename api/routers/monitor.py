@@ -6,7 +6,7 @@ import asyncio
 import time
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -14,7 +14,9 @@ from fastapi.responses import FileResponse
 from database.monitor_repository import monitor_repository
 
 from ..schemas import MonitorAccountConfigRequest, MonitorAccountUpdateRequest, MonitorAlertStatusRequest
-from ..schemas.monitor import MonitorAccountBatchRequest
+from ..schemas.monitor import MonitorAccountBatchRequest, PostEditorialCorrectionRequest
+from database.post_editorial_repository import EditorialCorrectionError, post_editorial_repository
+from ..services.post_editorial_service import post_editorial_service
 from sqlalchemy.exc import IntegrityError
 from ..services.monitor_service import MonitorBrowserNetworkError, MonitorHotRankError, monitor_service
 from ..services.report_service import report_service
@@ -29,6 +31,23 @@ from ..services.account_style_service import StyleRequest, read_style, analyze_s
 from ..services.monitor_comments_service import CommentPolicy
 
 router = APIRouter(prefix="/monitor", tags=["monitor"])
+
+
+@router.get('/posts/{aweme_id}/editorial-tags')
+async def read_editorial_tags(aweme_id: str):
+    post = await monitor_repository.get_post(aweme_id)
+    if post is None:
+        raise HTTPException(404, '作品不存在')
+    return await post_editorial_service.read_for_correction(post)
+
+
+@router.put('/posts/{aweme_id}/editorial-tags')
+async def correct_editorial_tags(aweme_id: str, request: PostEditorialCorrectionRequest):
+    try:
+        await post_editorial_repository.correct(aweme_id, request)
+    except EditorialCorrectionError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
+    return await read_editorial_tags(aweme_id)
 
 
 @router.get('/accounts/{account_id}/comment-policy')
@@ -48,10 +67,18 @@ async def save_comment_policy(account_id: int, request: CommentPolicy):
 
 
 @router.get('/posts/{aweme_id}/comments')
-async def read_post_comments(aweme_id: str, page: int=Query(1,ge=1,le=100000),parent_comment_id: str=Query('',pattern=r'^\d{0,64}$')):
+async def read_post_comments(aweme_id: str, page: int=Query(1,ge=1,le=100000),
+                             parent_comment_id: str=Query('',pattern=r'^\d{0,64}$'),
+                             view: Literal['flat','tree']='flat',
+                             reply_to_comment_id: str=Query('',pattern=r'^(?:\d{1,64}|unlinked)?$')):
     from ..services import monitor_comments_service as service
     if not await monitor_repository.get_post(aweme_id):raise HTTPException(404,'作品不存在')
-    result=await asyncio.to_thread(service.repo.read,service.source(),aweme_id,page,parent_comment_id)
+    if view=='tree':
+        if not parent_comment_id:raise HTTPException(422,'回复树需要指定所属主评论')
+        result=await asyncio.to_thread(service.repo.read_tree,service.source(),aweme_id,parent_comment_id,page,reply_to_comment_id)
+    else:
+        if reply_to_comment_id:raise HTTPException(422,'回复对象参数仅用于回复树')
+        result=await asyncio.to_thread(service.repo.read,service.source(),aweme_id,page,parent_comment_id)
     return {**result,'page':page,'page_size':20,'parent_comment_id':parent_comment_id}
 
 

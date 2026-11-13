@@ -233,6 +233,17 @@ export interface MonitorSnapshot {
 }
 
 export interface MonitorDashboardPost {
+  channel_subtopics?: string[]
+  channel_subtopic_hits?: { label: string; rule_id: string; field: string; snippet: string }[]
+  region_locations?: { place: string; region: string; role: string; role_label: string; field: string; snippet: string; rule_id: string; used: boolean }[]
+  tag_pending_reasons?: { field: string; code: string; label: string }[]
+  classification_cached_at?: number | null
+  classification_cache_status?: 'current' | 'pending' | 'disabled'
+  classification_mode?: 'automatic_rules'
+  tag_rule_version?: string
+  tag_reasons?: string[]
+  tag_scores?: { channel: Record<string, number>; region: Record<string, number> }
+  tag_rule_hits?: { rule_id: string; field: string; snippet: string; candidate: string; score: number; place?: string }[]
   tag_experience_refs?: { aweme_id: string; revision: number; source_sha256: string; channel: string; region: string; reason: string; similarity: number }[]
   visual_status?: 'sampled_video' | 'cover_only' | 'unavailable' | 'analysis_failed' | null
   visual_limitation?: string
@@ -264,14 +275,6 @@ export interface MonitorDashboardPost {
   snapshots: MonitorSnapshot[]
 }
 
-export interface EditorialCorrectionPayload {
-  mode: 'manual' | 'automatic'
-  expected_revision: number
-  source_sha256: string
-  channel?: string
-  region?: string
-  reason?: string
-}
 export type EditorialClassification = Partial<MonitorDashboardPost> & {
   classification_source_sha256: string
   manual_revision: number
@@ -279,6 +282,7 @@ export type EditorialClassification = Partial<MonitorDashboardPost> & {
 }
 
 export interface MonitorDashboard {
+  classification_health?: ClassificationHealth
   generated_at: string
   account: MonitorAccount | null
   counts: {
@@ -287,6 +291,21 @@ export interface MonitorDashboard {
     jobs: Record<string, number>
   }
   posts: MonitorDashboardPost[]
+}
+
+export interface ClassificationHealth {
+  rule_version: string
+  total: number
+  scope: 'loaded_posts'
+  channel_resolved: number
+  region_resolved: number
+  pending_posts: number
+  pending_reasons: Record<string, number>
+  channel_counts: Record<string, number>
+  region_counts: Record<string, number>
+  cached_posts: number
+  last_updated_at: number | null
+  worker: { state: 'not_started' | 'rebuilding' | 'incremental' | 'idle' | 'error'; scope: 'all_accounts'; scanned: number; recomputed: number; reused: number; last_completed_at: number | null; last_error: string | null }
 }
 
 export interface DouyinHotRankItem {
@@ -750,8 +769,6 @@ export const schedulerApi = {
 
 export const monitorApi = {
   getEditorialTags: (id: string) => api.get<EditorialClassification>('/monitor/posts/' + encodeURIComponent(id) + '/editorial-tags'),
-  correctEditorialTags: (id: string, payload: EditorialCorrectionPayload) =>
-    api.put<EditorialClassification>('/monitor/posts/' + encodeURIComponent(id) + '/editorial-tags', payload),
   getExecution: () => api.get<MonitorExecutionStatus>('/monitor/execution'),
   stopExecution: (runId?: string) => api.post('/monitor/execution/stop', undefined, { params: { run_id: runId } }),
   resumeExecution: () => api.post('/monitor/execution/resume'),

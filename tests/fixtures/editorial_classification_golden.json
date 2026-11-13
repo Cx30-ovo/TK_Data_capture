@@ -1,0 +1,31 @@
+{
+  "dataset_version": "editorial-golden-v1",
+  "scope": "固定规则回归集，非总体准确率评估；expected 为明确标注的测试期望",
+  "cases": [
+    {"id":"family","text":"宝宝迈出第一步走向父母","channel":"民生","region":"待判定","subtopic":"家庭育儿"},
+    {"id":"community","text":"厦门社区志愿者开展邻里互助活动","channel":"民生","region":"本地","subtopic":"社区生活"},
+    {"id":"service","text":"厦门新增公交线路","channel":"民生","region":"本地","subtopic":"公共服务"},
+    {"id":"ai-fraud","text":"男子使用AI诈骗被法院判刑","channel":"法治","region":"待判定","subtopic":"诈骗防范"},
+    {"id":"ai-film","text":"#AI短片 #厦门","channel":"文娱","region":"本地","subtopic":"影视作品"},
+    {"id":"sports-economy","text":"#体育经济","channel":"经济","region":"待判定","subtopic":"体育经济"},
+    {"id":"origin","text":"来自福建的菌草技术，在斐济帮助当地种菇","channel":"三农","region":"国际","subtopic":"农业生产"},
+    {"id":"reporter","text":"福建记者报道斐济菌草种植","channel":"三农","region":"国际","subtopic":"农业生产"},
+    {"id":"tourist","text":"日本游客在厦门旅游","channel":"文旅","region":"本地","subtopic":"旅游休闲"},
+    {"id":"institution","text":"中国驻日本大使馆发布消息","channel":"待判定","region":"待判定"},
+    {"id":"team","text":"厦门队VS福州队，比赛在北京进行 #闽超","channel":"体育","region":"国内","subtopic":"球类赛事"},
+    {"id":"credits","text":"这一幕令人感动（来源/福建日报 编辑/厦门）#媒体原创 #正能量","channel":"待判定","region":"待判定"},
+    {"id":"topic-only","text":"一起关注 #金鸡奖 #厦门","channel":"文娱","region":"本地","subtopic":"节展奖项"},
+    {"id":"topic-conflict","text":"在厦门医院进行治疗 #金鸡奖 #美国","channel":"健康","region":"本地","subtopic":"诊疗救治"},
+    {"id":"region-conflict","text":"厦门和福州同步举办活动","channel":"待判定","region":"待判定"},
+    {"id":"channel-conflict","text":"厦门医院开展教育教学","channel":"待判定","region":"本地"},
+    {"id":"emergency","text":"福建发布台风预警","channel":"应急","region":"本省","subtopic":"灾害预警"},
+    {"id":"law","text":"厦门海关在出口包裹中查获文物","channel":"法治","region":"本地","subtopic":"执法安全"},
+    {"id":"technology","text":"研发反诈骗识别算法取得进展","channel":"科技","region":"待判定","subtopic":"技术研发"},
+    {"id":"education","text":"厦门医院举办医学模拟教育大会","channel":"教育","region":"本地"},
+    {"id":"sports","text":"厦门马拉松鸣枪开跑","channel":"体育","region":"本地","subtopic":"全民健身"},
+    {"id":"policy","text":"北京发布管理办法","channel":"政策文件","region":"国内","subtopic":"政策发布"},
+    {"id":"ecology","text":"斐济开展珊瑚种植，修复珊瑚礁生态","channel":"环境生态","region":"国际","subtopic":"生态修复"},
+    {"id":"empty","text":"","channel":"待判定","region":"待判定"},
+    {"id":"unsupported","text":"在格陵兰岛开展活动","channel":"待判定","region":"待判定"}
+  ]
+}

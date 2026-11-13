@@ -261,3 +261,14 @@ async def test_reused_legacy_tab_remembers_target_for_future_hang():
     legacy.evaluate.side_effect = TimeoutError("Renderer unresponsive")
     await module.reset_collection_page(context)
     assert legacy.is_closed()
+
+
+@pytest.mark.asyncio
+async def test_reset_leaves_registered_target_alone_if_user_navigated_it_elsewhere():
+    user = page('https://unrelated.invalid/', module.COLLECTION_TAB_NAME, target_id='old-collection')
+    context = browser_context([user])
+    module._TARGET_FILE.write_text('{"target_id":"old-collection"}')
+    await module.reset_collection_page(context)
+    assert not user.is_closed()
+    user.evaluate.assert_not_awaited()
+    assert not [params for method,params in context.commands if method=='Target.closeTarget']

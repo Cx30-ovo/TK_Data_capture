@@ -205,6 +205,25 @@ async def test_auto_discovery_saves_posts_then_collects_in_same_browser(env):
 
 
 @pytest.mark.asyncio
+async def test_scheduled_discovery_queues_comments_without_waiting_for_comments_or_ai(env, monkeypatch):
+    from api.services import monitor_service as module
+    path,account,monitor=env;policy(env)
+    work={'aweme_id':'123','sec_user_id':account.sec_user_id,'create_time':int(time.time())-30,
+          'title':'新作品','canonical_url':'https://www.douyin.com/video/123'}
+    f=Fetcher(works=[work])
+    ai=AsyncMock(side_effect=AssertionError('Discovery must not wait for AI'))
+    monkeypatch.setattr(module.post_editorial_service,'enrich',ai)
+    result=await monitor.discover_account(account.sec_user_id,fetcher=f,collect_comments=False)
+    assert result['created_posts']==1 and result['created_jobs']>0
+    assert result['comments_deferred'] and result['comment_collections']==[]
+    assert result['elapsed_seconds']>=0 and result['new_posts_per_minute']>0
+    f._client.get_aweme_comments.assert_not_awaited()
+    ai.assert_not_awaited()
+    assert '123' in repo.due(path,account.sec_user_id)
+    assert await posts.get_post('123')
+
+
+@pytest.mark.asyncio
 async def test_comments_off_does_not_request_or_initialize(env):
     path,account,monitor=env
     await monitor.discover_account(account.sec_user_id,fetcher=Fetcher())
@@ -612,6 +631,19 @@ async def test_stopping_snapshot_batch_keeps_refresh_queued_without_comment_requ
     f.fetch_metrics=AsyncMock(side_effect=metrics)
     result=await monitor.run_due_snapshots(fetcher=f)
     assert result['completed']==1 and result['status']=='stopped'
+    assert result['comment_collections'][0]['state']=='pending'
+    assert (await posts.get_job(jobs[0].id)).status=='done'
+    assert repo.progress(path,'123')['refresh_generation']==1
+    f._client.get_aweme_comments.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_scheduled_snapshot_queues_comment_refresh_without_network_wait(env):
+    path,account,monitor=env;policy(env);jobs=await snapshot_jobs()
+    f=Fetcher()
+    f.fetch_metrics=AsyncMock(return_value={'comment_count':3})
+    result=await monitor.run_due_snapshots(fetcher=f,collect_comments=False)
+    assert result['completed']==1 and result['status']=='ok'
     assert result['comment_collections'][0]['state']=='pending'
     assert (await posts.get_job(jobs[0].id)).status=='done'
     assert repo.progress(path,'123')['refresh_generation']==1

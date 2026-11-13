@@ -25,6 +25,7 @@ import asyncio
 import os
 import sys
 import subprocess
+import hashlib
 from contextlib import asynccontextmanager
 from pathlib import Path
 import uvicorn
@@ -45,6 +46,7 @@ from .services.maintenance_service import maintenance_service
 from .services.crawler_manager import crawler_manager
 from database import db
 from tools import utils
+from tools.collection_errors import classify_collection_error, record_collection_error
 
 # Project root directory (used for running subprocesses like uv run main.py)
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -53,16 +55,24 @@ PROJECT_ROOT = Path(__file__).parent.parent
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await db.init_db("sqlite")
+    from database.monitor_repository import monitor_repository
+    # Cache identity follows the database path, but contains no database writes
+    # and never reuses classifications from another database or rule version.
+    source_identity = hashlib.sha256(str(Path(sqlite_db_config['db_path']).resolve()).encode()).hexdigest()[:20]
+    await post_editorial_service.start(monitor_repository, PROJECT_ROOT / "cache" / "editorial-rules" / source_identity)
     # Bootstrap the dedicated Douyin tab before any automatic collection starts.
     # Otherwise the monitor can encounter Chrome's new-tab page first and pause
     # itself as if the required Douyin tab had been closed by the user.
-    if config.START_BROWSER_ON_SERVICE_START:
+    monitor_service.prepare_runtime_state()
+    if (config.START_BROWSER_ON_SERVICE_START and not monitor_service._paused
+            and not monitor_service._risk_control_cooldown_remaining() and not monitor_service._recovery.pending):
         try:
-            await monitor_service.ensure_browser_ready()
+            await asyncio.wait_for(monitor_service.ensure_browser_ready(), config.BROWSER_RECOVERY_TIMEOUT_SECONDS)
         except Exception as exc:
-            utils.logger.warning(f"[Monitor] Failed to prepare dedicated browser: {exc}")
+            failure = classify_collection_error(exc)
+            diagnostic = record_collection_error(exc, kind='startup', phase='browser_bootstrap')
             await crawler_manager.add_log(
-                f"[Monitor] Failed to prepare dedicated browser: {exc}",
+                f"[Monitor] 专用浏览器准备失败：{failure.message}；诊断 {diagnostic['diagnostic_id']}",
                 "warning",
             )
     await scheduler_service.start()

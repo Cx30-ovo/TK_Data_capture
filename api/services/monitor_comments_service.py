@@ -4,7 +4,7 @@ import time
 from pydantic import BaseModel, ConfigDict, Field
 from config.db_config import sqlite_db_config
 from database import monitor_comments_repository as repo
-from tools.collection_errors import classify_collection_error
+from tools.collection_errors import classify_collection_error, record_collection_error
 from tools.douyin_browser_coordinator import CollectionStoppedError
 from tools.user_hash import anonymize_user_id, mask_nickname
 
@@ -75,6 +75,7 @@ def normalize(raw,ident,parent):
 class CommentCollector:
     def __init__(self,fetcher,policy,key,previous):
         self.fetcher=fetcher;self.policy=policy;self.key=key;self.requests=0
+        self.phase='comments_root'
         checkpoint=previous.get('checkpoint',{})
         self.checkpoint=(dict(checkpoint) if checkpoint.get('version')==1 and previous.get('state')!='completed'
                          else {'version':1,'generation':previous.get('refresh_generation',0),'root_cursor':0,'roots_done':False,'reply_after':'',
@@ -84,6 +85,8 @@ class CommentCollector:
         if self.fetcher.should_stop():raise CollectionStoppedError('评论采集已暂停')
 
     async def page(self,ident,parent,cursor):
+        self.phase='comments_replies' if parent else 'comments_root'
+        self.fetcher.on_progress(phase=self.phase) if hasattr(self.fetcher,'on_progress') else None
         self.check()
         # A request budget yields the browser lease, never discards remaining pages.
         if self.requests>=10:return None
@@ -140,7 +143,9 @@ class CommentCollector:
         result={'state':state,'limited':False,'continuation':state!='completed','checkpoint':dict(self.checkpoint),
                 'requests':self.requests,'error_code':None,'message':message,
                 **await asyncio.to_thread(repo.counts,source(),ident)}
-        if failure:result.update(**{k:v for k,v in classify_collection_error(failure).as_dict().items() if k in ('error_code','message')})
+        if failure:
+            result.update(**{k:v for k,v in classify_collection_error(failure).as_dict().items() if k in ('error_code','message')})
+            result.update(record_collection_error(failure,kind='comments',phase=self.phase))
         return result
 
     async def run(self,ident):
@@ -166,14 +171,31 @@ async def close_cancelled(ident):
         'error_code':'user_stop','message':'服务停止，评论进度已保存'})
 
 
-async def collect_one(fetcher,key,ident,policy,manual=False,timeout_seconds=120):
+async def claim_one(key, ident, manual=False):
     claim=asyncio.create_task(asyncio.to_thread(repo.claim,source(),key,ident,manual))
     try:claimed=await asyncio.shield(claim)
     except asyncio.CancelledError:
         if await claim:
             await asyncio.shield(close_cancelled(ident))
         raise
-    if not claimed:return {'state':'deferred','message':'评论采集尚在等待间隔或正在执行'},None
+    return claimed
+
+
+async def fail_initialization(ident, exc):
+    previous=await asyncio.to_thread(repo.progress,source(),ident)
+    summary=previous|{'state':'partial','continuation':True,
+        **{k:v for k,v in classify_collection_error(exc).as_dict().items() if k in ('error_code','message')},
+        **record_collection_error(exc,kind='comments',phase='connecting')}
+    write=asyncio.create_task(asyncio.to_thread(repo.finish,source(),ident,[],summary))
+    try:return await asyncio.shield(write)
+    except asyncio.CancelledError:
+        await write
+        raise
+
+
+async def collect_one(fetcher,key,ident,policy,manual=False,timeout_seconds=120,claimed=False):
+    if not claimed and not await claim_one(key,ident,manual):
+        return {'state':'deferred','message':'评论采集尚在等待间隔或正在执行'},None
     try:
         previous=await asyncio.to_thread(repo.progress,source(),ident)
         collector=CommentCollector(fetcher,policy,key,previous)

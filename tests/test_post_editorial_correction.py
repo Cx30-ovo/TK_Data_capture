@@ -44,7 +44,6 @@ async def isolated(tmp_path, monkeypatch):
     repo = PostEditorialRepository()
     service = PostEditorialService(NoModel(), repo)
     monkeypatch.setattr(routes, "post_editorial_service", service)
-    monkeypatch.setattr(routes, "post_editorial_repository", repo)
     app = FastAPI()
     app.include_router(routes.router)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
@@ -54,138 +53,66 @@ async def isolated(tmp_path, monkeypatch):
         await engine.dispose()
 
 
-async def payload(client):
-    current = (await client.get("/monitor/posts/123/editorial-tags")).json()
-    return {"expected_revision": current["manual_revision"],
-            "source_sha256": current["classification_source_sha256"],
-            "channel": "民生", "region": "待判定", "reason": "作品描写萌娃学步和家庭生活。"}
+@pytest.mark.asyncio
+async def test_rule_get_does_not_write_any_table_and_has_provenance(isolated):
+    client,service,repo,path=isolated
+    before=snapshot(path)
+    response=await client.get("/monitor/posts/123/editorial-tags")
+    assert response.status_code==200
+    value=response.json()
+    assert value["classification_mode"]=="automatic_rules" and value["channel"]=="民生"
+    assert value["region"]=="待判定" and value["tag_rule_version"]
+    assert value["tag_rule_hits"] and value["manual_status"]=="none"
+    assert snapshot(path)==before and service.worker is None
 
 
 @pytest.mark.asyncio
-async def test_readonly_save_priority_persistence_and_only_label_table_changes(isolated, monkeypatch):
-    client, service, repo, path = isolated
-    baseline = snapshot(path)
-    request = await payload(client)
-    assert snapshot(path) == baseline
-    assert service.worker is None
-    response = await client.put("/monitor/posts/123/editorial-tags", json=request)
-    assert response.status_code == 200
-    tags = response.json()
-    assert tags["channel"] == "民生" and tags["region"] == "待判定"
-    assert tags["tag_method"] == "manual" and tags["manual_status"] == "active"
-    assert tags["manual_revision"] == 1 and tags["tag_confidence"] == {}
-    post = await monitor_repository.get_post("123")
-    assert (await service.enrich([post]))["123"]["channel"] == "民生"
-    assert service.worker is None
-    from api.services import post_editorial_service as module
-    monkeypatch.setattr(module, "VERSION", "a-future-model-policy")
-    restarted = PostEditorialService(NoModel(), PostEditorialRepository())
-    assert (await restarted.enrich([post]))["123"]["tag_method"] == "manual"
-    after = snapshot(path)
-    assert baseline[0] == after[0]
-    assert {k: v for k, v in baseline[1].items() if k != "post_editorial_labels"} == {
-        k: v for k, v in after[1].items() if k != "post_editorial_labels"}
-    assert len(after[1]["post_editorial_labels"]) == 1
-    before_get = snapshot(path)
-    assert (await client.get("/monitor/posts/123/editorial-tags")).json()["manual_revision"] == 1
-    assert snapshot(path) == before_get
+@pytest.mark.parametrize("mode",["manual","automatic"])
+async def test_former_correction_endpoint_rejects_without_writes(isolated,mode):
+    client,_,_,path=isolated
+    before=snapshot(path)
+    response=await client.put("/monitor/posts/123/editorial-tags",json={
+        "mode":mode,"expected_revision":0,"source_sha256":"a"*64,
+        "channel":"文娱","region":"国际","reason":"旧客户端请求"})
+    assert response.status_code==410 and "已停用" in response.json()["detail"]
+    assert snapshot(path)==before
 
 
 @pytest.mark.asyncio
-async def test_conflict_preserves_saved_value_and_concurrent_requests_have_one_winner(isolated):
-    client, _, _, _ = isolated
-    request = await payload(client)
-    responses = await asyncio.gather(
-        client.put("/monitor/posts/123/editorial-tags", json=request),
-        client.put("/monitor/posts/123/editorial-tags", json={**request, "channel": "文旅"}))
-    assert sorted(r.status_code for r in responses) == [200, 409]
-    saved = (await client.get("/monitor/posts/123/editorial-tags")).json()
-    rejected = await client.put("/monitor/posts/123/editorial-tags", json=request)
-    assert rejected.status_code == 409 and "分类已更新" in rejected.json()["detail"]
-    assert (await client.get("/monitor/posts/123/editorial-tags")).json() == saved
+async def test_legacy_records_preserved_but_neither_applied_nor_referenced(isolated):
+    from api.schemas.monitor import PostEditorialCorrectionRequest
+    from database.post_editorial_repository import source_sha256
+    client,service,repo,path=isolated
+    post=await monitor_repository.get_post("123")
+    await repo.correct("123",PostEditorialCorrectionRequest(
+        expected_revision=0,source_sha256=source_sha256(post),channel="文娱",region="国际",reason="历史人工记录"))
+    await repo.save("legacy-ai","123",{"channel":"教育","region":"本省","tag_method":"rules_ai"})
+    before=snapshot(path)
+    tags=(await client.get("/monitor/posts/123/editorial-tags")).json()
+    assert tags["channel"]=="民生" and tags["region"]=="待判定"
+    assert tags["manual_status"]=="none" and not tags["tag_experience_refs"]
+    assert snapshot(path)==before
+    assert tags==(await service.enrich([post]))["123"]
 
 
 @pytest.mark.asyncio
-async def test_restore_automatic_keeps_model_cache_and_monotonic_revision(isolated):
-    client, service, repo, _ = isolated
-    post = await monitor_repository.get_post("123")
-    model_tags = {"channel": "文旅", "region": "待判定", "tag_method": "rules_ai", "tag_status": "uncertain"}
-    key = service.cache_key(post)
-    await repo.save(key, post.aweme_id, model_tags)
-    request = await payload(client)
-    assert (await client.put("/monitor/posts/123/editorial-tags", json=request)).status_code == 200
-    auto = {"mode": "automatic", "expected_revision": 1, "source_sha256": request["source_sha256"]}
-    result = await client.put("/monitor/posts/123/editorial-tags", json=auto)
-    assert result.status_code == 200
-    assert result.json()["manual_revision"] == 2 and result.json()["manual_status"] == "none"
-    assert result.json()["channel"] == "文旅"
-    assert (await repo.load([key]))[key]["tags"] == model_tags
-    assert (await client.put("/monitor/posts/123/editorial-tags", json={**request, "expected_revision": 1})).status_code == 409
-    assert (await client.put("/monitor/posts/123/editorial-tags", json={**request, "expected_revision": 2})).json()["manual_revision"] == 3
+async def test_missing_post_returns_404_without_initializing_new_storage(isolated):
+    client,_,_,path=isolated
+    before=snapshot(path)
+    assert (await client.get("/monitor/posts/999/editorial-tags")).status_code==404
+    assert snapshot(path)==before
 
 
 @pytest.mark.asyncio
-async def test_source_change_invalidates_old_correction_and_rejects_stale_form(isolated):
-    client, service, _, _ = isolated
-    request = await payload(client)
-    await client.put("/monitor/posts/123/editorial-tags", json=request)
-    await monitor_repository.upsert_post(aweme_id="123", sec_user_id="sample-account", title="厦门发布科技进展",
-        desc="新的作品正文", create_time=1, canonical_url="https://www.douyin.com/video/123")
-    stale = await client.put("/monitor/posts/123/editorial-tags", json={**request, "expected_revision": 1})
-    assert stale.status_code == 409 and "原文已变化" in stale.json()["detail"]
-    current = (await client.get("/monitor/posts/123/editorial-tags")).json()
-    assert current["manual_status"] == "outdated" and current["manual_revision"] == 1
-    assert current["tag_method"] != "manual" and current["channel"] == "科技"
-    request.update(expected_revision=1, source_sha256=current["classification_source_sha256"], channel="科技")
-    assert (await client.put("/monitor/posts/123/editorial-tags", json=request)).json()["manual_status"] == "active"
-
-
-@pytest.mark.asyncio
-async def test_inflight_model_result_does_not_overwrite_manual_record(isolated):
-    client, _, repo, _ = isolated
-    gate = asyncio.Event()
-    class PendingModel:
-        def get_status(self):
-            return {"enabled": True, "configured": True}
-        async def generate_json(self, **kwargs):
-            await gate.wait()
-            return {"items": [{"aweme_id": "123", "channel": "民生", "channel_confidence": .9,
-                "channel_evidence": "萌娃", "region": "待判定", "region_confidence": .5, "region_evidence": ""}]}
-    service = PostEditorialService(PendingModel(), repo)
-    post = await monitor_repository.get_post("123")
-    try:
-        await service.enrich([post])
-        await client.put("/monitor/posts/123/editorial-tags", json={**await payload(client), "channel": "教育"})
-        gate.set()
-        await asyncio.wait_for(service.worker, 3)
-        result = (await service.enrich([post]))["123"]
-        assert result["channel"] == "教育" and result["tag_method"] == "manual"
-        assert (await repo.load_manual(["123"]))["123"]["revision"] == 1
-    finally:
-        gate.set()
-        await service.stop()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("changes", [
-    {"channel": "推荐"}, {"region": "全部"}, {"reason": "  "}, {"reason": "x" * 1001},
-    {"expected_revision": -1}, {"expected_revision": True}, {"source_sha256": "bad"},
-    {"tag_method": "rules_ai"}, {"channel": None}, {"region": None}, {"mode": "other"},
-])
-async def test_invalid_parameters_do_not_write(isolated, changes):
-    client, _, _, path = isolated
-    request = await payload(client)
-    before = snapshot(path)
-    response = await client.put("/monitor/posts/123/editorial-tags", json={**request, **changes})
-    assert response.status_code == 422
-    assert snapshot(path) == before
-
-
-@pytest.mark.asyncio
-async def test_missing_post_and_unicode_length(isolated):
-    client, _, _, _ = isolated
-    request = await payload(client)
-    assert (await client.get("/monitor/posts/missing/editorial-tags")).status_code == 404
-    assert (await client.put("/monitor/posts/missing/editorial-tags", json=request)).status_code == 404
-    request["reason"] = "字😀" * 500
-    assert (await client.put("/monitor/posts/123/editorial-tags", json=request)).status_code == 200
+async def test_dashboard_get_classifies_without_writes_or_background_jobs(isolated,monkeypatch):
+    from api.services import monitor_service as module
+    client,service,_,path=isolated
+    monkeypatch.setattr(module,'post_editorial_service',service)
+    before=snapshot(path)
+    response=await client.get('/monitor/dashboard?all_accounts=true')
+    assert response.status_code==200
+    works=response.json()['posts']
+    assert len(works)==1 and works[0]['classification_mode']=='automatic_rules'
+    assert works[0]['channel']=='民生' and works[0]['tag_rule_version']
+    assert service.worker is None and service.queue.empty()
+    assert snapshot(path)==before

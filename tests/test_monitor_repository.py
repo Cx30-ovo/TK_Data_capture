@@ -159,6 +159,10 @@ async def test_monitor_repository_flow(isolated_monitor_db):
 
     duplicate_jobs = await monitor_repository.create_snapshot_jobs(post)
     assert duplicate_jobs == []
+    # Repeated stage definitions in one batch must not create duplicate jobs.
+    custom_jobs = await monitor_repository.create_snapshot_jobs(post, stages=[("custom", 999999), ("custom", 999999)])
+    assert len(custom_jobs) == 1
+    assert await monitor_repository.create_snapshot_jobs(post, stages=[("custom", 999999)]) == []
 
     due_jobs = await monitor_repository.list_due_jobs(now=BASE_TIME + 3600)
     assert len(due_jobs) == 1

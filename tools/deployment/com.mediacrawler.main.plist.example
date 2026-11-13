@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.mediacrawler.main</string>
+  <key>WorkingDirectory</key><string>__PROJECT_ROOT__</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__PROJECT_ROOT__/.venv/bin/python</string>
+    <string>-B</string>
+    <string>__PROJECT_ROOT__/tools/run_monitor_service.py</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>ExitTimeOut</key><integer>45</integer>
+  <key>StandardOutPath</key><string>__PROJECT_ROOT__/output/supervised-monitor.log</string>
+  <key>StandardErrorPath</key><string>__PROJECT_ROOT__/output/supervised-monitor-error.log</string>
+</dict>
+</plist>

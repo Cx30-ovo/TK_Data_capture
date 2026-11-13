@@ -15,7 +15,6 @@ from database.monitor_repository import monitor_repository
 
 from ..schemas import MonitorAccountConfigRequest, MonitorAccountUpdateRequest, MonitorAlertStatusRequest
 from ..schemas.monitor import MonitorAccountBatchRequest, PostEditorialCorrectionRequest
-from database.post_editorial_repository import EditorialCorrectionError, post_editorial_repository
 from ..services.post_editorial_service import post_editorial_service
 from sqlalchemy.exc import IntegrityError
 from ..services.monitor_service import MonitorBrowserNetworkError, MonitorHotRankError, monitor_service
@@ -43,11 +42,7 @@ async def read_editorial_tags(aweme_id: str):
 
 @router.put('/posts/{aweme_id}/editorial-tags')
 async def correct_editorial_tags(aweme_id: str, request: PostEditorialCorrectionRequest):
-    try:
-        await post_editorial_repository.correct(aweme_id, request)
-    except EditorialCorrectionError as exc:
-        raise HTTPException(exc.status, str(exc)) from exc
-    return await read_editorial_tags(aweme_id)
+    raise HTTPException(410, '人工纠正分类已停用，频道与地域由自动规则判定')
 
 
 @router.get('/accounts/{account_id}/comment-policy')
@@ -175,6 +170,13 @@ async def read_account_profile(account_id: int, days: int = Query(30, ge=1, le=3
 @router.get("/execution")
 async def get_monitor_execution():
     return monitor_service.execution_status()
+
+
+@router.get("/readiness")
+async def get_monitor_readiness():
+    from fastapi.responses import JSONResponse
+    health = monitor_service.business_health()
+    return JSONResponse(health, status_code=200 if health['ready'] else 503)
 
 
 @router.post("/execution/stop")

@@ -1,6 +1,11 @@
 """Stable, safe-to-display collection errors; never expose signed URLs/cookies."""
 
 from dataclasses import dataclass, asdict
+import json
+import logging
+import re
+import traceback
+import uuid
 
 
 @dataclass(frozen=True)
@@ -21,6 +26,8 @@ def classify_collection_error(exc):
         return CollectionFailure(code, "已安全停止", "已完成的数据保留；点击恢复监控可继续。", False)
     if code == "browser_busy":
         return CollectionFailure(code, "抖音页签忙碌", "等待其他采集任务结束后重试。")
+    if code == "browser_connection_timeout":
+        return CollectionFailure(code, "浏览器控制连接超时", "正在尝试恢复受管采集页；不代表平台请求超时。")
     if any(token in text for token in ("argus", "uifid", "blocked", "风控", "http 403", "http 429")):
         return CollectionFailure("risk_control", "触发风控，请稍后重试", "已暂停后续请求，按递增冷却策略重试。")
     if "login" in text or "登录" in text:
@@ -36,3 +43,25 @@ def classify_collection_error(exc):
     if isinstance(exc, ValueError) or any(token in text for token in ("json", "decode", "missing required", "does not match")):
         return CollectionFailure("invalid_response", "返回数据不完整", "未写入异常数据，稍后重试。")
     return CollectionFailure("unknown", "采集暂未完成", "已保留完成的数据，请检查控制台后重试。")
+
+
+def record_collection_error(exc, *, kind, phase="unknown"):
+    """Log locations and exception types, never messages, URLs, locals or cookies."""
+    phase = getattr(exc, "collection_phase", phase)
+    token = lambda value: re.sub(r"[^a-zA-Z0-9_.-]", "_", str(value))[:80]
+    diagnostic = getattr(exc, "collection_diagnostic", None)
+    if diagnostic is None:
+        diagnostic = {"diagnostic_id": uuid.uuid4().hex[:12], "phase": token(phase)}
+        chain, seen, current = [], set(), exc
+        while current is not None and id(current) not in seen and len(chain) < 5:
+            seen.add(id(current))
+            frames = [{"file": token(frame.filename.replace("\\", "/").split("/")[-1]),
+                       "line": frame.lineno, "function": token(frame.name)}
+                      for frame in traceback.extract_tb(current.__traceback__)[-8:]]
+            chain.append({"type": token(type(current).__name__), "frames": frames})
+            current = current.__cause__ or current.__context__
+        logging.getLogger("MediaCrawler").warning("collection_failure %s", json.dumps(
+            {**diagnostic, "kind": token(kind), "error_code": classify_collection_error(exc).error_code,
+             "exceptions": chain}, ensure_ascii=False))
+        exc.collection_diagnostic = diagnostic
+    return dict(diagnostic)

@@ -385,6 +385,31 @@ async def test_known_pinned_post_does_not_hide_new_posts_on_next_page():
 
 
 @pytest.mark.asyncio
+async def test_repeated_discovery_page_stops_and_deduplicates():
+    fetcher = DouyinMonitorFetcher()
+    fetcher._client = SimpleNamespace(get_user_aweme_posts=AsyncMock(side_effect=[
+        {"aweme_list": [post(1), post(1)], "has_more": True, "max_cursor": "10"},
+        {"aweme_list": [post(1)], "has_more": True, "max_cursor": "20"},
+    ]))
+    result = await fetcher.fetch_latest_posts("account-one", set(), max_pages=50)
+    assert [item["aweme_id"] for item in result] == ["1"]
+    assert fetcher._client.get_user_aweme_posts.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_discovery_cursor_cycle_stops_even_with_new_items():
+    fetcher = DouyinMonitorFetcher()
+    fetcher._client = SimpleNamespace(get_user_aweme_posts=AsyncMock(side_effect=[
+        {"aweme_list": [post(1)], "has_more": True, "max_cursor": "10"},
+        {"aweme_list": [post(2)], "has_more": True, "max_cursor": "20"},
+        {"aweme_list": [post(3)], "has_more": True, "max_cursor": "10"},
+    ]))
+    result = await fetcher.fetch_latest_posts("account-one", set(), max_pages=50)
+    assert [item["aweme_id"] for item in result] == ["1", "2", "3"]
+    assert fetcher._client.get_user_aweme_posts.await_count == 3
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("partial", [False, True])
 async def test_discovery_timeout_backoff_preserves_data_and_resets_on_success(repository, partial):
     service = MonitorService()
@@ -430,7 +455,8 @@ async def test_account_backoff_does_not_stop_other_accounts_or_snapshot_cycles(r
     await service._defer_discovery_retry(first.sec_user_id, classify_collection_error(TimeoutError()))
     await service._run_cycle()
     service.run_due_snapshots.assert_awaited_once()
-    service.discover_account.assert_awaited_once_with(sec_user_id="account-two")
+    service.discover_account.assert_awaited_once_with(sec_user_id="account-two", collect_comments=False)
+    service.run_due_snapshots.assert_awaited_once_with(limit=10, collect_comments=False)
     service._discovery_retries[first.sec_user_id]["until"] = time.time() - 1
     service.discover_account.reset_mock()
     await service._run_cycle()

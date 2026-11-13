@@ -1,7 +1,9 @@
+"""Rule-only classification: model/cache/correction/media must never be consulted."""
 import asyncio
 import copy
 import json
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -53,280 +55,82 @@ class Model:
                 for row in json.loads(kwargs["user_prompt"])["items"]]}
 
 
-def test_ambiguity_detection():
-    assert not assess_post("厦门新增公交线路")["ambiguous_fields"]
-    assert not assess_post("福建发布经济发展数据")["ambiguous_fields"]
-    assert "region" in assess_post("日本游客在厦门旅游")["ambiguous_fields"]
-    assert assess_post("厦门动物居民的生物圈")["channel"] == "环境生态"
-    assert not assess_post("厦门动物居民的生物圈")["ambiguous_fields"]
-    assert "region" in assess_post("韩国瑜出席活动")["ambiguous_fields"]
-    assert "region" in assess_post("这个故事令人感动")["ambiguous_fields"]
-    assert assess_post("厦门经济舱服务升级")["channel"] == "民生"
-    assert "channel" in assess_post("厦门这一幕令人感动")["ambiguous_fields"]
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("title,channel,region", [
+    ("厦门新增公交线路", "民生", "本地"),
+    ("日本游客在厦门旅游", "文旅", "本地"),
+    ("宝宝迈出第一步走向父母", "民生", "待判定"),
+    ("妈妈带宝宝到厦门医院治疗", "健康", "本地"),
+    ("这一幕令人感动", "待判定", "待判定"),
+    ("1234567890", "待判定", "待判定"),
+])
+async def test_all_inputs_are_synchronous_rules_without_io(title,channel,region):
+    guard=Mock(side_effect=AssertionError("Classification must not use dependencies"))
+    model=SimpleNamespace(get_status=guard,generate_json=guard,generate_multimodal_json=guard)
+    repo=SimpleNamespace(load=guard,save=guard,load_manual=guard,correction_examples=guard)
+    loader=AsyncMock(side_effect=AssertionError("No media"))
+    service=PostEditorialService(model,repo,loader)
+    sample=post(title=title)
+    sample.canonical_url="https://www.douyin.com/video/1"
+    sample.cover_url="https://example.invalid/cover.jpg"
+    result=(await service.enrich([sample]))["1"]
+    assert (result["channel"],result["region"])==(channel,region)
+    assert result==await service.read_for_correction(sample)
+    assert result["tag_method"]=="rules_v3"
+    assert result["classification_mode"]=="automatic_rules"
+    assert result["tag_status"] in ("resolved","uncertain")
+    assert not result["tag_experience_refs"] and result["manual_status"]=="none"
+    assert not guard.called and not loader.called
+    assert service.worker is None and service.queue.empty() and not service.pending
+    await service.stop()
 
 
 @pytest.mark.asyncio
-async def test_clear_rules_never_call_ai():
-    model, repo = Model(), Repository()
-    service = PostEditorialService(model, repo)
-    tags = await service.enrich([post(title="福建发布经济发展数据")])
-    assert tags["1"]["tag_status"] == "resolved"
-    assert tags["1"]["region"] == "本省"
-    assert model.calls == 0 and service.worker is None
+async def test_legacy_manual_ai_and_visual_results_stay_untouched_and_ignored():
+    repo=Repository()
+    sample=post(title="厦门新增公交线路")
+    service=PostEditorialService(Model(),repo)
+    for key in (manual_key("1"),"legacy-ai-key",service.cache_key(sample)):
+        await repo.save(key,"1",{"active":True,"channel":"文娱","region":"国际","tag_method":"rules_ai_visual"})
+    before=copy.deepcopy(repo.rows)
+    for _ in range(3):
+        result=(await service.enrich([sample]))["1"]
+        assert result["channel"]=="民生" and result["region"]=="本地"
+        assert result["manual_status"]=="none" and result["tag_confidence"]=={}
+    assert repo.rows==before
 
 
 @pytest.mark.asyncio
-async def test_background_dedup_cache_and_clear_fields_preserved():
-    model, repo = Model(), Repository()
-    model.gate = asyncio.Event()
-    service = PostEditorialService(model, repo)
-    p = post()
-    try:
-        initial = await asyncio.wait_for(service.enrich([p]), .5)
-        assert initial["1"]["tag_status"] == "pending"
-        await service.enrich([p])
-        assert len(service.pending) == 1
-        model.gate.set()
-        await asyncio.wait_for(service.worker, 2)
-        result = (await service.enrich([p]))["1"]
-        assert model.calls == 1
-        assert result["region"] == "本地"
-        assert result["channel"] == "文旅"
-        assert result["tag_method"] == "rules_ai"
-        assert result["tag_status"] == "resolved"
-        # Persisted result survives a new service instance.
-        other = PostEditorialService(Model(), repo)
-        assert (await other.enrich([p]))["1"] == result
-        assert other.worker is None
-        # Title edits and model changes invalidate cache.
-        assert service.cache_key(p) != service.cache_key(post(title="不同标题"))
-        key = service.cache_key(p)
-        model.version = "new-model"
-        assert key != service.cache_key(p)
-    finally:
-        await service.stop()
-
-
-@pytest.mark.asyncio
-async def test_unavailable_model_does_not_queue_or_fake_ai_result():
-    service = PostEditorialService(Model(enabled=False), Repository())
-    result = (await service.enrich([post()]))["1"]
-    assert result["tag_status"] == "ai_unavailable"
-    assert result["tag_method"] == "rules_v2"
+async def test_empty_batch_and_new_instance_have_no_background_work():
+    service=PostEditorialService()
+    assert await service.enrich([])=={}
+    p=post()
+    assert await service.enrich([p])==await PostEditorialService().enrich([p])
     assert service.worker is None
 
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("title,channel", [
-    ("妈妈：叫妈妈！宝宝：爸爸！我不仅叫爸，我还字正腔圆", "民生"),
-    ("一岁萌娃迈出人生第一步，跌跌撞撞走向父母", "民生"),
-    ("厦门幼儿园萌娃向爸爸展示自己的玩具", "民生"),
-    ("妈妈带宝宝到厦门医院治疗", "健康"),
-    ("厦门幼儿园向父母公布招生安排", "教育"),
-    ("厦门法院审理父母抚养权诉讼", "法治"),
-    ("电视剧里的妈妈和宝宝迎来大结局", "文娱"),
-    ("厦门双十中学的旧日风华，泛黄画里有青春", "文旅"),
-    ("厦门中学公开旧照用于历史课堂教学", "教育"),
-    ("野生动物与幼崽相依的亲情", "环境生态"),
-])
-async def test_semantic_review_can_resolve_context_and_preserve_independent_location(title, channel):
-    class AnswerModel(Model):
-        async def generate_json(self, **kwargs):
-            self.calls += 1
-            self.system_prompt = kwargs["system_prompt"]
-            rows = json.loads(kwargs["user_prompt"])["items"]
-            return {"items": [{"aweme_id": row["aweme_id"], "channel": channel,
-                               "channel_confidence": .95, "channel_evidence": row["title"],
-                               "region": "待判定", "region_confidence": .5,
-                               "region_evidence": "", "reason": "按核心内容区分频道，地点单独判断。"}
-                              for row in rows]}
-
-    model, repo = AnswerModel(), Repository()
-    service = PostEditorialService(model, repo)
-    sample = post(title=title)
-    initial = assess_post(title)
-    try:
-        assert (await service.enrich([sample]))["1"]["tag_status"] == "pending"
-        await asyncio.wait_for(service.worker, 2)
-        result = (await service.enrich([sample]))["1"]
-        assert result["channel"] == channel
-        assert result["channel_evidence"] == title
-        assert result["ai_reviewed_fields"] == ["channel"]
-        assert result["region"] == initial["region"]
-        assert result["tag_status"] == ("uncertain" if initial["region"] == "待判定" else "resolved")
-        assert "频道和地域独立判断" in model.system_prompt
-        assert "不以是否属于硬新闻" in model.system_prompt
-        assert model.calls == 1
-    finally:
-        await service.stop()
-
-
-@pytest.mark.asyncio
-async def test_updated_policy_requeues_old_unknown_cache_without_rewriting_it(monkeypatch):
+def test_rule_identity_changes_with_content_and_version_not_provider(monkeypatch):
     from api.services import post_editorial_service as module
-
-    model, repo = Model(), Repository()
-    service = PostEditorialService(model, repo)
-    sample = post()
-    with monkeypatch.context() as old:
-        old.setattr(module, "VERSION", "editorial-hybrid-v4.2-marine-ecology")
-        old_key = service.cache_key(sample)
-    await repo.save(old_key, sample.aweme_id, {**assess_post(sample.title), "tag_status": "uncertain"})
-    original = copy.deepcopy(repo.rows[old_key])
-    try:
-        assert old_key != service.cache_key(sample)
-        assert (await service.enrich([sample]))["1"]["tag_status"] == "pending"
-        await asyncio.wait_for(service.worker, 2)
-        assert (await service.enrich([sample]))["1"]["region"] == "本地"
-        assert model.calls == 1
-        assert repo.rows[old_key] == original
-    finally:
-        await service.stop()
-
-
-@pytest.mark.parametrize("confidence,accepted", [(.79, False), (.8, True), (.95, True)])
-def test_clear_channel_is_independent_of_unknown_location_and_keeps_acceptance_threshold(confidence, accepted):
-    title = "宝宝迈出第一步走向父母"
-    item = {"aweme_id": "1", "title": title, "desc": "", "rules": assess_post(title),
-            "ambiguous_fields": ["channel", "region"]}
-    row = {"aweme_id": "1", "channel": "民生", "channel_confidence": confidence,
-           "channel_evidence": "宝宝迈出第一步", "region": "待判定",
-           "region_confidence": .5, "region_evidence": ""}
-    result = PostEditorialService.validate({"items": [row]}, [("key", item)])["1"]
-    assert result["channel"] == ("民生" if accepted else "待判定")
-    assert result["region"] == "待判定"
-    assert result["tag_status"] == "uncertain"
-
-
-def test_prompt_example_cannot_replace_evidence_from_current_post():
-    title = "孩子在客厅开心地笑了"
-    item = {"aweme_id": "1", "title": title, "desc": "", "rules": assess_post(title),
-            "ambiguous_fields": ["channel"]}
-    row = {"aweme_id": "1", "channel": "民生", "channel_confidence": .99,
-           "channel_evidence": "一岁萌娃迈出人生第一步，跌跌撞撞走向父母"}
-    result = PostEditorialService.validate({"items": [row]}, [("key", item)])["1"]
-    assert result["channel"] == "待判定"
-    assert result["channel_evidence"] == ""
-
-
-def batch_and_answer(**changes):
-    p = post()
-    batch = [("key", {"aweme_id": "1", "title": p.title, "desc": "",
-                      "rules": assess_post(p.title), "ambiguous_fields": ["region"]})]
-    row = dict(aweme_id="1", channel="经济", region="本地", channel_confidence=.99,
-               region_confidence=.95, region_evidence="在厦门", channel_evidence="虚构内容")
-    row.update(changes)
-    return batch, {"items": [row]}
-
-
-def test_ai_only_overrides_ambiguous_fields():
-    batch, payload = batch_and_answer()
-    result = PostEditorialService.validate(payload, batch)["1"]
-    assert result["channel"] == "文旅"  # Ignores attempted overwrite of clear rule field.
-    assert result["region"] == "本地"
-
-
-@pytest.mark.parametrize("channel", ["科技", "体育", "教育", "法治", "文娱"])
-def test_new_channel_requires_verbatim_evidence(channel):
-    title = "厦门发布新内容"
-    batch = [("key", {"aweme_id": "1", "title": title, "desc": "",
-                       "rules": assess_post(title), "ambiguous_fields": ["channel"]})]
-    row = {"aweme_id": "1", "channel": channel, "channel_confidence": .95,
-           "channel_evidence": "发布新内容"}
-    assert PostEditorialService.validate({"items": [row]}, batch)["1"]["channel"] == channel
-    row["channel_evidence"] = "虚构的原文"
-    assert PostEditorialService.validate({"items": [row]}, batch)["1"]["channel"] == "待判定"
-    row["channel"] = "综合"
-    with pytest.raises(ValueError):
-        PostEditorialService.validate({"items": [row]}, batch)
-
-
-def test_one_bad_row_does_not_discard_other_valid_reviews():
-    batch, payload = batch_and_answer()
-    other = copy.deepcopy(batch[0][1])
-    other["aweme_id"] = "2"
-    batch.append(("key2", other))
-    payload["items"].append({"aweme_id": "2", "region": "无效标签"})
-    result = PostEditorialService.validate_partial(payload, batch)
-    assert set(result) == {"1"}
-    assert result["1"]["region"] == "本地"
-    payload["items"].append(payload["items"][0])
-    assert PostEditorialService.validate_partial(payload, batch) == {}
-
-
-def test_missing_row_can_be_retried_independently():
-    batch, payload = batch_and_answer()
-    other = copy.deepcopy(batch[0][1])
-    other["aweme_id"] = "2"
-    assert set(PostEditorialService.validate_partial(payload, batch + [("key2", other)])) == {"1"}
+    model=Model();service=PostEditorialService(model,Repository());p=post()
+    key=service.cache_key(p)
+    model.version="another-provider"
+    assert key==service.cache_key(p)
+    assert key!=service.cache_key(post(title="新文案"))
+    monkeypatch.setattr(module,"VERSION","editorial-rules-future")
+    assert key!=service.cache_key(p)
 
 
 @pytest.mark.asyncio
-async def test_id_only_content_does_not_spend_model_calls():
-    model = Model()
-    service = PostEditorialService(model, Repository())
-    tags = await service.enrich([post(title="7703159627600530698")])
-    assert tags["1"]["tag_status"] == "insufficient"
-    assert model.calls == 0 and service.worker is None
-
-
-def test_ai_cannot_infer_province_from_dialect_or_event_name_alone():
-    title = "微信输入法支持闽南话识别"
-    rules = assess_post(title)
-    batch = [("key", {"aweme_id": "1", "title": title, "desc": "", "rules": rules,
-                       "ambiguous_fields": ["region"]})]
-    payload = {"items": [{"aweme_id": "1", "region": "本省", "region_confidence": .99,
-                          "region_evidence": "闽南话"}]}
-    result = PostEditorialService.validate(payload, batch)["1"]
-    assert result["region"] == "待判定"
-
-
-@pytest.mark.parametrize("changes", [
-    {"region_confidence": .7}, {"region_evidence": "不在原文里的证据"},
-    {"region_evidence": ""}, {"region": "待判定"},
-])
-def test_low_confidence_or_invented_evidence_remains_unknown(changes):
-    batch, payload = batch_and_answer(**changes)
-    result = PostEditorialService.validate(payload, batch)["1"]
-    assert result["region"] == "待判定"
-    assert result["tag_status"] == "uncertain"
-
-
-@pytest.mark.parametrize("changes", [
-    {"region": "火星"}, {"region_confidence": 2}, {"region_confidence": True},
-    {"aweme_id": "invented-id"}, {"region_confidence": float("nan")},
-])
-def test_invalid_structured_output_rejected(changes):
-    batch, payload = batch_and_answer(**changes)
-    with pytest.raises(ValueError):
-        PostEditorialService.validate(payload, batch)
-
-
-@pytest.mark.asyncio
-async def test_provider_failure_retains_rules_and_does_not_repeat_on_refresh():
-    model, repo = Model(fail=True), Repository()
-    service = PostEditorialService(model, repo)
-    try:
-        await service.enrich([post()])
-        await asyncio.wait_for(service.worker, 2)
-        result = (await service.enrich([post()]))["1"]
-        assert result["tag_status"] == "retry"
-        assert result["tag_method"] == "rules_v2"
-        assert model.calls == 1
-        assert service.queue.empty()
-    finally:
-        await service.stop()
-
-
-@pytest.mark.asyncio
-async def test_shutdown_cancels_inference_and_releases_dedup_keys():
-    model = Model()
-    model.gate = asyncio.Event()
-    service = PostEditorialService(model, Repository())
-    await service.enrich([post()])
-    await asyncio.sleep(0)
-    await service.stop()
-    assert not service.pending and service.queue.empty()
+async def test_rule_update_is_visible_without_migration_or_backfill(monkeypatch):
+    from api.services import post_editorial_service as module
+    p=post();repo=Repository();service=PostEditorialService(Model(),repo)
+    original=await service.enrich([p])
+    monkeypatch.setattr(module,"assess_post",lambda *args:{**assess_post(*args),"tag_rule_version":"future-rules"})
+    newer=await service.enrich([p])
+    assert newer["1"]["tag_rule_version"]=="future-rules"
+    assert original["1"]["tag_rule_version"]!="future-rules"
+    assert repo.rows=={}
 
 
 @pytest.mark.asyncio

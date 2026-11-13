@@ -309,6 +309,17 @@ class MonitorRepository:
             )
             return (await session.execute(stmt)).scalar_one_or_none()
 
+    async def list_editorial_sources(self, after_id=0, limit=100, modified_since=None, modified_until=None):
+        """Read-only, bounded keyset scan for the disposable rule cache."""
+        async with get_monitor_session() as session:
+            stmt = select(DouyinPost).where(DouyinPost.platform == "dy", DouyinPost.id > after_id)
+            modified = func.coalesce(DouyinPost.last_modify_ts, DouyinPost.add_ts, 0)
+            if modified_since is not None:
+                stmt = stmt.where(modified >= modified_since)
+            if modified_until is not None:
+                stmt = stmt.where(modified <= modified_until)
+            return list((await session.execute(stmt.order_by(DouyinPost.id).limit(limit))).scalars().all())
+
     async def count_posts_since(
         self,
         since: int,
@@ -718,13 +729,14 @@ class MonitorRepository:
         now = _now_seconds()
         stage_defs = stages or SNAPSHOT_STAGES
         async with get_monitor_session() as session:
+            keys = {f"snapshot:{post.platform}:{post.aweme_id}:{stage}" for stage, _ in stage_defs}
+            existing_keys = set((await session.execute(select(DouyinMonitorJob.dedupe_key).where(
+                DouyinMonitorJob.dedupe_key.in_(keys)))).scalars())
             for stage, offset_seconds in stage_defs:
                 dedupe_key = f"snapshot:{post.platform}:{post.aweme_id}:{stage}"
-                existing = await session.execute(
-                    select(DouyinMonitorJob).where(DouyinMonitorJob.dedupe_key == dedupe_key)
-                )
-                if existing.scalar_one_or_none() is not None:
+                if dedupe_key in existing_keys:
                     continue
+                existing_keys.add(dedupe_key)
                 job = DouyinMonitorJob(
                     job_type="snapshot",
                     platform=post.platform,

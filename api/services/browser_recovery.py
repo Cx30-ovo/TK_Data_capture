@@ -24,7 +24,7 @@ class BrowserRecovery:
             if self.timeouts < 3:
                 return False
             self.reset_page = True
-        elif failure.error_code == "tab_changed":
+        elif failure.error_code in ("tab_changed", "browser_connection_timeout"):
             self.reset_page = True
         elif failure.error_code != "browser_disconnected":
             return False

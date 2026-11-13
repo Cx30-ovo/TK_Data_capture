@@ -180,7 +180,14 @@ def finish(source,ident,comments,summary):
                 'parent_comment_id=excluded.parent_comment_id,payload=excluded.payload',
                 (ident,item['comment_id'],item['parent_comment_id'],json.dumps(item,ensure_ascii=False)))
         # Count limits do not end traversal: partial work resumes in another slice.
-        delay=1800 if summary.get('error_code') else 21600 if summary['state']=='completed' else 60
+        # Failure metadata stays in payload, keeping existing schemas compatible.
+        failed=bool(summary.get('error_code'))
+        if failed:
+            summary['failure_count']=min(6,int(previous.get('failure_count',0))+1)
+        else:
+            summary.pop('failure_count',None)
+        delay=(min(21600,1800*2**(summary['failure_count']-1)) if failed
+               else 21600 if summary['state']=='completed' else 60)
         db.execute('UPDATE collections SET state=?,updated_at=?,next_at=?,payload=? WHERE aweme_id=?',
             (summary['state'],now,now+delay,json.dumps(summary,ensure_ascii=False),ident))
     return summary

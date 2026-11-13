@@ -52,6 +52,9 @@ async def reset_collection_page(context):
         for page in context.pages:
             if page.is_closed():
                 continue
+            host = urlsplit(page.url).hostname or ""
+            if page.url != "about:blank" and not (host == "douyin.com" or host.endswith(".douyin.com")):
+                continue
             own_target = remembered and await _target_id(context, page) == remembered
             if own_target or await is_collection_page(page):
                 # CDP closes an unresponsive renderer without relying on its JS.

@@ -198,3 +198,9 @@ output/pytest-*/
 /webui/dist-*/
 database/*.db-wal
 database/*.db-shm
+database/*.db-journal
+/cache/editorial-rules/
+
+# Durable monitor control state is local to each database, never a release asset.
+monitor-runtime-state.json
+monitor-runtime-state.json.*.tmp

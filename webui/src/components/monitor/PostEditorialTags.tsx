@@ -1,109 +1,29 @@
-import { useEffect, useId, useRef, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { collectionErrorMessage, monitorApi, type EditorialClassification, type EditorialCorrectionPayload, type MonitorDashboard, type MonitorDashboardPost } from '@/lib/api'
+import type { MonitorDashboardPost } from '@/lib/api'
 
 export const editorialChannels = ['推荐', '时政', '民生', '经济', '科技', '教育', '健康', '体育', '文旅', '文娱', '三农', '法治', '政策文件', '应急', '环境生态', '待判定']
 export const postChannel = (channel?: string) => channel && channel !== '综合' ? channel : '待判定'
 export const editorialRegions = ['全部', '本地', '本省', '国内', '国际', '待判定']
-export const regionDescription = (region: string) => ({ 本地: '厦门市', 本省: '福建省级内容及省内其他城市', 国内: '福建省外国内地区（含港澳台）', 国际: '境外地区', 待判定: '现有内容不足以确定主要地域' }[region] || region)
+export const pendingReasonLabels: Record<string, string> = { insufficient_clues: '没有有效线索', rule_conflict: '多个规则冲突', location_role_unclear: '地点角色不明确', lexicon_gap: '题材或地点词典未覆盖' }
+export const regionDescription = (region: string) => ({ 本地: '厦门市', 本省: '福建省级内容及省内其他城市', 国内: '福建省外国内地区（含港澳台）', 国际: '境外地区', 待判定: '现有文案不足或存在地域冲突，暂不确定' }[region] || region)
 
 export function PostEditorialTags({ post }: { post: MonitorDashboardPost }) {
   const region = post.region || '待判定'
-  const review = post.tag_method === 'manual' ? '人工已纠正'
-    : post.tag_status === 'insufficient' ? '内容不足'
-    : post.tag_status === 'pending' ? 'AI 复核中'
-    : post.tag_status === 'retry' ? 'AI 待重试'
-    : post.tag_status === 'deferred' ? '等待 AI 复核'
-    : post.tag_status === 'ai_unavailable' ? 'AI 未启用'
-    : post.tag_status === 'uncertain' ? '需核实'
-    : post.tag_method === 'rules_ai_visual' ? '视觉已复核'
-    : post.tag_method === 'rules_ai' ? 'AI 已复核' : ''
-  return <span className="post-editorial-tags"><span className="post-channel-tag" title={`${post.tag_method === 'manual' ? '人工纠正，优先于自动分类' : post.tag_method === 'rules_ai_visual' ? '结合当前作品抽样画面或封面复核' : `根据标题与正文${post.tag_method === 'rules_ai' ? '规则初筛及 AI 复核' : '规则初筛'}`}${post.channel_evidence ? ` · 依据：${post.channel_evidence}` : ''}`}>{postChannel(post.channel)}</span><span className="post-region-tag" title={`${regionDescription(region)}${post.region_evidence ? ` · 依据：${post.region_evidence}` : ''}`}>{region}</span>{review && <span className="post-review-tag" data-state={post.tag_status} title={post.tag_reason || '初筛有歧义的标签由 AI 复核；未完成时展示初筛结果。'}>{review}</span>}</span>
+  return <span className="post-editorial-tags"><span className="post-channel-tag" title={`${post.classification_mode === 'automatic_rules' ? '自动规则分类' : '历史分类，等待后端切换规则分类'}${post.channel_evidence ? ` · 依据：${post.channel_evidence}` : ''}`}>{postChannel(post.channel)}</span>{post.channel_subtopics?.slice(0, 2).map(label => <span className="post-subtopic-tag" key={label}>{label}</span>)}<span className="post-region-tag" title={`${regionDescription(region)}${post.region_evidence ? ` · 依据：${post.region_evidence}` : ''}`}>{region}</span></span>
 }
 
 export function PostEditorialEvidence({ post }: { post: MonitorDashboardPost }) {
-  const ai = post.tag_method === 'rules_ai' || post.tag_method === 'rules_ai_visual'
-  const confidence = Object.entries(post.tag_confidence || {}).filter(([, value]) => Number.isFinite(value))
-  const summary = post.tag_method === 'manual' ? '人工纠正结果，优先展示'
-    : post.tag_status === 'insufficient' ? '内容不足，暂不能判定'
-    : post.tag_status === 'pending' ? '初筛完成，AI 正在复核歧义'
-    : post.tag_status === 'retry' ? '暂用初筛结果，等待 AI 重试'
-    : post.tag_status === 'uncertain' ? '已复核，部分标签仍需核实'
-    : ai ? '已通过规则初筛与 AI 复核' : '按标题与正文规则归类'
-  const origin = (source: MonitorDashboardPost['channel_evidence_source']) => !source || source.kind === 'text' ? '文字'
-    : source.kind === 'cover' ? '封面识别' : `视频画面 ${source.timestamp_seconds ?? 0} 秒`
-  const references = post.tag_experience_refs || []
-  return <details className="post-editorial-evidence"><summary><strong>标签判定</strong><span>{summary}</span><small>查看依据</small></summary><div className="post-evidence-body">
-    {post.channel_evidence && <p><span>频道依据 · {origin(post.channel_evidence_source)}</span>{post.channel_evidence}</p>}
-    {post.region_evidence && <p><span>地域依据 · {origin(post.region_evidence_source)}</span>{post.region_evidence}</p>}
-    {post.visual_status && <p><span>{post.visual_status === 'sampled_video' ? `视频抽样 · ${post.visual_sources?.length || 0} 帧` : post.visual_status === 'cover_only' ? '仅参考封面' : post.visual_status === 'analysis_failed' ? '视觉复核未完成' : '媒体不可用'}</span>{post.visual_limitation}</p>}
-    {references.length > 0 && <details className="post-experience-references"><summary>纠错经验参考 · {references.length} 条</summary><small>仅参考分类边界，不是当前作品的事实依据，也不代表模型已经训练。</small>{references.map(ref => <p key={ref.aweme_id}><span>作品 {ref.aweme_id} · 修订 {ref.revision} · {ref.channel} / {ref.region}</span>{ref.reason}</p>)}</details>}
-    {post.tag_reason && <p>{post.tag_reason}</p>}{confidence.length > 0 && <small>模型自评：{confidence.map(([field, value]) => `${field === 'channel' ? '频道' : '地域'} ${Math.round(value * 100)}%`).join(' · ')}，仅供复核参考</small>}{post.tag_status === 'insufficient' && <p>缺少可分析的标题正文，补充内容后会重新判定。</p>}</div></details>
-}
-
-export function PostEditorialCorrection({ post }: { post: MonitorDashboardPost }) {
-  const client = useQueryClient(), id = useId(), trigger = useRef<HTMLButtonElement>(null)
-  const returnFocus = useRef(false)
-  const [open, setOpen] = useState(false), [loading, setLoading] = useState(false)
-  const [current, setCurrent] = useState<EditorialClassification | null>(null)
-  const [channel, setChannel] = useState('待判定'), [region, setRegion] = useState('待判定')
-  const [reason, setReason] = useState(''), [error, setError] = useState(''), [message, setMessage] = useState('')
-  const [submitted, setSubmitted] = useState(false)
-  const reasonLength = Array.from(reason).length
-  const reasonError = submitted && !reason.trim() ? '请填写纠正依据' : reasonLength > 1000 ? '纠正依据最多 1000 字' : ''
-  const close = () => { setOpen(false); setError(''); trigger.current?.focus() }
-  const save = useMutation({
-    mutationFn: (payload: EditorialCorrectionPayload) => monitorApi.correctEditorialTags(post.aweme_id, payload),
-    onSuccess: (response, payload) => {
-      returnFocus.current = true
-      setMessage(payload.mode === 'manual' ? '人工分类已保存' : '已恢复自动分类')
-      close()
-      client.setQueriesData<MonitorDashboard>({ queryKey: ['monitorDashboard'] }, old => old && Array.isArray(old.posts)
-        ? { ...old, posts: old.posts.map(item => item.aweme_id === post.aweme_id ? { ...item, ...response.data } : item) } : old)
-      void client.invalidateQueries({ queryKey: ['monitorDashboard'] })
-    },
-    onError: caught => setError(collectionErrorMessage(caught)),
-  })
-  useEffect(() => {
-    if (returnFocus.current && !open && !save.isPending) {
-      trigger.current?.focus()
-      returnFocus.current = false
-    }
-  }, [open, save.isPending])
-  const begin = async () => {
-    setOpen(true); setLoading(true); setError(''); setMessage(''); setSubmitted(false); setCurrent(null)
-    try {
-      const { data } = await monitorApi.getEditorialTags(post.aweme_id)
-      setCurrent(data); setChannel(postChannel(data.channel)); setRegion(data.region || '待判定')
-      setReason(data.manual_status === 'none' ? '' : data.manual_reason || '')
-    } catch (caught) { setError(collectionErrorMessage(caught)) }
-    finally { setLoading(false) }
-  }
-  const submit = (mode: 'manual' | 'automatic') => {
-    if (!current || save.isPending) return
-    setSubmitted(true)
-    if (mode === 'manual' && (!reason.trim() || reasonLength > 1000)) return
-    setError('')
-    save.mutate({ mode, expected_revision: current.manual_revision, source_sha256: current.classification_source_sha256,
-      ...(mode === 'manual' ? { channel, region, reason: reason.trim() } : {}) })
-  }
-  return <section className="post-editorial-correction" aria-label="人工纠正分类">
-    <div className="post-correction-heading"><button ref={trigger} type="button" disabled={save.isPending} aria-expanded={open} aria-controls={`${id}-form`} onClick={() => open ? close() : void begin()}>纠正分类</button><span>人工结果优先，可恢复自动</span></div>
-    {message && <p role="status">{message}</p>}
-    {!open && post.manual_status === 'outdated' && <p role="status">原文已变化，原人工分类未应用，可重新纠正。</p>}
-    {open && <form id={`${id}-form`} aria-label="纠正分类表单" onSubmit={event => { event.preventDefault(); submit('manual') }} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); if (!save.isPending) close() } }}>
-      {loading && <p role="status">正在读取最新分类…</p>}
-      {error && <p role="alert">{error}</p>}
-      {!loading && !current && <button type="button" onClick={() => void begin()}>重新读取分类</button>}
-      {current && <>
-        {current.manual_status === 'outdated' && <p role="status">原文已变化，请重新检查依据后保存。</p>}
-        <div className="post-correction-fields"><div><label htmlFor={`${id}-channel`}>频道</label><select id={`${id}-channel`} value={channel} disabled={save.isPending} onChange={event => setChannel(event.target.value)}>{editorialChannels.filter(item => item !== '推荐').map(item => <option key={item}>{item}</option>)}</select></div><div><label htmlFor={`${id}-region`}>地域</label><select id={`${id}-region`} value={region} disabled={save.isPending} onChange={event => setRegion(event.target.value)}>{editorialRegions.filter(item => item !== '全部').map(item => <option key={item}>{item}</option>)}</select></div></div>
-        <label htmlFor={`${id}-reason`}>纠正依据（必填）</label><textarea id={`${id}-reason`} rows={3} value={reason} disabled={save.isPending} aria-invalid={!!reasonError} aria-describedby={`${id}-hint${reasonError ? ` ${id}-error` : ''}`} onChange={event => setReason(event.target.value)} />
-        <small id={`${id}-hint`}>说明标题、文案或原作品中的依据；不确定的字段可保留“待判定”。{reasonLength}/1000</small>
-        {reasonError && <p id={`${id}-error`} role="alert">{reasonError}</p>}
-        <div className="post-correction-actions"><button type="submit" disabled={save.isPending}>{save.isPending ? '正在保存…' : '保存人工分类'}</button>{current.manual_status !== 'none' && <button type="button" disabled={save.isPending} onClick={() => submit('automatic')}>恢复自动分类</button>}<button type="button" disabled={save.isPending} onClick={close}>取消</button></div>
-      </>}
-      {!current && <button type="button" onClick={close}>取消</button>}
-    </form>}
-  </section>
+  if (post.classification_mode !== 'automatic_rules') return <details className="post-editorial-evidence"><summary><strong>标签判定</strong><span>等待后端切换规则分类</span><small>查看说明</small></summary><div className="post-evidence-body"><p>当前后端仍返回历史分类。重启本地后端后，频道与地域将按当前自动规则重新计算。</p></div></details>
+  const hits = post.tag_rule_hits || []
+  const uncertain = postChannel(post.channel) === '待判定' || !post.region || post.region === '待判定'
+  return <details className="post-editorial-evidence"><summary><strong>标签判定</strong><span>{uncertain ? '线索不足或冲突，部分标签待判定' : '自动规则分类'}</span><small>查看依据</small></summary><div className="post-evidence-body">
+    {post.channel_evidence && <p><span>频道依据 · {post.channel_evidence.startsWith('#') ? '话题标签' : '文案'}</span>{post.channel_evidence}</p>}
+    {post.region_evidence && <p><span>地域依据 · {post.region_evidence.startsWith('#') ? '话题标签' : '文案'}</span>{post.region_evidence}</p>}
+    {post.tag_reason && <p>{post.tag_reason}</p>}
+    {!!post.tag_pending_reasons?.length && <ul className="post-pending-reasons">{post.tag_pending_reasons.map(reason => <li key={reason.field}>{reason.field === 'channel' ? '频道' : '地域'}：{reason.label}</li>)}</ul>}
+    {!!post.channel_subtopic_hits?.length && <details className="post-subtopic-evidence"><summary>细分标签依据 · {post.channel_subtopic_hits.length} 项</summary>{post.channel_subtopic_hits.map(hit => <p key={hit.label}><span>{hit.label} · {hit.snippet.startsWith('#') ? '话题标签' : '文案'}</span><q>{hit.snippet}</q><small>规则：{hit.rule_id}</small></p>)}</details>}
+    {!!post.region_locations?.length && <details className="post-location-evidence"><summary>地点角色 · {post.region_locations.length} 条</summary><p>关联地点用于解释，不能代替事件发生地；来源和籍贯不参与地域得分。</p>{post.region_locations.map((place, index) => <p key={`${place.field}-${place.place}-${index}`}><span>{place.role_label} · {place.region} · {place.used ? '参与地域判定' : '不作事件地点依据'}</span><q>{place.snippet}</q><small>规则：{place.rule_id}</small></p>)}</details>}
+    {hits.length > 0 && <details className="post-rule-evidence"><summary>规则与命中片段 · {hits.length} 条</summary><small>分数是规则权重，不是准确率或事实核验结果。</small>{hits.map((hit, index) => <p key={`${hit.rule_id}-${hit.field}-${index}`}><span>{hit.rule_id.startsWith('channel:') ? '频道' : '地域'} · {hit.candidate} · {hit.rule_id.includes(':topic-') ? '话题标签' : hit.field === 'title' ? '标题字段' : '文案字段'} · {hit.score > 0 ? `权重 ${hit.score}` : hit.rule_id.includes(':topic-') ? '标签冲突，未采纳' : '背景或歧义，已排除'}</span><q>{hit.snippet}</q><small>规则：{hit.rule_id}</small></p>)}</details>}
+    {post.tag_scores && <small>候选得分：{(['channel', 'region'] as const).map(field => `${field === 'channel' ? '频道' : '地域'} ${Object.entries(post.tag_scores![field]).map(([name, score]) => `${name} ${score}`).join('、') || '无线索'}`).join('；')}</small>}
+    <small>规则版本：{post.tag_rule_version || '等待后端提供当前规则版本'}。依据发布文案与话题标签；标签不等于事实核验，正文明确线索优先。地点词典未覆盖或上下文不清时保留待判定，不进行 AI 复核或人工纠正。</small>
+  </div></details>
 }

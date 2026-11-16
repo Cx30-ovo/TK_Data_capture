@@ -6,9 +6,15 @@ import json
 import sqlite3
 import time
 from contextlib import contextmanager
+from contextlib import suppress
+from functools import wraps
 from pathlib import Path
 
 DEFAULTS = {'enabled': False, 'include_replies': True}
+# Short, bounded storage waits must not monopolize the shared collector loop.
+WRITE_TIMEOUT_SECONDS = 0.25
+WRITE_ATTEMPTS = 3
+WRITE_RETRY_DELAYS = (0.05, 0.15)
 DDL = '''
 CREATE TABLE policies(account_key TEXT PRIMARY KEY,payload TEXT NOT NULL);
 CREATE TABLE collections(aweme_id TEXT PRIMARY KEY,account_key TEXT NOT NULL,state TEXT NOT NULL,
@@ -20,6 +26,23 @@ CREATE INDEX comment_parent ON comments(aweme_id,parent_comment_id);
 '''
 
 
+def _write_operation(function):
+    """Replay only a fully rolled-back local transaction, never platform requests."""
+    @wraps(function)
+    def run(*args, **kwargs):
+        for attempt in range(WRITE_ATTEMPTS):
+            try:
+                return function(*args, **kwargs)
+            except sqlite3.Error as exc:
+                exc.storage_attempts = attempt + 1
+                code = getattr(exc, 'sqlite_errorcode', None)
+                retryable = type(code) is int and code & 255 in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED)
+                if not retryable or attempt + 1 == WRITE_ATTEMPTS:
+                    raise
+                time.sleep(WRITE_RETRY_DELAYS[attempt])
+    return run
+
+
 @contextmanager
 def connection(source, write=False):
     source=Path(source).resolve();path=source.with_name('monitor_comments.db')
@@ -27,31 +50,50 @@ def connection(source, write=False):
         raise ValueError('评论存储路径不可用')
     if not path.exists() and not write:
         yield None;return
-    db=sqlite3.connect(str(path) if write else path.as_uri()+'?mode=ro',uri=not write,timeout=5)
-    db.row_factory=sqlite3.Row
+    db=None
+    phase='storage_connect'
     try:
-        if write and not db.execute("SELECT 1 FROM sqlite_schema WHERE name='policies'").fetchone():
-            db.executescript('BEGIN IMMEDIATE;'+DDL+'COMMIT;')
+        db=sqlite3.connect(str(path) if write else path.as_uri()+'?mode=ro',uri=not write,
+                          timeout=WRITE_TIMEOUT_SECONDS if write else 5)
+        db.row_factory=sqlite3.Row
+        phase='storage_begin'
         db.execute('BEGIN IMMEDIATE' if write else 'BEGIN')
+        phase='storage_schema'
+        if write and not db.execute("SELECT 1 FROM sqlite_schema WHERE name='policies'").fetchone():
+            # No executescript implicit commit: initialization belongs to this transaction.
+            for statement in DDL.split(';'):
+                if statement.strip():db.execute(statement)
+        phase='storage_write' if write else 'storage_read'
         yield db
+        phase='storage_commit'
         if write:db.commit()
-    except BaseException:
-        db.rollback();raise
-    finally:db.close()
+    except BaseException as exc:
+        if isinstance(exc,sqlite3.Error):exc.storage_phase=phase
+        if db is not None:
+            with suppress(sqlite3.Error):db.rollback()
+        raise
+    finally:
+        if db is not None:db.close()
 
 
 def policy(source, key):
     with connection(source) as db:
-        row=db.execute('SELECT payload FROM policies WHERE account_key=?',(key,)).fetchone() if db else None
-        saved=json.loads(row[0]) if row else {}
-        # Legacy count limits no longer constrain collection, including saved policies.
-        return {key:saved.get(key,value) for key,value in DEFAULTS.items()}
+        return _policy(db,key)
 
 
+def _policy(db,key):
+    row=db.execute('SELECT payload FROM policies WHERE account_key=?',(key,)).fetchone() if db else None
+    saved=json.loads(row[0]) if row else {}
+    # Legacy count limits no longer constrain collection, including saved policies.
+    return {key:saved.get(key,value) for key,value in DEFAULTS.items()}
+
+
+@_write_operation
 def save_policy(source, key, value):
     value={name:value.get(name,default) for name,default in DEFAULTS.items()}
-    old=policy(source,key)
     with connection(source,True) as db:
+        # Observe the latest committed policy only after acquiring the write lock.
+        old=_policy(db,key)
         db.execute('INSERT INTO policies VALUES(?,?) ON CONFLICT(account_key) DO UPDATE SET payload=excluded.payload',
                    (key,json.dumps(value)))
         if value['enabled'] and (not old['enabled'] or value['include_replies'] and not old['include_replies']):
@@ -60,12 +102,19 @@ def save_policy(source, key, value):
 
 
 def enqueue(source,key,ids):
+    # A retry must see the same input even when the caller supplied a generator.
+    return _enqueue(source,key,tuple(ids))
+
+
+@_write_operation
+def _enqueue(source,key,ids):
     if not ids:return
     with connection(source,True) as db:
         for ident in ids:
             db.execute('INSERT OR IGNORE INTO collections VALUES(?,?,?,0,0,?)',(ident,key,'pending','{}'))
 
 
+@_write_operation
 def request_snapshot_refresh(source,key,ident):
     """A committed snapshot requests another traversal without losing current progress."""
     now=int(time.time())
@@ -125,11 +174,13 @@ def next_parent(source,ident,after):
         return row[0] if row else None
 
 
+@_write_operation
 def expire(source,ident):
     with connection(source,True) as db:
         db.execute("UPDATE collections SET state='expired' WHERE aweme_id=?",(ident,))
 
 
+@_write_operation
 def claim(source,key,ident,manual=False):
     now=int(time.time())
     with connection(source,True) as db:
@@ -143,6 +194,11 @@ def claim(source,key,ident,manual=False):
 
 
 def finish(source,ident,comments,summary):
+    return _finish(source,ident,tuple(comments),summary)
+
+
+@_write_operation
+def _finish(source,ident,comments,summary):
     """Atomically commit a full page together with its resume cursor (no schema change)."""
     now=int(time.time())
     with connection(source,True) as db:
@@ -207,9 +263,14 @@ def read(source,ident,page=1,parent=''):
         total=db.execute('SELECT count(*) FROM comments WHERE aweme_id=? AND parent_comment_id=?',(ident,parent)).fetchone()[0]
         items=[json.loads(r[0]) for r in db.execute('SELECT payload FROM comments WHERE aweme_id=? AND parent_comment_id=? '
             "ORDER BY json_extract(payload,'$.like_count') DESC,comment_id LIMIT 20 OFFSET ?",(ident,parent,(page-1)*20))]
-        for item in items:
-            item['saved_replies']=db.execute('SELECT count(*) FROM comments WHERE aweme_id=? AND parent_comment_id=?',
-                                            (ident,item['comment_id'])).fetchone()[0]
+        # One indexed batch avoids holding the read transaction for a query per row.
+        reply_counts={}
+        if items:
+            slots=','.join('?' for _ in items)
+            reply_counts=dict(db.execute('SELECT parent_comment_id,count(*) FROM comments WHERE aweme_id=? '
+                                        f'AND parent_comment_id IN ({slots}) GROUP BY parent_comment_id',
+                                        (ident,*(item['comment_id'] for item in items))))
+        for item in items:item['saved_replies']=reply_counts.get(item['comment_id'],0)
         _reply_objects(db,ident,items)
         count=db.execute('SELECT count(*) FROM comments WHERE aweme_id=?',(ident,)).fetchone()[0]
         return {'items':items,'total':total,'total_saved':count,

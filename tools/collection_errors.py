@@ -4,6 +4,7 @@ from dataclasses import dataclass, asdict
 import json
 import logging
 import re
+import sqlite3
 import traceback
 import uuid
 
@@ -28,6 +29,11 @@ def classify_collection_error(exc):
         return CollectionFailure(code, "抖音页签忙碌", "等待其他采集任务结束后重试。")
     if code == "browser_connection_timeout":
         return CollectionFailure(code, "浏览器控制连接超时", "正在尝试恢复受管采集页；不代表平台请求超时。")
+    if isinstance(exc, sqlite3.Error):
+        sqlite_code = getattr(exc, "sqlite_errorcode", None)
+        if type(sqlite_code) is int and sqlite_code & 255 in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
+            return CollectionFailure("storage_busy", "评论存储暂时忙碌", "本次事务已回滚，保留已提交进度；稍后重试，不需重启浏览器。")
+        return CollectionFailure("storage_error", "本地存储操作失败", "检查存储诊断和磁盘状态；不将其判为平台风控。")
     if any(token in text for token in ("argus", "uifid", "blocked", "风控", "http 403", "http 429")):
         return CollectionFailure("risk_control", "触发风控，请稍后重试", "已暂停后续请求，按递增冷却策略重试。")
     if "login" in text or "登录" in text:
@@ -47,7 +53,7 @@ def classify_collection_error(exc):
 
 def record_collection_error(exc, *, kind, phase="unknown"):
     """Log locations and exception types, never messages, URLs, locals or cookies."""
-    phase = getattr(exc, "collection_phase", phase)
+    phase = getattr(exc, "storage_phase", getattr(exc, "collection_phase", phase))
     token = lambda value: re.sub(r"[^a-zA-Z0-9_.-]", "_", str(value))[:80]
     diagnostic = getattr(exc, "collection_diagnostic", None)
     if diagnostic is None:
@@ -58,7 +64,17 @@ def record_collection_error(exc, *, kind, phase="unknown"):
             frames = [{"file": token(frame.filename.replace("\\", "/").split("/")[-1]),
                        "line": frame.lineno, "function": token(frame.name)}
                       for frame in traceback.extract_tb(current.__traceback__)[-8:]]
-            chain.append({"type": token(type(current).__name__), "frames": frames})
+            entry = {"type": token(type(current).__name__), "frames": frames}
+            if isinstance(current, sqlite3.Error):
+                code, name = getattr(current, "sqlite_errorcode", None), getattr(current, "sqlite_errorname", None)
+                if type(code) is int and 0 <= code <= 2**31 - 1:
+                    entry["sqlite_errorcode"] = code
+                if isinstance(name, str) and re.fullmatch(r"SQLITE_[A-Z0-9_]{1,64}", name):
+                    entry["sqlite_errorname"] = name
+                attempts = getattr(current, "storage_attempts", None)
+                if type(attempts) is int and 1 <= attempts <= 3:
+                    entry["storage_attempts"] = attempts
+            chain.append(entry)
             current = current.__cause__ or current.__context__
         logging.getLogger("MediaCrawler").warning("collection_failure %s", json.dumps(
             {**diagnostic, "kind": token(kind), "error_code": classify_collection_error(exc).error_code,

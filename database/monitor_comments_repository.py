@@ -154,6 +154,47 @@ def next_due(source, account_keys):
         return row[0] if row else None
 
 
+def next_due_task(source, account_keys, after_account=''):
+    """Round-robin eligible accounts, then their oldest work; no queue writes."""
+    if not account_keys:return None
+    with connection(source) as db:
+        if db is None:return None
+        now=int(time.time());slots=','.join('?' for _ in account_keys)
+        rows=db.execute(f"SELECT c.account_key FROM collections c JOIN policies p USING(account_key) "
+            f"WHERE c.account_key IN ({slots}) AND json_extract(p.payload,'$.enabled')=1 "
+            "AND c.state!='expired' AND c.next_at<=? AND (c.state!='running' OR c.updated_at<=?) "
+            "GROUP BY c.account_key ORDER BY c.account_key",(*account_keys,now,now-600)).fetchall()
+        if not rows:return None
+        selected=next((row[0] for row in rows if row[0]>after_account),rows[0][0])
+        row=db.execute("SELECT aweme_id,account_key FROM collections WHERE account_key=? AND state!='expired' "
+            "AND next_at<=? AND (state!='running' OR updated_at<=?) ORDER BY next_at,updated_at,aweme_id LIMIT 1",
+            (selected,now,now-600)).fetchone()
+        return dict(row) if row else None
+
+
+def account_workload(source, account_keys, now=None):
+    """Read-only per-account comment backlog and oldest due age."""
+    if not account_keys:
+        return {}
+    current = int(time.time()) if now is None else int(now)
+    with connection(source) as db:
+        if db is None:
+            return {}
+        slots = ','.join('?' for _ in account_keys)
+        rows = db.execute(
+            f"SELECT account_key,state,next_at FROM collections WHERE account_key IN ({slots}) "
+            "AND state IN ('pending','partial','running')", tuple(account_keys)).fetchall()
+        result = {key: {'pending': 0, 'due': 0, 'oldest_due_at': 0} for key in account_keys}
+        for row in rows:
+            item = result[row['account_key']]
+            item['pending'] += 1
+            if row['next_at'] <= current and row['state'] != 'running':
+                item['due'] += 1
+                if row['next_at']>0:
+                    item['oldest_due_at'] = max(item['oldest_due_at'], current - row['next_at'])
+        return result
+
+
 def progress(source,ident):
     with connection(source) as db:
         row=db.execute('SELECT payload FROM collections WHERE aweme_id=?',(ident,)).fetchone() if db else None

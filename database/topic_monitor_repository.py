@@ -70,8 +70,10 @@ def connection(source, *, write=False, initialize=False):
 def task(row):
     config = json.loads(row['config'])
     monitoring_at = config.pop('_monitoring_at', None)
+    live_checkpoint = config.pop('_live_checkpoint', None)
     backfill = config.pop('_backfill', None) or initial_backfill(config, row['created_at'])
-    return {'id': row['id'], 'version': row['version'], **config, 'backfill': backfill, 'last_monitoring_at': monitoring_at,
+    return {'id': row['id'], 'version': row['version'], **config, 'backfill': backfill,
+            'live_checkpoint': live_checkpoint, 'last_monitoring_at': monitoring_at,
             'created_at': row['created_at'], 'last_attempt': row['last_attempt'],
             'last_success': row['last_success'], 'error': row['error'],
             'running_since':row['running_since'] if 'running_since' in row.keys() else None}
@@ -90,6 +92,20 @@ def initial_backfill(config, created_at):
 def listing(source):
     with connection(source) as db:
         return [task(r) for r in db.execute("SELECT t.*,(SELECT max(started_at) FROM topic_runs r WHERE r.topic_id=t.id AND r.state='running') AS running_since FROM topic_tasks t ORDER BY created_at DESC,id")] if db else []
+
+
+def scheduler_summary(source, now=None):
+    """Compact read-only topic queue counts; never initializes its sidecar."""
+    current = int(time.time()) if now is None else int(now)
+    topics = listing(source)
+    active = [item for item in topics if item['enabled'] and not window_complete(item)]
+    return {
+        'active': len(active),
+        'backfill_pending': sum(item['backfill']['status'] == 'pending' for item in active),
+        'queued': sum(not item['last_attempt'] or current - item['last_attempt'] >= collection_interval(item)
+                      for item in active),
+        'running': sum(bool(item.get('running_since')) for item in active),
+    }
 
 
 def read(source, topic_id):
@@ -124,6 +140,8 @@ def update(source, topic_id, version, config):
             config = {**config, '_backfill': old['_backfill']}
         if '_monitoring_at' in old:
             config = {**config, '_monitoring_at': old['_monitoring_at']}
+        if '_live_checkpoint' in old:
+            config = {**config, '_live_checkpoint': old['_live_checkpoint']}
         db.execute('UPDATE topic_tasks SET version=version+1,config=? WHERE id=?',
                    (json.dumps(config, ensure_ascii=False), topic_id))
     return read(source, topic_id)
@@ -170,7 +188,7 @@ def window_complete(value):
 
 def collection_interval(value):
     initial_live=value['backfill']['status']=='complete' and not value.get('last_monitoring_at')
-    return 65 if not value.get('error') and (value['backfill']['status']=='pending' or initial_live) else value['interval_minutes']*60
+    return 65 if not value.get('error') and (value['backfill']['status']=='pending' or initial_live or value.get('live_checkpoint')) else value['interval_minutes']*60
 
 
 def delete(source, topic_id, version):
@@ -216,7 +234,13 @@ def finish(source, job, works, summary, error=None):
             # A round started before the deadline can finish after it. Its
             # publication cutoff, rather than commit time, determines whether
             # the final sweep is still needed.
-            if summary.get('stage')=='monitoring':config['_monitoring_at']=summary['observed_until']
+            if summary.get('stage')=='monitoring' and not summary.get('live_checkpoint'):
+                config['_monitoring_at']=summary['observed_until']
+            if summary.get('stage')=='monitoring':
+                if summary.get('live_checkpoint'):
+                    config['_live_checkpoint'] = summary['live_checkpoint']
+                else:
+                    config.pop('_live_checkpoint', None)
             db.execute('UPDATE topic_tasks SET config=? WHERE id=?', (json.dumps(config,ensure_ascii=False),topic_id))
         db.execute('UPDATE topic_runs SET state=?,finished_at=?,summary=? WHERE id=?',
                    ('failed' if error else 'completed',now,json.dumps(result,ensure_ascii=False),run_id))

@@ -2,6 +2,7 @@
 """Business service linking the monitor repository with the Douyin crawler."""
 
 import asyncio
+import json
 import os
 import shutil
 import time
@@ -25,8 +26,10 @@ from .crawler_manager import crawler_manager
 from .monitor_execution import MonitorExecution
 from .browser_recovery import BrowserRecovery
 from . import monitor_runtime_state as runtime_state
+from .monitor_scheduler import MonitorScheduler
 from . import monitor_comments_service as comment_service
 from database import monitor_comments_repository as comment_repo
+from database import topic_monitor_repository as topic_repo
 
 RISK_CONTROL_BASE_COOLDOWN_SECONDS = 30 * 60
 _risk_control_cap = os.getenv("RISK_CONTROL_MAX_COOLDOWN_SECONDS", "")
@@ -521,6 +524,9 @@ class MonitorService:
         self._execution = None
         self._paused = False
         self._discovery_retries = {}
+        self._discovery_schedule_cursor = 0
+        self._comment_schedule_cursor = ''
+        self._scheduler = MonitorScheduler()
         self._recovery = BrowserRecovery(config.ENABLE_BROWSER_AUTO_RECOVERY)
         self._last_browser_check = 0.0
         self._snapshot_recovery_pending = False
@@ -611,7 +617,7 @@ class MonitorService:
     def execution_status(self):
         return {"paused": self._paused, "crawler_running": self._crawler_is_busy(), "retry_after_seconds": self._risk_control_cooldown_remaining(),
                 "execution": self._execution.snapshot() if self._execution else None, "recovery": self._recovery.snapshot(),
-                "business_health": self.business_health()}
+                "business_health": self.business_health(), "scheduler": self._scheduler.snapshot()}
 
     def request_safe_stop(self, run_id=None):
         execution = self._execution
@@ -885,35 +891,97 @@ class MonitorService:
                 dedupe_key=f"missed_jobs:{datetime.now().strftime('%Y-%m-%d')}",
             )
 
-        # Bound the browser slice so a snapshot backlog cannot delay discovery
-        # for all monitored accounts by an entire 50-job batch.
-        await self.run_due_snapshots(limit=10, collect_comments=False)
+        # Keep one monitor cycle short enough to give discovery, comments and
+        # the independent topic worker regular opportunities to use the tab.
+        await self._scheduled('snapshots', lambda: self.run_due_snapshots(limit=3, collect_comments=False, fair_accounts=True))
         if self._paused or self._recovery.pending or self._risk_control_cooldown_remaining():
             return
 
         accounts = await monitor_repository.list_monitored_accounts(include_disabled=False)
         now = int(time.time())
-        for account in accounts:
-            if self._paused or self._recovery.pending or self._risk_control_cooldown_remaining():
-                break
+        account = self._choose_due_account(accounts, now)
+        if account and not (self._paused or self._recovery.pending or self._risk_control_cooldown_remaining()):
+            await crawler_manager.add_log(
+                f"[Monitor] Fair discovery slice for {account.display_name or account.sec_user_id}", "info")
+            await self._scheduled('discovery', lambda: self.discover_account(sec_user_id=account.sec_user_id, collect_comments=False))
+
+        # Resume one queued comment slice even when no new account discovery is due.
+        if not (self._paused or self._recovery.pending or self._risk_control_cooldown_remaining()):
+            eligible=[a.sec_user_id for a in accounts if not self._discovery_retry_remaining(a.sec_user_id)]
+            task=await asyncio.to_thread(comment_repo.next_due_task,comment_service.source(),eligible,self._comment_schedule_cursor)
+            if task:
+                self._comment_schedule_cursor=task['account_key']
+                await self._scheduled('comments', lambda: self.collect_post_comments(task['aweme_id'],manual=False))
+
+    def _choose_due_account(self, accounts, now=None):
+        now = int(time.time()) if now is None else int(now)
+        due_accounts = []
+        for index, account in enumerate(accounts):
             interval_seconds = max(1, account.discover_interval_minutes) * 60
             last_discovered_at = int(account.last_discovered_at or 0)
             if now - last_discovered_at < interval_seconds:
                 continue
             if self._discovery_retry_remaining(account.sec_user_id):
                 continue
-            await crawler_manager.add_log(
-                f"[Monitor] Multi-account discovery due for {account.display_name or account.sec_user_id}",
-                "info",
-            )
-            await self.discover_account(sec_user_id=account.sec_user_id, collect_comments=False)
+            due_accounts.append((account, index, last_discovered_at + interval_seconds if last_discovered_at else 0))
+        if not due_accounts:return None
+        # Oldest due account wins; equal-age accounts rotate instead of favoring
+        # the lowest database ID on every cycle.
+        count=max(1,len(accounts))
+        due_accounts.sort(key=lambda row:(row[2],(row[1]-self._discovery_schedule_cursor)%count))
+        account,index,_=due_accounts[0]
+        self._discovery_schedule_cursor=(index+1)%count
+        return account
 
-        # Resume one queued comment slice even when no new account discovery is due.
-        # The next cycle starts with snapshots/discovery again; do not monopolize the browser.
-        if not (self._paused or self._recovery.pending or self._risk_control_cooldown_remaining()):
-            eligible=[a.sec_user_id for a in accounts if not self._discovery_retry_remaining(a.sec_user_id)]
-            ident=await asyncio.to_thread(comment_repo.next_due,comment_service.source(),eligible)
-            if ident:await self.collect_post_comments(ident,manual=False)
+    async def _scheduled(self, kind, action):
+        async with self._scheduler.turn(kind):
+            if (self._paused or self._recovery.pending or self._risk_control_cooldown_remaining()
+                    or self._crawler_is_busy()):
+                return {'status': 'deferred', 'reason': '采集暂停、冷却或浏览器等待中'}
+            return await action()
+
+    async def get_account_workload(self) -> dict:
+        """Read-only account-level discovery, snapshot, and comment health."""
+        now = int(time.time())
+        accounts = await monitor_repository.list_monitored_accounts(include_disabled=True)
+        snapshots = await monitor_repository.get_account_snapshot_workload(now)
+        comment_accounts = [account.sec_user_id for account in accounts]
+        comments = await asyncio.to_thread(comment_repo.account_workload,
+                                           comment_service.source(), comment_accounts, now)
+        items = []
+        for account in accounts:
+            interval = max(1, int(account.discover_interval_minutes)) * 60
+            last = int(account.last_discovered_at or 0)
+            retry = self._discovery_retry_remaining(account.sec_user_id)
+            snapshot = snapshots.get(account.sec_user_id, {'pending': 0, 'due': 0, 'oldest_due_at': 0})
+            comment = comments.get(account.sec_user_id, {'pending': 0, 'due': 0, 'oldest_due_at': 0})
+            result = account.last_discovery_result
+            if isinstance(result, str):
+                try:
+                    result = json.loads(result)
+                except (ValueError, TypeError):
+                    result = None
+            error = None
+            if isinstance(result, dict):
+                error = result.get('error_code')
+            if retry and not error:
+                error = self._discovery_retries[account.sec_user_id]['failure'].error_code
+            items.append({
+                'id': account.id, 'name': account.display_name or account.sec_user_id,
+                'enabled': bool(account.enabled), 'discover_interval_minutes': interval // 60,
+                'last_discovered_at': last or None,
+                'next_discovery_at': last + interval if last else None,
+                'discovery_overdue_seconds': max(0, now - (last + interval)) if last else None,
+                'discovery_retry_after_seconds': retry,
+                'snapshots_pending': snapshot['pending'], 'snapshots_due': snapshot['due'],
+                'comments_pending': comment['pending'], 'comments_due': comment['due'],
+                'oldest_comment_due_seconds': comment['oldest_due_at'],
+                'last_error': str(error)[:64] if error else None,
+            })
+        topics = await asyncio.to_thread(topic_repo.scheduler_summary,comment_service.source(), now)
+        return {'generated_at': now, 'accounts': items, 'topics': topics,
+                'snapshot_slice_limit': 3, 'discovery_slices_per_cycle': 1,
+                'comment_slices_per_cycle': 1, 'scheduler': self._scheduler.snapshot()}
 
     def _crawler_is_busy(self) -> bool:
         return bool(crawler_manager.process and crawler_manager.process.poll() is None)
@@ -1309,6 +1377,7 @@ class MonitorService:
         fetcher=None,
         now: Optional[int] = None,
         collect_comments: bool = True,
+        fair_accounts: bool = False,
     ) -> dict:
         async with self._lock:
             cooldown_remaining = self._risk_control_cooldown_remaining()
@@ -1317,7 +1386,7 @@ class MonitorService:
             if self._crawler_is_busy():
                 return {"status": "skipped", "reason": "crawler already running"}
 
-            due_jobs = await monitor_repository.list_due_jobs(now=now, limit=limit)
+            due_jobs = await monitor_repository.list_due_jobs(now=now, limit=limit, fair_accounts=fair_accounts)
             self._progress(total=len(due_jobs))
             if not due_jobs:
                 return {"status": "ok", "completed": 0, "retried": 0, "failed": 0, "skipped": 0, "deleted_posts": 0}
@@ -1572,9 +1641,12 @@ class MonitorService:
     async def get_health_data(self, account_id: Optional[int] = None, all_accounts: bool = False) -> dict:
         now = int(time.time())
         checks: list[dict] = []
+        account_workload = None
         try:
             account = await self._resolve_account(account_id, all_accounts=all_accounts)
             sec_user_id = account.sec_user_id if account else None
+            if all_accounts:
+                account_workload = await self.get_account_workload()
             job_counts = await monitor_repository.get_job_counts(sec_user_id=sec_user_id)
             last_snapshot = await monitor_repository.get_last_snapshot(sec_user_id=sec_user_id)
             next_job = await monitor_repository.get_next_pending_job(sec_user_id=sec_user_id)
@@ -1674,6 +1746,7 @@ class MonitorService:
                 "cdp_debug_port": int(config.CDP_DEBUG_PORT),
                 "maintenance_check_interval_seconds": int(config.MAINTENANCE_CHECK_INTERVAL_SECONDS),
             },
+            "account_workload": account_workload,
         }
 
     async def get_dashboard_data(self, limit: Optional[int] = None, account_id: Optional[int] = None, all_accounts: bool = False) -> dict:

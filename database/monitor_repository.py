@@ -109,6 +109,22 @@ class MonitorRepository:
             stmt = stmt.order_by(DouyinMonitoredAccount.id.asc())
             return list((await session.execute(stmt)).scalars().all())
 
+    async def get_account_snapshot_workload(self, now: Optional[int] = None) -> dict[str, dict[str, int]]:
+        """Read-only per-account snapshot backlog summary for scheduling and health."""
+        current = now or _now_seconds()
+        async with get_monitor_session() as session:
+            stmt = (select(DouyinMonitorJob.sec_user_id,
+                           func.sum(case((DouyinMonitorJob.status == 'pending', 1), else_=0)),
+                           func.sum(case((DouyinMonitorJob.status == 'pending',
+                                          case((DouyinMonitorJob.due_at <= current, 1), else_=0)), else_=0)),
+                           func.min(case((DouyinMonitorJob.status == 'pending', DouyinMonitorJob.due_at), else_=None)))
+                    .where(DouyinMonitorJob.job_type == 'snapshot')
+                    .group_by(DouyinMonitorJob.sec_user_id))
+            rows = (await session.execute(stmt)).all()
+            return {key: {'pending': int(pending or 0), 'due': int(due or 0),
+                          'oldest_due_at': int(oldest) if oldest is not None else 0}
+                    for key, pending, due, oldest in rows}
+
     async def get_monitored_account_by_id(
         self,
         account_id: int,
@@ -847,6 +863,7 @@ class MonitorRepository:
         self,
         now: Optional[int] = None,
         limit: int = 50,
+        fair_accounts: bool = False,
     ) -> list[DouyinMonitorJob]:
         current_time = now or _now_seconds()
         await self.mark_overdue_jobs_missed(current_time)
@@ -862,6 +879,17 @@ class MonitorRepository:
                 .order_by(DouyinMonitorJob.due_at.asc())
                 .limit(limit)
             )
+            if fair_accounts:
+                # First service one oldest job per account, then a second job.
+                # Within each round preserve due order; don't load the backlog.
+                ranked = (select(DouyinMonitorJob.id,
+                    func.row_number().over(partition_by=DouyinMonitorJob.sec_user_id,
+                        order_by=(DouyinMonitorJob.due_at, DouyinMonitorJob.id)).label('account_rank'))
+                    .where(DouyinMonitorJob.job_type == 'snapshot',
+                           DouyinMonitorJob.status == 'pending', DouyinMonitorJob.due_at <= current_time,
+                           _snapshot_collection_allowed()).subquery())
+                stmt = (select(DouyinMonitorJob).join(ranked, ranked.c.id == DouyinMonitorJob.id)
+                        .order_by(ranked.c.account_rank, DouyinMonitorJob.due_at, DouyinMonitorJob.id).limit(limit))
             return list((await session.execute(stmt)).scalars().all())
 
     async def get_job(self, job_id: int) -> Optional[DouyinMonitorJob]:

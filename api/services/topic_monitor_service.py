@@ -17,6 +17,7 @@ from .monitor_service import monitor_service, DouyinMonitorFetcher
 
 VERSION='topic-monitor-v0.2.0'
 BACKFILL_PAGE_LIMIT=100
+TOPIC_PAGE_SLICE_LIMIT=4
 METRICS=('liked_count','comment_count','collected_count','share_count')
 _runner=None
 _stops={}
@@ -174,22 +175,28 @@ async def wait_between_searches(stop):
 
 async def fetch(topic,fetcher,stop):
     works={};pages=0;limited=False;filtered=0
-    cutoff=int(time.time())
+    cutoff=int(time.time());started=time.monotonic()
     checkpoint=copy.deepcopy(topic.get('backfill'))
     historical=checkpoint is not None and checkpoint['status']=='pending'
-    entries=checkpoint['keywords'] if historical else [
-        {'keyword':keyword,'offset':0,'search_id':'','pages':0,'complete':False} for keyword in topic['keywords']]
+    live=copy.deepcopy(topic.get('live_checkpoint')) or {'version':1,'cutoff':cutoff,'keywords':[
+        {'keyword':keyword,'offset':0,'search_id':'','pages':0,'complete':False} for keyword in topic['keywords']]}
+    if not historical:cutoff=live['cutoff']
+    entries=checkpoint['keywords'] if historical else live['keywords']
     for entry in entries:
         if entry['complete']:continue
         keyword=entry['keyword'];offset=entry['offset'];search_id=entry['search_id']
         for index in range(topic['max_pages']):
+            if pages>=TOPIC_PAGE_SLICE_LIMIT or pages and time.monotonic()-started>=45:
+                limited=True
+                break
             if stop():raise CollectionStoppedError('话题监控已暂停')
             if pages:await wait_between_searches(stop)
             if topic.get('id') in _progress:
                 _progress[topic['id']].update(phase='searching',label='正在补采历史作品' if historical else '正在搜索话题作品',keyword_index=topic['keywords'].index(keyword)+1,keyword_count=len(topic['keywords']),pages=pages)
-            response=await fetcher._client.search_info_by_keyword(keyword,offset=offset,
-                search_channel=SearchChannelType.VIDEO,sort_type=SearchSortType.LATEST,
-                publish_time=PublishTimeType.UNLIMITED,search_id=search_id)
+            async with asyncio.timeout(30):
+                response=await fetcher._client.search_info_by_keyword(keyword,offset=offset,
+                    search_channel=SearchChannelType.VIDEO,sort_type=SearchSortType.LATEST,
+                    publish_time=PublishTimeType.UNLIMITED,search_id=search_id)
             pages+=1
             if topic.get('id') in _progress:_progress[topic['id']]['pages']=pages
             if isinstance(response,dict) and response.get('status_code',0)!=0:
@@ -217,6 +224,10 @@ async def fetch(topic,fetcher,stop):
             search_id=str((extra if isinstance(extra,dict) else {}).get('logid') or search_id)
             offset=next_offset
             entry.update(offset=offset,search_id=search_id)
+            if not historical and entry['pages']>=topic['max_pages']:
+                entry['complete']=True
+                limited=True
+                break
             if historical and entry['pages']>=BACKFILL_PAGE_LIMIT:
                 limited=True
                 checkpoint.update(status='blocked',reason='历史补采达到安全页数上限，未宣称完整；需人工核查')
@@ -231,6 +242,10 @@ async def fetch(topic,fetcher,stop):
         if all(entry['complete'] for entry in entries):
             checkpoint.update(status='complete',completed_at=cutoff,reason=None)
         summary['backfill_checkpoint']=checkpoint
+    elif not all(entry['complete'] for entry in entries):
+        summary['live_checkpoint']=live
+    else:
+        summary['live_checkpoint']=None
     return list(works.values()),summary
 
 
@@ -242,6 +257,17 @@ async def collect(source,topic_id,*,manual=False,fetcher_factory=None):
         return {'status':'deferred','reason':'风控冷却中，话题搜索同步暂停'}
     if monitor_service.execution_status().get('recovery',{}).get('pending'):
         return {'status':'deferred','reason':'采集浏览器正在恢复，等待下一轮'}
+    if monitor_service._crawler_is_busy():
+        return {'status':'deferred','reason':'采集浏览器正在使用，等待下一轮'}
+    async with monitor_service._scheduler.turn('topic'):
+        return await _collect_scheduled(source,topic_id,manual=manual,fetcher_factory=fetcher_factory)
+
+
+async def _collect_scheduled(source,topic_id,*,manual=False,fetcher_factory=None):
+    # Recheck after FIFO admission; manual work may have taken the tab.
+    if (monitor_service.execution_status()['paused'] or monitor_service._risk_control_cooldown_remaining()
+            or monitor_service._recovery.pending):
+        return {'status':'deferred','reason':'采集暂停、冷却或浏览器等待中'}
     if monitor_service._lock.locked() or monitor_service._crawler_is_busy():
         return {'status':'deferred','reason':'采集浏览器正在使用，等待下一轮'}
     async with monitor_service._lock:
@@ -267,7 +293,7 @@ async def collect(source,topic_id,*,manual=False,fetcher_factory=None):
             # coroutine registering its stop event. Recheck before opening Chrome.
             await asyncio.to_thread(repo.read,source,topic_id)
             if stop():raise CollectionStoppedError('话题监控已停止')
-            async with asyncio.timeout(480):
+            async with asyncio.timeout(120):
                 async with fetcher as active:
                     works,summary=await fetch(job['config'],active,stop)
             if stop():raise CollectionStoppedError('话题监控已暂停')

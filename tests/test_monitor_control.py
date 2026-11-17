@@ -456,8 +456,9 @@ async def test_account_backoff_does_not_stop_other_accounts_or_snapshot_cycles(r
     await service._run_cycle()
     service.run_due_snapshots.assert_awaited_once()
     service.discover_account.assert_awaited_once_with(sec_user_id="account-two", collect_comments=False)
-    service.run_due_snapshots.assert_awaited_once_with(limit=10, collect_comments=False)
+    service.run_due_snapshots.assert_awaited_once_with(limit=3, collect_comments=False, fair_accounts=True)
     service._discovery_retries[first.sec_user_id]["until"] = time.time() - 1
     service.discover_account.reset_mock()
     await service._run_cycle()
-    assert service.discover_account.await_count == 2
+    assert service.discover_account.await_count == 1
+    service.discover_account.assert_awaited_once_with(sec_user_id="account-one", collect_comments=False)

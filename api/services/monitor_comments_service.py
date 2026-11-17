@@ -4,7 +4,7 @@ import time
 from pydantic import BaseModel, ConfigDict, Field
 from config.db_config import sqlite_db_config
 from database import monitor_comments_repository as repo
-from tools.collection_errors import classify_collection_error, record_collection_error
+from tools.collection_errors import CommentResponseError, classify_collection_error, record_collection_error
 from tools.douyin_browser_coordinator import CollectionStoppedError
 from tools.user_hash import anonymize_user_id, mask_nickname
 
@@ -80,6 +80,8 @@ class CommentCollector:
         self.checkpoint=(dict(checkpoint) if checkpoint.get('version')==1 and previous.get('state')!='completed'
                          else {'version':1,'generation':previous.get('refresh_generation',0),'root_cursor':0,'roots_done':False,'reply_after':'',
                                'reply_parent':'','reply_cursor':0,'replies_done':False})
+        # Optional v1 checkpoint extension: failed threads are never counted as done.
+        self.checkpoint['reply_pending'] = dict(self.checkpoint.get('reply_pending', {}))
 
     def check(self):
         if self.fetcher.should_stop():raise CollectionStoppedError('评论采集已暂停')
@@ -100,14 +102,19 @@ class CommentCollector:
         client=self.fetcher._client
         async with asyncio.timeout(30):
             response=await (client.get_sub_comments(ident,parent,cursor) if parent else client.get_aweme_comments(ident,cursor))
-        if not isinstance(response,dict):raise ValueError('评论响应无效')
+        def invalid(reason):
+            return CommentResponseError(reason,response,ident=ident,parent=parent,cursor=cursor)
+        if not isinstance(response,dict):raise invalid('not_object')
         code=response.get('status_code',0)
-        if code in (403,429,8,9):raise RuntimeError('评论接口风控')
-        if code!=0:raise ValueError('评论接口返回非成功状态')
+        if type(code) is int and code in (403,429,8,9):raise invalid('risk_control')
+        if type(code) is not int or code!=0:raise invalid('invalid_status')
+        more=response.get('has_more')
+        if type(more) not in (bool,int) or more not in (False,True,0,1):
+            raise invalid('invalid_pagination')
         comments=response.get('comments')
-        if comments is None and response.get('total')==0 and not response.get('has_more'):comments=[]
-        if not isinstance(comments,list):raise ValueError('评论响应缺少列表，不视为零评论')
-        if response.get('has_more') not in (False,True,0,1):raise ValueError('评论响应缺少分页状态')
+        if comments is None and type(response.get('total')) is int and response['total']==0 and not more:
+            comments=[]
+        if not isinstance(comments,list):raise invalid('invalid_comments')
         return response,comments
 
     async def save_page(self,ident,rows,checkpoint):
@@ -129,10 +136,19 @@ class CommentCollector:
             item=normalize(raw,ident,parent);rows[item['comment_id']]=item
         more=bool(response['has_more']);next_cursor=response.get('cursor')
         if more and (not comments or type(next_cursor) is not int or next_cursor<=cursor):
-            raise ValueError('评论分页未推进，不标记完成')
+            raise CommentResponseError('stalled_cursor',response,ident=ident,parent=parent,cursor=cursor)
         checkpoint=dict(self.checkpoint)
         if not parent:
             checkpoint.update(root_cursor=next_cursor if more else cursor,roots_done=not more)
+        elif parent in checkpoint['reply_pending']:
+            pending=dict(checkpoint['reply_pending'])
+            if more:
+                pending[parent]=next_cursor
+                checkpoint.update(reply_parent=parent,reply_cursor=next_cursor)
+            else:
+                pending.pop(parent)
+                checkpoint.update(reply_parent='',reply_cursor=0)
+            checkpoint['reply_pending']=pending
         elif more:checkpoint.update(reply_parent=parent,reply_cursor=next_cursor)
         else:checkpoint.update(reply_after=parent,reply_parent='',reply_cursor=0)
         await self.save_page(ident,list(rows.values()),checkpoint)
@@ -148,18 +164,49 @@ class CommentCollector:
             result.update(record_collection_error(failure,kind='comments',phase=self.phase))
         return result
 
+    async def defer_reply(self,ident,parent,cursor):
+        checkpoint=dict(self.checkpoint)
+        pending=dict(checkpoint['reply_pending'])
+        retrying=parent in pending
+        pending.pop(parent,None)
+        pending[parent]=cursor  # Rotate failed retries behind other pending threads.
+        checkpoint.update(reply_pending=pending,reply_parent='',reply_cursor=0,replies_done=False)
+        if not retrying:checkpoint['reply_after']=parent
+        # Store the failed cursor and scan position atomically before continuing.
+        await self.save_page(ident,[],checkpoint)
+
     async def run(self,ident):
-        failure=None
+        failure=None;attempted=set()
         try:
             while not self.checkpoint['roots_done']:
                 if not await self.collect_page(ident,'',self.checkpoint['root_cursor']):break
             while self.checkpoint['roots_done'] and self.policy['include_replies'] and not self.checkpoint['replies_done']:
                 self.check()
-                parent=self.checkpoint['reply_parent'] or await asyncio.to_thread(repo.next_parent,source(),ident,self.checkpoint['reply_after'])
+                parent=self.checkpoint['reply_parent']
+                if not parent and not self.checkpoint.get('reply_scan_done'):
+                    parent=await asyncio.to_thread(repo.next_parent,source(),ident,self.checkpoint['reply_after'])
+                    if not parent:
+                        await self.save_page(ident,[],dict(self.checkpoint,reply_scan_done=True))
                 if not parent:
-                    await self.save_page(ident,[],dict(self.checkpoint,replies_done=True));break
+                    parent=next((p for p in self.checkpoint['reply_pending'] if p not in attempted),'')
+                    if not parent:
+                        if not self.checkpoint['reply_pending']:
+                            await self.save_page(ident,[],dict(self.checkpoint,replies_done=True))
+                        break
+                cursor=(self.checkpoint['reply_pending'][parent] if parent in self.checkpoint['reply_pending']
+                        else self.checkpoint['reply_cursor'])
                 # Check every root, even if an earlier counter advertised zero replies.
-                if not await self.collect_page(ident,parent,self.checkpoint['reply_cursor']):break
+                try:
+                    if not await self.collect_page(ident,parent,cursor):break
+                except CommentResponseError as exc:
+                    # Only structural page failures may be deferred; risk control,
+                    # transport, policy changes and storage errors stop this slice.
+                    if exc.error_code!='invalid_response' or exc.response_shape['reason'] in ('not_object','invalid_status'):
+                        raise
+                    record_collection_error(exc,kind='comments',phase=self.phase)
+                    await self.defer_reply(ident,parent,cursor)
+                    attempted.add(parent)
+                    if failure is None:failure=exc
         except Exception as exc:failure=exc
         complete=self.checkpoint['roots_done'] and (not self.policy['include_replies'] or self.checkpoint['replies_done'])
         return await self.summary(ident,'completed' if complete and not failure else 'partial',failure),failure

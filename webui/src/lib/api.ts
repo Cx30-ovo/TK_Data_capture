@@ -426,6 +426,29 @@ export interface MonitorHealth {
     cdp_debug_port?: number
     maintenance_check_interval_seconds?: number
   }
+  account_workload?: {
+    generated_at: number
+    snapshot_slice_limit: number
+    discovery_slices_per_cycle: number
+    comment_slices_per_cycle: number
+    topics: { active: number; backfill_pending: number; queued: number; running: number }
+    accounts: Array<{
+      id: number
+      name: string
+      enabled: boolean
+      discover_interval_minutes: number
+      last_discovered_at: number | null
+      next_discovery_at: number | null
+      discovery_overdue_seconds: number | null
+      discovery_retry_after_seconds: number
+      snapshots_pending: number
+      snapshots_due: number
+      comments_pending: number
+      comments_due: number
+      oldest_comment_due_seconds: number
+      last_error: string | null
+    }>
+  }
 }
 
 export interface MonitorReport {
@@ -816,7 +839,7 @@ export const monitorApi = {
       alert_ids: alertIds,
       status,
     }),
-  getHealth: () => api.get<MonitorHealth>('/monitor/health', { params: accountParams() }),
+  getHealth: () => api.get<MonitorHealth>('/monitor/health', { params: { all_accounts: true } }),
   getReports: () => api.get<{ reports: MonitorReport[] }>('/monitor/reports', { params: accountParams() }),
   generateReport: (period: 'daily' | 'weekly' | 'monthly') =>
     api.post<GeneratedMonitorReport>('/monitor/reports/generate', null, { params: { period, ...accountParams() } }),

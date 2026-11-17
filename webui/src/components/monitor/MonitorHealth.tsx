@@ -66,6 +66,15 @@ function formatGeneratedAt(value?: string): string {
   return Number.isNaN(timestamp.getTime()) ? value : timestamp.toLocaleString()
 }
 
+function formatAge(seconds?: number | null): string {
+  if (seconds === undefined || seconds === null) return '-'
+  if (seconds < 60) return `${seconds}s`
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  return minutes ? `${hours}h ${minutes}m` : `${hours}h`
+}
+
 
 function displayCheckValue(
   check: MonitorHealthCheck,
@@ -208,6 +217,40 @@ export function MonitorHealth() {
             </div>
           ))}
         </div>
+        {data?.account_workload ? <section aria-labelledby="account-workload-title" className="border-t border-cyber-border-subtle/50 p-3">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 id="account-workload-title" className="text-xs font-semibold text-cyber-text-primary">{t('health.accountWorkload.title')}</h3>
+              <p className="mt-1 text-[10px] text-cyber-text-muted">{t('health.accountWorkload.policy', {
+                snapshots: data.account_workload.snapshot_slice_limit,
+                discoveries: data.account_workload.discovery_slices_per_cycle,
+                comments: data.account_workload.comment_slices_per_cycle,
+              })}</p>
+            </div>
+            <div className="text-[10px] text-cyber-text-secondary">
+              {t('health.accountWorkload.topics', data.account_workload.topics)}
+            </div>
+          </div>
+          {data.account_workload.accounts.length ? <div className="grid grid-cols-1 gap-2 md:grid-cols-2 2xl:grid-cols-3">
+            {data.account_workload.accounts.map((account) => <article key={account.id} className={`min-w-0 rounded-md border p-3 ${account.enabled ? 'border-cyber-border-subtle bg-cyber-bg-panel' : 'border-cyber-border-subtle/50 bg-cyber-bg-tertiary/30 opacity-70'}`}>
+              <div className="flex min-w-0 items-center gap-2">
+                <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${!account.enabled ? 'bg-cyber-text-muted' : account.last_error || !account.last_discovered_at ? 'bg-cyber-neon-orange' : (account.discovery_overdue_seconds ?? 0) > account.discover_interval_minutes * 120 ? 'bg-cyber-neon-orange' : 'bg-cyber-neon-green'}`} />
+                <h4 className="min-w-0 flex-1 truncate text-xs font-medium text-cyber-text-primary">{account.name}</h4>
+                <span className="shrink-0 text-[10px] tabular-nums text-cyber-text-muted">{account.discover_interval_minutes}m</span>
+              </div>
+              <p className="mt-1 text-[10px] text-cyber-text-muted">{!account.enabled ? t('health.accountWorkload.disabled') : account.last_error ? t('health.status.warning') : !account.last_discovered_at ? t('health.accountWorkload.never') : (account.discovery_overdue_seconds ?? 0) > 0 ? t('health.accountWorkload.delayed') : t('health.status.ok')}</p>
+              <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-[10px]">
+                <div><dt className="text-cyber-text-muted">{t('health.accountWorkload.discovery')}</dt><dd className="mt-0.5 text-cyber-text-secondary">{account.last_discovered_at ? formatDateTime(account.last_discovered_at) : t('health.accountWorkload.never')}</dd></div>
+                <div><dt className="text-cyber-text-muted">{t('health.accountWorkload.overdue')}</dt><dd className="mt-0.5 tabular-nums text-cyber-text-secondary">{account.enabled ? formatAge(account.discovery_overdue_seconds) : '—'}</dd></div>
+                <div><dt className="text-cyber-text-muted">{t('health.accountWorkload.snapshots')}</dt><dd className="mt-0.5 tabular-nums text-cyber-text-secondary">{account.snapshots_due} / {account.snapshots_pending}</dd></div>
+                <div><dt className="text-cyber-text-muted">{t('health.accountWorkload.comments')}</dt><dd className="mt-0.5 tabular-nums text-cyber-text-secondary">{account.comments_due} / {account.comments_pending}</dd></div>
+                <div><dt className="text-cyber-text-muted">{t('health.accountWorkload.nextDiscovery')}</dt><dd className="mt-0.5 text-cyber-text-secondary">{account.enabled ? formatDateTime(account.next_discovery_at) : '—'}</dd></div>
+                <div><dt className="text-cyber-text-muted">{t('health.accountWorkload.oldestComment')}</dt><dd className="mt-0.5 tabular-nums text-cyber-text-secondary">{account.oldest_comment_due_seconds ? formatAge(account.oldest_comment_due_seconds) : '—'}</dd></div>
+              </dl>
+              {account.last_error ? <p className="mt-2 truncate border-t border-cyber-border-subtle pt-2 text-[10px] text-cyber-neon-orange" title={account.last_error}>{t('health.accountWorkload.lastError')}: {account.last_error}</p> : null}
+            </article>)}
+          </div> : <p className="text-xs text-cyber-text-muted">{t('health.accountWorkload.empty')}</p>}
+        </section> : null}
       </section>
 
       <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">

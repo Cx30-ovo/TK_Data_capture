@@ -1,12 +1,52 @@
 """Stable, safe-to-display collection errors; never expose signed URLs/cookies."""
 
 from dataclasses import dataclass, asdict
+import hashlib
 import json
 import logging
 import re
 import sqlite3
 import traceback
 import uuid
+
+
+class CommentResponseError(ValueError):
+    """A rejected comment page, retaining only a bounded structural allowlist."""
+
+    def __init__(self, reason, response, *, ident, parent, cursor):
+        messages = {
+            'not_object': '评论响应无效',
+            'invalid_status': '评论接口返回非成功状态',
+            'risk_control': '评论接口风控',
+            'invalid_comments': '评论响应缺少列表，不视为零评论',
+            'invalid_pagination': '评论响应缺少分页状态',
+            'stalled_cursor': '评论分页未推进，不标记完成',
+        }
+        super().__init__(messages[reason])
+        self.error_code = 'risk_control' if reason == 'risk_control' else 'invalid_response'
+        self.collection_phase = 'comments_replies' if parent else 'comments_root'
+
+        def shape(value):
+            name = {type(None): 'null', dict: 'object', list: 'array', str: 'string',
+                    int: 'integer', bool: 'boolean', float: 'number'}.get(type(value), 'other')
+            result = {'type': name}
+            if type(value) is bool or type(value) is int and -(2**63) <= value < 2**63:
+                result['value'] = value
+            if type(value) is list:
+                result['length'] = len(value)
+            return result
+
+        fields = {}
+        if isinstance(response, dict):
+            for key in ('status_code', 'comments', 'total', 'has_more', 'cursor'):
+                fields[key] = ({'present': True, **shape(response[key])} if key in response
+                               else {'present': False})
+        digest = lambda value: hashlib.sha256(str(value).encode()).hexdigest()[:16]
+        self.response_shape = {
+            'reason': reason, 'response_type': shape(response)['type'], 'fields': fields,
+            'work_hash': digest(ident), 'thread_hash': digest(f'{ident}:{parent}') if parent else None,
+            'request_cursor': cursor if type(cursor) is int and 0 <= cursor < 2**63 else None,
+        }
 
 
 @dataclass(frozen=True)
@@ -29,6 +69,8 @@ def classify_collection_error(exc):
         return CollectionFailure(code, "抖音页签忙碌", "等待其他采集任务结束后重试。")
     if code == "browser_connection_timeout":
         return CollectionFailure(code, "浏览器控制连接超时", "正在尝试恢复受管采集页；不代表平台请求超时。")
+    if code == "invalid_response":
+        return CollectionFailure(code, "返回数据不完整", "未写入异常数据，保留未完成进度后重试。")
     if isinstance(exc, sqlite3.Error):
         sqlite_code = getattr(exc, "sqlite_errorcode", None)
         if type(sqlite_code) is int and sqlite_code & 255 in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
@@ -65,6 +107,8 @@ def record_collection_error(exc, *, kind, phase="unknown"):
                        "line": frame.lineno, "function": token(frame.name)}
                       for frame in traceback.extract_tb(current.__traceback__)[-8:]]
             entry = {"type": token(type(current).__name__), "frames": frames}
+            if isinstance(current, CommentResponseError):
+                entry['comment_response'] = current.response_shape
             if isinstance(current, sqlite3.Error):
                 code, name = getattr(current, "sqlite_errorcode", None), getattr(current, "sqlite_errorname", None)
                 if type(code) is int and 0 <= code <= 2**31 - 1:
